@@ -20,7 +20,6 @@ int xlb_calc_hdtv_mode(
 	unsigned char pll_int,
 	unsigned char * regs
 	){
-	}
 	return 1;
 }
 
