@@ -383,8 +383,8 @@ static int xpad_probe(struct usb_interface *intf, const struct usb_device_id *id
 	}
 	
 	// sanity check, did we recognize this device? if not, fail
-	if ((probedDevNum == -1) || (xpad_device[probedDevNum].idVendor ==
-	    xpad_device[probedDevNum].idVendor == 0))
+	if ((probedDevNum == -1) || (!xpad_device[probedDevNum].idVendor &&
+				     !xpad_device[probedDevNum].idProduct))
 		return -ENODEV;
 		
 	if ((xpad = kmalloc (sizeof(struct usb_xpad), GFP_KERNEL)) == NULL) {
@@ -449,11 +449,12 @@ static void xpad_disconnect(struct usb_interface *intf)
 		input_unregister_device(&xpad->dev);
 		
 		usb_free_urb(xpad->irq_in);
+		xpad_mouse_cleanup(xpad);
+		
 		usb_buffer_free(interface_to_usbdev(intf), XPAD_PKT_LEN,
 				xpad->idata, xpad->idata_dma);
 	
 		xpad_rumble_disconnect(xpad);
-		xpad_mouse_cleanup(xpad);
 		
 		kfree(xpad);
 	}

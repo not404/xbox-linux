@@ -60,7 +60,6 @@
 /****************************** constants *****************************/
 #define XPAD_MAX_DEVICES	4
 #define XPAD_PKT_LEN		32	/* input packet size */
-#define XPAD_PKT_LEN_IR		6	/* input packet size - IR dongle */
 #define XPAD_PKT_LEN_FF		6	/* output packet size - rumble */
 
 #define XPAD_TX_BUFSIZE		XPAD_PKT_LEN_FF * 8	/* max. 8 requests */
@@ -84,9 +83,6 @@ struct usb_xpad {
 	int right_offset_x;
 	int right_offset_y;
 	
-	int isDVDKit;				/* is this a DVD dongle IR? */
-	struct circ_buf rx;			/* ring buffer for IR input */
-
 #ifdef CONFIG_USB_XPAD_RUMBLE
 	int rumble_enabled;			/* ioctl can toggle rumble */
 	

@@ -166,7 +166,7 @@ void xpad_mouse_process_packet(struct usb_xpad *xpad, u16 cmd, unsigned char *da
  */
 static void xpad_timer(unsigned long data)
 {
-	struct usb_xpad * xpad = (struct usb_xpad *)data;
+	struct usb_xpad *xpad = (struct usb_xpad *)data;
 
 	if (xpad->mouse_enabled) {
 		input_report_rel(&xpad->dev_mouse, REL_X, xpad->rel_x);
@@ -263,6 +263,8 @@ int xpad_mouse_init_input_device(struct usb_interface *intf, struct xpad_device 
 
 void xpad_mouse_cleanup(struct usb_xpad *xpad)
 {
-	del_timer(&xpad->timer);
+	// the timer exists only when the mouse device is used
+	if (xpad->mouse_open_count)
+		del_timer(&xpad->timer);
 	input_unregister_device(&xpad->dev_mouse);
 }
