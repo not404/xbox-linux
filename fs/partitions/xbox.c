@@ -50,32 +50,17 @@ xbox_sig_string_match(	struct block_device *bdev,
 			char *expect )
 {
 	Sector sect;
-	int i = 0;
-	int retv = 1;
+	int retv;
 	char *data;
 
 	data = read_dev_sector(bdev, at_sector, &sect);
 	
 	if (!data) return 0;
-	
-	for(;(expect[i] != 0) && (i < 512); i++) {
-		if (expect[i] != data[i]) {
-			retv = 0;
-			break;
-		}
-	}
+
+	if (*(u32*)expect == *(u32*)data) retv = 1; else retv = 0;
 	
 	put_dev_sector(sect);
 	
-	/*
-	if (!retv) {
-		printk("xbox_sig_string_match: %s not found...found %c%c%c%c\n",
-			expect,data[0],data[1],data[2],data[3]);
-		for(i = 1; i<=512; i++) {
-			printk(((i%32)?"%02X ":"%02X\n"),(unsigned char)data[i]);
-		}
-	}
-	*/
 	return retv;
 }
 
@@ -117,23 +102,23 @@ int xbox_partition(struct parsed_partitions *state, struct block_device *bdev)
 		state->next = 50;
 		printk("\n");
 		start = XBOX_SECTOR_STORE; 
-		length = XBOX_SECTOR_EXTEND - XBOX_SECTOR_STORE; 
+		length = XBOX_SECTORS_STORE;
 		put_partition(state,state->next++,start ,length);
 
 		start = XBOX_SECTOR_SYSTEM; 
-		length = XBOX_SECTOR_SYSTEM - XBOX_SECTOR_CACHE3;
+		length = XBOX_SECTORS_SYSTEM;
 		put_partition(state,state->next++,start ,length);
 		
 		start = XBOX_SECTOR_CACHE1; 
-		length = XBOX_SECTOR_CACHE2 - XBOX_SECTOR_CACHE1;
+		length = XBOX_SECTORS_CACHE1;
 		put_partition(state,state->next++,start ,length);
 		
 		start = XBOX_SECTOR_CACHE2; 
-		length = XBOX_SECTOR_CACHE3 - XBOX_SECTOR_CACHE2;
+		length = XBOX_SECTORS_CACHE2;
 		put_partition(state,state->next++,start ,length);
 		
 		start = XBOX_SECTOR_CACHE3; 
-		length = XBOX_SECTOR_SYSTEM - XBOX_SECTOR_CACHE3;
+		length = XBOX_SECTORS_CACHE3;
 		put_partition(state,state->next++,start ,length);
 		
 		//there are some questions about the usage of any "extra" sectors...
