@@ -80,6 +80,7 @@ static struct xpad_device xpad_device[] = {
 	{ 0x0738, 0x4556, 0, "Mad Catz Lynx Wireless Controller" },
 	{ 0x0738, 0x6040, 1, "Mad Catz Beat Pad Pro" },
 	{ 0x0c12, 0x8809, 0, "Level Six Xbox DDR Dancepad" },
+	{ 0x0c12, 0x8810, 0, "Zeroplus Xbox Controller" },
 	{ 0x0c12, 0x9902, 0, "HAMA VibraX - *FAULTY HARDWARE*" }, /* these are broken */
 	{ 0x0e4c, 0x2390, 0, "Radica Games Jtech Controller"},	
 	{ 0x0e6f, 0x0003, 0, "Logic3 Freebird wireless Controller" },
