@@ -585,7 +585,7 @@ config FB_MATROX_MYSTIQUE
 	  packed pixel and 32 bpp packed pixel. You can also use font widths
 	  different from 8.
 
-config FB_MATROX_G450
+config FB_MATROX_G
 	bool "G100/G200/G400/G450/G550 support"
 	depends on FB_MATROX
 	---help---
@@ -596,10 +596,10 @@ config FB_MATROX_G450
 	  different from 8.
 
 	  If you need support for G400 secondary head, you must first say Y to
-	  "I2C support" and "I2C bit-banging support" in the character devices
-	  section, and then to "Matrox I2C support" and "G400 second head
-	  support" here in the framebuffer section. G450/G550 secondary head
-	  and digital output are supported without additional modules.
+	  "I2C support" in the character devices section, and then to
+	  "Matrox I2C support" and "G400 second head support" here in the
+	  framebuffer section. G450/G550 secondary head and digital output
+	  are supported without additional modules.
 
 	  The driver starts in monitor mode. You must use the matroxset tool 
 	  (available at <ftp://platan.vc.cvut.cz/pub/linux/matrox-latest/>) to 
@@ -615,26 +615,6 @@ config FB_MATROX_G450
 
 	  G450/G550 hardware can display TV picture only from secondary CRTC,
 	  and it performs no scaling, so picture must have 525 or 625 lines.
-
-config FB_MATROX_G100A
-	bool "G100/G200/G400 support"
-	depends on FB_MATROX && !FB_MATROX_G450
-	---help---
-	  Say Y here if you have a Matrox G100, G200 or G400 based
-	  video card. If you select "Advanced lowlevel driver options", you
-	  should check 8 bpp packed pixel, 16 bpp packed pixel, 24 bpp packed
-	  pixel and 32 bpp packed pixel. You can also use font widths
-	  different from 8.
-
-	  If you need support for G400 secondary head, you must first say Y to
-	  "I2C support" and "I2C bit-banging support" in the character devices
-	  section, and then to "Matrox I2C support" and "G400 second head
-	  support" here in the framebuffer section.
-
-config FB_MATROX_G100
-	bool
-	depends on FB_MATROX && (FB_MATROX_G450 || FB_MATROX_G100A)
-	default y
 
 config FB_MATROX_I2C
 	tristate "Matrox I2C support"
@@ -655,7 +635,7 @@ config FB_MATROX_I2C
 
 config FB_MATROX_MAVEN
 	tristate "G400 second head support"
-	depends on FB_MATROX_G100 && FB_MATROX_I2C
+	depends on FB_MATROX_G && FB_MATROX_I2C
 	---help---
 	  WARNING !!! This support does not work with G450 !!!
 
@@ -847,7 +827,7 @@ config FB_SIS
 	depends on FB && PCI
 	help
 	  This is the frame buffer device driver for the SiS 300, 315 and
-	  330 series VGA chipsets. Specs available at http://www.sis.com
+	  330 series VGA chipsets. Specs available at <http://www.sis.com>
 
 	  To compile this driver as a module, choose M here; the module
 	  will be called sisfb.
@@ -916,7 +896,7 @@ config FB_VOODOO1
 
 	  WARNING: Do not use any application that uses the 3D engine
 	  (namely glide) while using this driver.
-	  Please read the file Documentation/fb/README-sstfb.txt for supported
+	  Please read the <file:Documentation/fb/README-sstfb.txt> for supported
 	  options and other important info  support.
 
 config FB_TRIDENT
@@ -949,6 +929,42 @@ config FB_PM3
 	  chipset, used in Formac ProFormance III, 3DLabs Oxygen VX1 &
 	  similar boards, 3DLabs Permedia3 Create!, Appian Jeronimo 2000
 	  and maybe other boards.
+
+config FB_E1356
+	tristate "Epson SED1356 framebuffer support"
+	depends on FB && EXPERIMENTAL && PCI && MIPS
+
+config PB1000_CRT
+	bool "Use CRT on Pb1000 (J65)"
+	depends on MIPS_PB1000=y && FB_E1356
+
+config PB1000_NTSC
+	bool "Use Compsite NTSC on Pb1000 (J63)"
+	depends on MIPS_PB1000=y && FB_E1356
+
+config PB1000_TFT
+	bool "Use TFT Panel on Pb1000 (J64)"
+	depends on MIPS_PB1000=y && FB_E1356
+
+config PB1500_CRT
+	bool "Use CRT on Pb1500 " if MIPS_PB1500=y
+	depends on FB_E1356
+
+config PB1500_CRT
+	prompt "Use CRT on Pb1100 "
+	depends on FB_E1356 && MIPS_PB1100=y
+
+config PB1500_TFT
+	bool "Use TFT Panel on Pb1500 " if MIPS_PB1500=y
+	depends on FB_E1356
+
+config PB1500_TFT
+	prompt "Use TFT Panel on Pb1100 "
+	depends on FB_E1356 && MIPS_PB1100=y
+
+config FB_AU1100
+	bool "Au1100 LCD Driver"
+	depends on FB && EXPERIMENTAL && PCI && MIPS && MIPS_PB1100=y
 
 config FB_SBUS
 	bool "SBUS and UPA framebuffers"
@@ -1009,29 +1025,35 @@ config FB_HIT
 	  This is the frame buffer device driver for the Hitachi HD64461 LCD
 	  frame buffer card.
 
+config FB_PMAG_AA
+	bool "PMAG-AA TURBOchannel framebuffer support"
+	depends on FB && MACH_DECSTATION && TC
+	help
+	  Support for the PMAG-AA TURBOchannel framebuffer card (1280x1024x1)
+	  used mainly in the MIPS-based DECstation series.
+
 config FB_PMAG_BA
 	bool "PMAG-BA TURBOchannel framebuffer support"
-	depends on FB && DECSTATION && TC
+	depends on FB && MACH_DECSTATION && TC
 	help
-	  Say Y here to directly support the on-board PMAG-BA framebuffer in
-	  the 5000/1xx versions of the DECstation.  There is a page dedicated
-	  to Linux on DECstations at <http://decstation.unix-ag.org/>.
+	  Support for the PMAG-BA TURBOchannel framebuffer card (1024x864x8)
+	  used mainly in the MIPS-based DECstation series.
 
 config FB_PMAGB_B
-	bool "PMAGB-B TURBOchannel framebuffer spport"
-	depends on FB && DECSTATION && TC
+	bool "PMAGB-B TURBOchannel framebuffer support"
+	depends on FB && MACH_DECSTATION && TC
 	help
-	  Say Y here to directly support the on-board PMAGB-B framebuffer in
-	  the 5000/1xx versions of the DECstation.  There is a page dedicated
-	  to Linux on DECstations at <http://decstation.unix-ag.org/>.
+	  Support for the PMAGB-B TURBOchannel framebuffer card used mainly
+	  in the MIPS-based DECstation series. The card is currently only
+	  supported in 1280x1024x8 mode.
 
 config FB_MAXINE
-	bool "Maxine (Personal DECstation) onboard framebuffer spport"
-	depends on FB && DECSTATION && TC
+	bool "Maxine (Personal DECstation) onboard framebuffer support"
+	depends on FB && MACH_DECSTATION && TC
 	help
-	  Say Y here to directly support the on-board framebuffer in the
-	  Maxine (5000/20, /25, /33) version of the DECstation.  There is a
-	  page dedicated to Linux on DECstations at <http://decstation.unix-ag.org/>.
+	  Support for the onboard framebuffer (1024x768x8) in the Personal
+	  DECstation series (Personal DECstation 5000/20, /25, /33, /50,
+	  Codename "Maxine").
 
 config FB_TX3912
 	bool "TMPTX3912/PR31700 frame buffer support"
@@ -1041,6 +1063,13 @@ config FB_TX3912
 	  see <http://www.toshiba.com/taec/components/Generic/risc/tx3912.htm>.
 
 	  Say Y here to enable kernel support for the on-board framebuffer.
+
+config FB_G364
+	bool
+	depends on MIPS_MAGNUM_4000 || OLIVETTI_M700
+	help
+	  The G364 driver is the framebuffer used in MIPS Magnum 4000 and
+	  Olivetti M700-10 systems.
 
 config FB_68328
 	bool "Motorola 68328 native frame buffer support"
@@ -1055,6 +1084,19 @@ config FB_PXA
 	---help---
 	  Frame buffer driver for the built-in LCD controller in the Intel
 	  PXA2x0 processor.
+
+	  This driver is also available as a module ( = code which can be
+	  inserted and removed from the running kernel whenever you want). The
+	  module will be called vfb. If you want to compile it as a module,
+	  say M here and read <file:Documentation/modules.txt>.
+
+	  If unsure, say N.
+
+config FB_W100
+	tristate "W100 frame buffer support"
+	depends on FB && PXA_SHARPSL
+	---help---
+	  Frame buffer driver for the w100 as found on the Sharp SL-Cxx series.
 
 	  This driver is also available as a module ( = code which can be
 	  inserted and removed from the running kernel whenever you want). The
@@ -1078,7 +1120,7 @@ config FB_PXA_PARAMETERS
 	  single model of flatpanel then you can safely leave this
 	  option disabled.
 
-	  Documentation/fb/pxafb.txt describes the available parameters.
+	  <file:Documentation/fb/pxafb.txt> describes the available parameters.
 
 config FB_VIRTUAL
 	tristate "Virtual Frame Buffer support (ONLY FOR TESTING!)"
@@ -1103,6 +1145,10 @@ endif
 
 if FB || SGI_NEWPORT_CONSOLE
 	source "drivers/video/logo/Kconfig"
+endif
+
+if FB && SYSFS
+	source "drivers/video/backlight/Kconfig"
 endif
 
 endmenu
