@@ -706,9 +706,10 @@ config FATX_FS
 	  http://xbox-linux.sourceforge.net/docs/hdpartfs.html
 	  http://xbox-linux.sourceforge.net/docs/hackingfatx.html
 
-# Uncomment this once things actually stabilize.
-#	  If you are running Linux on the Xbox, choose Y unless you know
-#	  what you're doing. Otherwise, choose N.
+	  # Uncomment this once things actually stabilize:
+	  #
+	  # If you are running Linux on the Xbox, choose Y unless you know
+	  # what you're doing. Otherwise, choose N.
 
 	  NOTE: Support for this filesystem is currently in a fragile state.
 	  Expect filesystem corruption and other such nastiness. Only choose
