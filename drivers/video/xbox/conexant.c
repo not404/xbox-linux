@@ -16,6 +16,7 @@
 
 #include "conexant.h"
 #include "focus.h"
+#include <asm/i387.h>
 
 #define ADR(x) (x / 2 - 0x17)
 
@@ -172,7 +173,8 @@ int conexant_calc_mode(xbox_video_mode * mode, struct riva_regs * riva_out)
 	double dPllOutputFrequency;
 	xbox_tv_mode_parameter param;
 	char* regs = riva_out->encoder_mode;
-
+	int ret = 0;
+	kernel_fpu_begin();
 	if (conexant_calc_mode_params(mode, &param))
 	{
 		// copy default mode settings
@@ -381,12 +383,14 @@ int conexant_calc_mode(xbox_video_mode * mode, struct riva_regs * riva_out)
 		riva_out->ext.crtchdispend = mode->xres + 8;
 		riva_out->ext.crtcvstart = mode->yres + 34;
 		riva_out->ext.crtcvtotal = param.v_linesi + 32;
-		return 1;
+		ret = 1;
 	}
 	else
 	{
-		return 0;
+		ret = 0;
 	}
+	kernel_fpu_end();
+	return ret;
 }
 
 static int conexant_calc_mode_params(

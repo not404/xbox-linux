@@ -20,7 +20,7 @@ OBJCOPYFLAGS	:= -O binary -R .note -R .comment -S
 LDFLAGS_vmlinux :=
 CHECK		:= $(CHECK) -D__i386__=1
 
-CFLAGS += -pipe -msoft-float
+CFLAGS += -pipe
 
 # prevent gcc from keeping the stack 16 byte aligned
 CFLAGS += $(call check_gcc,-mpreferred-stack-boundary=2,)
