@@ -192,14 +192,14 @@ config USB_MTOUCH
 	  module will be called mtouchusb.
 
 config USB_XPAD
-	tristate "X-Box gamepad support"
+	tristate "Xbox controller (gamepad) support"
 	depends on USB && INPUT
 	---help---
-	  Say Y here if you want to use the X-Box pad with your computer.
+	  Say Y here if you want to use Xbox controllers with your computer.
 	  Make sure to say Y to "Joystick support" (CONFIG_INPUT_JOYDEV)
 	  and/or "Event interface support" (CONFIG_INPUT_EVDEV) as well.
 
-	  For information about how to connect the X-Box pad to USB, see
+	  For information about how to connect an Xbox controller to USB, see
 	  <file:Documentation/input/xpad.txt>.
 
 	  To compile this driver as a module, choose M here: the
