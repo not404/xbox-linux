@@ -61,7 +61,11 @@ int focus_calc_hdtv_mode(
 	for (m=0x00; m<sizeof(focus_defaults); m++) {
 		regs[m] = focus_defaults[m];
 	}
+
+	/* Uncomment for SDTV colour bars */
+	//regs[0x45]=0x02;
 	
+
 	/* Legacy Conexant code - not sure what to do with it here.
 	if (pll_int > 36) {
              pll_int = 36; // 36 / 6 * 13.5 MHz = 81 MHz, just above the limit.
@@ -72,7 +76,7 @@ int focus_calc_hdtv_mode(
 	*/
 
 	/* Turn on bridge bypass */
-	regs[0x0a] &= 0x10;
+	regs[0x0a] |= 0x10;
 	/* Turn on the HDTV clock, and turn off the SDTV one */	
 	regs[0xa1] = 0x04;
 	
@@ -242,7 +246,7 @@ int focus_calc_mode(xbox_video_mode * mode, struct riva_regs * riva_out)
 	regs[0x1B] = ((pll_n-1)>>8)&0xFF ;
 	regs[0x1C] = (pll_p-1)&0xFF;
 	regs[0x1D] = (pll_p-1)&0xFF;
-
+	        
 	/* Guesswork */
 	riva_out->ext.vsyncstart = vga_vtotal * 0.95;
 	riva_out->ext.hsyncstart = vga_htotal * 0.95;
