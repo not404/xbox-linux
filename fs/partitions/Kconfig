@@ -234,8 +234,11 @@ config EFI_PARTITION
 	  IA-64 platform.
 
 config XBOX_PARTITION
-	bool "XBOX Partitioning support"
+	bool "Xbox Partition support (EXPERIMENTAL)"
+	depends on PARTITION_ADVANCED && EXPERIMENTAL && BROKEN
 	help
-	  Say Y here if you want to have the XBOX speciffic partitioning support.
+	  Say Y here if you are running Linux on the Xbox, or would
+	  like to access a hard disk partitioned for the Xbox under
+	  a PC running Linux. Otherwise, say N.
 
 #      define_bool CONFIG_ACORN_PARTITION_CUMANA y
