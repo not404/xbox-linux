@@ -364,13 +364,13 @@ int conexant_calc_mode(xbox_video_mode * mode, struct riva_regs * riva_out)
 			default:
 				break;
 		}
-		riva_out->ext.vend = mode->yres - 1;
+		riva_out->ext.vend = mode->yres;
 		riva_out->ext.vtotal = param.v_linesi - 1;
-		riva_out->ext.vcrtc = mode->yres - 1;
-		riva_out->ext.vsyncstart = param.v_linesi - param.v_blanki + 1;
+		riva_out->ext.vcrtc = mode->yres;
+		riva_out->ext.vsyncstart = param.v_linesi - param.v_blanki;
 		riva_out->ext.vsyncend = riva_out->ext.vsyncstart + 3;
 		riva_out->ext.vvalidstart = 0;
-		riva_out->ext.vvalidend = mode->yres - 1;
+		riva_out->ext.vvalidend = mode->yres;
 		riva_out->ext.hend = mode->xres + 7;
 		riva_out->ext.htotal = param.h_clki - 1;
 		riva_out->ext.hcrtc = mode->xres - 1;
@@ -379,7 +379,7 @@ int conexant_calc_mode(xbox_video_mode * mode, struct riva_regs * riva_out)
 		riva_out->ext.hvalidstart = 0;
 		riva_out->ext.hvalidend = mode->xres - 1;
 		riva_out->ext.crtchdispend = mode->xres + 8;
-		riva_out->ext.crtcvstart = mode->yres + 32;
+		riva_out->ext.crtcvstart = mode->yres + 34;
 		riva_out->ext.crtcvtotal = param.v_linesi + 32;
 		return 1;
 	}

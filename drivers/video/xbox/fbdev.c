@@ -792,7 +792,7 @@ static void riva_load_video_mode(struct fb_info *info)
 		crtc_hBlankStart = crtc_hDisplay;
 		crtc_hBlankEnd = (newmode.ext.htotal) / 8 - 1;
 		
-		crtc_vDisplay = info->var.yres - 1;
+		crtc_vDisplay = info->var.yres;
 		crtc_vStart = newmode.ext.crtcvstart;
 		crtc_vEnd = newmode.ext.crtcvstart + 3;
 		crtc_vTotal = newmode.ext.crtcvtotal;
