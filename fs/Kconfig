@@ -7,47 +7,14 @@ menu "File systems"
 config EXT2_FS
 	tristate "Second extended fs support"
 	help
-	  This is the de facto standard Linux file system (method to organize
-	  files on a storage device) for hard disks.
-
-	  You want to say Y here, unless you intend to use Linux exclusively
-	  from inside a DOS partition using the UMSDOS file system. The
-	  advantage of the latter is that you can get away without
-	  repartitioning your hard drive (which often implies backing
-	  everything up and restoring afterwards); the disadvantage is that
-	  Linux becomes susceptible to DOS viruses and that UMSDOS is somewhat
-	  slower than ext2fs. Even if you want to run Linux in this fashion,
-	  it might be a good idea to have ext2fs around: it enables you to
-	  read more floppy disks and facilitates the transition to a *real*
-	  Linux partition later. Another (rare) case which doesn't require
-	  ext2fs is a diskless Linux box which mounts all files over the
-	  network using NFS (in this case it's sufficient to say Y to "NFS
-	  file system support" below). Saying Y here will enlarge your kernel
-	  by about 44 KB.
-
-	  The Ext2fs-Undeletion mini-HOWTO, available from
-	  <http://www.tldp.org/docs.html#howto>, gives information about
-	  how to retrieve deleted files on ext2fs file systems.
-
-	  To change the behavior of ext2 file systems, you can use the tune2fs
-	  utility ("man tune2fs"). To modify attributes of files and
-	  directories on ext2 file systems, use chattr ("man chattr").
-
-	  Ext2fs partitions can be read from within DOS using the ext2tool
-	  command line tool package (available from
-	  <ftp://ibiblio.org/pub/Linux/system/filesystems/ext2/>) and from
-	  within Windows NT using the ext2nt command line tool package from
-	  <ftp://ibiblio.org/pub/Linux/utils/dos/>.  Explore2fs is a
-	  graphical explorer for ext2fs partitions which runs on Windows 95
-	  and Windows NT and includes experimental write support; it is
-	  available from
-	  <http://jnewbigin-pc.it.swin.edu.au/Linux/Explore2fs.htm>.
+	  Ext2 is a standard Linux file system for hard disks.
 
 	  To compile this file system support as a module, choose M here: the
 	  module will be called ext2.  Be aware however that the file system
 	  of your root partition (the one containing the directory /) cannot
-	  be compiled as a module, and so this could be dangerous.  Most
-	  everyone wants to say Y here.
+	  be compiled as a module, and so this could be dangerous.
+
+	  If unsure, say Y.
 
 config EXT2_FS_XATTR
 	bool "Ext2 extended attributes"
@@ -575,12 +542,17 @@ config UDF_FS
 
 	  If unsure, say N.
 
+config UDF_NLS
+	bool
+	default y
+	depends on (UDF_FS=m && NLS) || (UDF_FS=y && NLS=y)
+
 endmenu
 
 menu "DOS/FAT/NT Filesystems"
 
 config FAT_FS
-	tristate "DOS FAT fs support"
+	tristate
 	select NLS
 	help
 	  If you want to use one of the FAT-based file systems (the MS-DOS,
@@ -623,7 +595,7 @@ config FAT_FS
 
 config MSDOS_FS
 	tristate "MSDOS fs support"
-	depends on FAT_FS
+	select FAT_FS
 	help
 	  This allows you to mount MSDOS partitions of your hard drive (unless
 	  they are compressed; to access compressed MSDOS partitions under
@@ -652,7 +624,7 @@ config MSDOS_FS
 
 config VFAT_FS
 	tristate "VFAT (Windows-95) fs support"
-	depends on FAT_FS
+	select FAT_FS
 	help
 	  This option provides support for normal Windows file systems with
 	  long filenames.  That includes non-compressed FAT-based file systems
@@ -671,6 +643,25 @@ config VFAT_FS
 
 	  To compile this as a module, choose M here: the module will be called
 	  vfat.
+
+config FAT_DEFAULT_CODEPAGE
+	int "Default codepage for FAT"
+	depends on MSDOS_FS || VFAT_FS
+	default 437
+	help
+	  This option should be set to the codepage of your FAT filesystems.
+	  It can be overridden with the 'codepage' mount option.
+
+config FAT_DEFAULT_IOCHARSET
+	string "Default iocharset for FAT"
+	depends on VFAT_FS
+	default "iso8859-1"
+	help
+	  Set this to the default I/O character set you'd like FAT to use.
+	  It should probably match the character set that most of your
+	  FAT filesystems use, and can be overridded with the 'iocharset'
+	  mount option for FAT filesystems.  Note that UTF8 is *not* a
+	  supported charset for FAT filesystems.
 
 config UMSDOS_FS
 #dep_tristate '    UMSDOS: Unix-like file system on top of standard MSDOS fs' CONFIG_UMSDOS_FS $CONFIG_MSDOS_FS
@@ -1126,17 +1117,15 @@ config JFFS_FS_VERBOSE
 
 config JFFS_PROC_FS
 	bool "JFFS stats available in /proc filesystem"
-	depends on JFFS_FS && PROC
+	depends on JFFS_FS && PROC_FS
 	help
 	  Enabling this option will cause statistics from mounted JFFS file systems
 	  to be made available to the user in the /proc/fs/jffs/ directory.
 
 config JFFS2_FS
 	tristate "Journalling Flash File System v2 (JFFS2) support"
-	depends on MTD
 	select CRC32
-	select ZLIB_INFLATE
-	select ZLIB_DEFLATE
+	depends on MTD
 	help
 	  JFFS2 is the second generation of the Journalling Flash File System
 	  for use on diskless embedded devices. It provides improved wear
@@ -1164,21 +1153,84 @@ config JFFS2_FS_DEBUG
 	  messages at debug level 1 while the misbehaviour was occurring.
 
 config JFFS2_FS_NAND
-	bool "JFFS2 support for NAND flash (EXPERIMENTAL)"
-	depends on JFFS2_FS && EXPERIMENTAL
+	bool "JFFS2 support for NAND flash"
+	depends on JFFS2_FS
 	default n
 	help
-	  This enables the experimental support for NAND flash in JFFS2. NAND
-	  is a newer type of flash chip design than the traditional NOR flash,
-	  with higher density but a handful of characteristics which make it
-	  more interesting for the file system to use. Support for NAND flash
-	  is not yet complete and may corrupt data. For further information,
-	  including a link to the mailing list where details of the remaining
-	  work to be completed for NAND flash support can be found, see the 
-	  JFFS2 web site at <http://sources.redhat.com/jffs2>.
+	  This enables the support for NAND flash in JFFS2. NAND is a newer
+	  type of flash chip design than the traditional NOR flash, with
+	  higher density but a handful of characteristics which make it more
+	  interesting for the file system to use.
 
-	  Say 'N' unless you have NAND flash and you are willing to test and
-	  develop JFFS2 support for it.
+	  Say 'N' unless you have NAND flash.
+
+config JFFS2_COMPRESSION_OPTIONS
+	bool "Advanced compression options for JFFS2"
+	depends on JFFS2_FS
+	default n
+	help
+	  Enabling this option allows you to explicitly choose which
+	  compression modules, if any, are enabled in JFFS2. Removing
+	  compressors and mean you cannot read existing file systems,
+	  and enabling experimental compressors can mean that you
+	  write a file system which cannot be read by a standard kernel.
+
+	  If unsure, you should _definitely_ say 'N'.
+
+config JFFS2_ZLIB
+	bool "JFFS2 ZLIB compression support" if JFFS2_COMPRESSION_OPTIONS
+	select ZLIB_INFLATE
+	select ZLIB_DEFLATE
+	depends on JFFS2_FS
+	default y
+        help
+          Zlib is designed to be a free, general-purpose, legally unencumbered,
+          lossless data-compression library for use on virtually any computer 
+          hardware and operating system. See http://www.gzip.org/zlib/ for
+          further information.
+          
+          Say 'Y' if unsure.
+
+config JFFS2_RTIME
+	bool "JFFS2 RTIME compression support" if JFFS2_COMPRESSION_OPTIONS
+	depends on JFFS2_FS
+	default y
+        help
+          Rtime does manage to recompress already-compressed data. Say 'Y' if unsure.
+
+config JFFS2_RUBIN
+	bool "JFFS2 RUBIN compression support" if JFFS2_COMPRESSION_OPTIONS
+	depends on JFFS2_FS
+	default n
+        help
+          RUBINMIPS and DYNRUBIN compressors. Say 'N' if unsure.
+
+choice
+        prompt "JFFS2 default compression mode" if JFFS2_COMPRESSION_OPTIONS
+        default JFFS2_CMODE_PRIORITY
+        depends on JFFS2_FS
+        help
+          You can set here the default compression mode of JFFS2 from 
+          the avaiable compression modes. Don't touch if unsure.
+
+config JFFS2_CMODE_NONE
+        bool "no compression"
+        help
+          Uses no compression.
+
+config JFFS2_CMODE_PRIORITY
+        bool "priority"
+        help
+          Tries the compressors in a predefinied order and chooses the first 
+          successful one.
+
+config JFFS2_CMODE_SIZE
+        bool "size (EXPERIMENTAL)"
+        help
+          Tries all compressors and chooses the one which has the smallest 
+          result.
+
+endchoice
 
 config CRAMFS
 	tristate "Compressed ROM file system support"
@@ -1470,11 +1522,13 @@ config NFSD_V4
 	  If unsure, say N.
 
 config NFSD_TCP
-	bool "Provide NFS server over TCP support (EXPERIMENTAL)"
-	depends on NFSD && EXPERIMENTAL
+	bool "Provide NFS server over TCP support"
+	depends on NFSD
+	default y
 	help
-	  Enable NFS service over TCP connections.  This the officially
-	  still experimental, but seems to work well.
+	  If you want your NFS server to support TCP connections, say Y here.
+	  TCP connections usually perform better than the default UDP when
+	  the network is lossy or congested.  If unsure, say Y.
 
 config ROOT_NFS
 	bool "Root file system on NFS"
@@ -1582,7 +1636,7 @@ config SMB_NLS_REMOTE
 	  smbmount from samba 2.2.0 or later supports this.
 
 config CIFS
-	tristate "CIFS support (advanced network filesystem for Samba, Window and other CIFS compliant servers)(EXPERIMENTAL)"
+	tristate "CIFS support (advanced network filesystem for Samba, Window and other CIFS compliant servers)"
 	depends on INET
 	select NLS
 	help
@@ -1612,7 +1666,32 @@ config CIFS_STATS
         depends on CIFS
         help
           Enabling this option will cause statistics for each server share
-	  mounted by the cifs client to be displayed in /proc/fs/cifs/DebugData
+	  mounted by the cifs client to be displayed in /proc/fs/cifs/Stats
+
+config CIFS_XATTR
+        bool "CIFS extended attributes (EXPERIMENTAL)"
+        depends on CIFS
+        help
+          Extended attributes are name:value pairs associated with inodes by
+          the kernel or by users (see the attr(5) manual page, or visit
+          <http://acl.bestbits.at/> for details).  CIFS maps the name of
+          extended attributes beginning with the user namespace prefix
+          to SMB/CIFS EAs. EAs are stored on Windows servers without the
+          user namespace prefix, but their names are seen by Linux cifs clients
+          prefaced by the user namespace prefix. The system namespace
+          (used by some filesystems to store ACLs) is not supported at
+          this time.
+                                                                                                    
+          If unsure, say N.
+
+config CIFS_POSIX
+        bool "CIFS POSIX Extensions (EXPERIMENTAL)"
+        depends on CIFS
+        help
+          Enabling this option will cause the cifs client to attempt to
+	  negotiate a newer dialect with servers, such as Samba 3.0.5
+	  or later, that optionally can handle more POSIX like (rather
+	  than Windows like) file behavior.  If unsure, say N.
 
 config NCP_FS
 	tristate "NCP file system support (to mount NetWare volumes)"

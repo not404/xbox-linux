@@ -1615,7 +1615,8 @@ static int xboxfb_cursor(struct fb_info *info, struct fb_cursor *cursor)
 		u32 d_pitch = MAX_CURS/8;
 		u8 *msk = (u8 *) info->cursor.mask;
 		
-		fb_move_buf_aligned(info, &info->sprite, mask, d_pitch, msk, s_pitch, info->cursor.image.height);
+		fb_sysmove_buf_aligned(info, &info->sprite, mask, d_pitch,
+				msk, s_pitch, info->cursor.image.height);
 		bg = ((info->cmap.red[bg_idx] & 0xf8) << 7) |
 		     ((info->cmap.green[bg_idx] & 0xf8) << 2) |
 		     ((info->cmap.blue[bg_idx] & 0xf8) >> 3);
