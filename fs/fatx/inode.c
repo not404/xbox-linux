@@ -855,7 +855,7 @@ int fatx_fill_super_inode(struct super_block *sb, void *data, int silent,
 	if( cl_count >= 0xfff4 ) {
 		//FATX-32
 //		sb->s_maxbytes = 0xffffffff;
-		sb->s_maxbytes = FATX16_MAX_NON_LFS;
+		sb->s_maxbytes = FATX32_MAX_NON_LFS;
 		sbi->fatx_bits = 32;
 	} else {
 		sb->s_maxbytes = FATX16_MAX_NON_LFS;
