@@ -1040,9 +1040,11 @@ static int xboxfb_do_maximize(struct fb_info *info,
 		var->xres_virtual = modes[i].xres;
 		var->yres_virtual = modes[i].yres;
 
-		//printk(KERN_INFO PFX
-		//       "virtual resolution set to maximum of %dx%d\n",
-		//       var->xres_virtual, var->yres_virtual);
+#ifdef CONFIG_FB_RIVA_DEBUG
+		printk(KERN_INFO PFX
+		       "virtual resolution set to maximum of %dx%d\n",
+		       var->xres_virtual, var->yres_virtual);
+#endif
 	} else if (var->xres_virtual == -1) {
 		var->xres_virtual = (info->fix.smem_len * den /
 			(nom * var->yres_virtual)) & ~15;
