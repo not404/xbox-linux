@@ -716,9 +716,11 @@ static void riva_load_video_mode(struct fb_info *info)
 	newmode.ext.bpp = bpp;
 	newmode.ext.fb_start = par->riva_fb_start;
 
+	xbox_hdtv_mode hdtv_mode;
+	xbox_video_mode encoder_mode;
+	
 	switch (par->av_type) {
 		case AV_HDTV:
-			xbox_hdtv_mode hdtv_mode = HDTV_480p;
 			if (info->var.yres > 800) {
 				hdtv_mode = HDTV_1080i;
 				crtc_vStart = vStart + 31;
@@ -727,6 +729,8 @@ static void riva_load_video_mode(struct fb_info *info)
 			else if (info->var.yres > 600) {
 				hdtv_mode = HDTV_720p;
 			}
+			else hdtv_mode = HDTV_480p;
+
 			switch (par->video_encoder) {
 				case ENCODER_CONEXANT:
 					encoder_ok = conexant_calc_hdtv_mode(hdtv_mode, dotClock, &(newmode.encoder_regs));
@@ -777,7 +781,6 @@ static void riva_load_video_mode(struct fb_info *info)
 	
 		default:	
 			/* Normal composite */
-			xbox_video_mode encoder_mode;
 			encoder_mode.xres = info->var.xres;
 			encoder_mode.yres = info->var.yres;
 			encoder_mode.tv_encoding = par->tv_encoding;
