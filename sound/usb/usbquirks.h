@@ -653,80 +653,6 @@ YAMAHA_DEVICE(0x5008, "01V96"),
 		.type = QUIRK_MIDI_STANDARD_INTERFACE
 	}
 },
-{	/*
-	 * This quirk is for the Xbox Communicator
-	 * please NOTE:
-	 *
-	 *  THIS HAS _NOT_ BEEN TESTED THOROUGHLY!
-	 *
-	 *  IT IS REALLY JUST SOME COPY&PASTE FROM ABOVE.
-	 *  You have been warned.
-	 *
-	 *  In fact, I managed to kinda crash it and the Xbox hung while
-	 *   cleaning up alsa on shutdown.
-	 *
-	 * What worked was to cat <file> > /dev/dsp and get static
-	 *  on the headset. Getting Mplayer to output sound did not work
-	 *  for me (no music files and therefore no extensive tests, though).
-	 * Also I had no luck with the mic, mixer said it "found no elements".
-	 *
-	 * If you wanna try, go ahead and report to xbox-linux.org (ML, IRC)
-	 *
-	 * Marko Friedemann <mfr@bmx-chemnitz.de>
-	 */
-	USB_DEVICE(0x045e, 0x0283),
-	.driver_info = (unsigned long) & (const snd_usb_audio_quirk_t) {
-		.vendor_name = "Microsoft",
-		.product_name = "Xbox Communicator",
-		.ifnum = QUIRK_ANY_INTERFACE,
-		.type = QUIRK_COMPOSITE,
-		.data = & (const snd_usb_audio_quirk_t[]) {
-			{
-				.ifnum = 0,
-				.type = QUIRK_AUDIO_FIXED_ENDPOINT,
-				.data = & (const struct audioformat) {
-					/* seems might as well be wrong */
-					.format = SNDRV_PCM_FORMAT_S16_LE,
-					/* as might this */
-					.channels = 1,
-					.iface = 0,
-					.altsetting = 0,
-					.altset_idx = 0,
-					.attributes = 0,
-					.endpoint = 0x04,
-					.ep_attr = 0x05,
-					/* and those */
-					.rates = SNDRV_PCM_RATE_CONTINUOUS,
-					.rate_min = 44100,
-					.rate_max = 44100,
-				}
-			},
-			{
-				.ifnum = 1,
-				.type = QUIRK_AUDIO_FIXED_ENDPOINT,
-				.data = & (const struct audioformat) {
-					/* seems might as well be wrong */
-					.format = SNDRV_PCM_FORMAT_S16_LE,
-					/* as might this */
-					.channels = 1,
-					.iface = 1,
-					.altsetting = 0,
-					.altset_idx = 0,
-					.attributes = 0,
-					.endpoint = 0x85,
-					.ep_attr = 0x05,
-					/* and those */
-					.rates = SNDRV_PCM_RATE_CONTINUOUS,
-					.rate_min = 44100,
-					.rate_max = 44100,
-				}
-			},
-			{
-				.ifnum = -1
-			}
-		}
-	}
-},
 
 /* Midiman/M-Audio devices */
 {
@@ -912,6 +838,81 @@ YAMAHA_DEVICE(0x5008, "01V96"),
 		.product_name = "PHASE 26",
 		.ifnum = 3,
 		.type = QUIRK_MIDI_STANDARD_INTERFACE
+	}
+},
+
+{	/*
+	 * This quirk is for the Xbox Communicator
+	 * please NOTE:
+	 *
+	 *  THIS HAS _NOT_ BEEN TESTED THOROUGHLY!
+	 *
+	 *  IT IS REALLY JUST SOME COPY&PASTE FROM ABOVE.
+	 *  You have been warned.
+	 *
+	 *  In fact, I managed to kinda crash it and the Xbox hung while
+	 *   cleaning up alsa on shutdown.
+	 *
+	 * What worked was to cat <file> > /dev/dsp and get static
+	 *  on the headset. Getting Mplayer to output sound did not work
+	 *  for me (no music files and therefore no extensive tests, though).
+	 * Also I had no luck with the mic, mixer said it "found no elements".
+	 *
+	 * If you wanna try, go ahead and report to xbox-linux.org (ML, IRC)
+	 *
+	 * Marko Friedemann <mfr@bmx-chemnitz.de>
+	 */
+	USB_DEVICE(0x045e, 0x0283),
+	.driver_info = (unsigned long) & (const snd_usb_audio_quirk_t) {
+		.vendor_name = "Microsoft",
+		.product_name = "Xbox Communicator",
+		.ifnum = QUIRK_ANY_INTERFACE,
+		.type = QUIRK_COMPOSITE,
+		.data = & (const snd_usb_audio_quirk_t[]) {
+			{
+				.ifnum = 0,
+				.type = QUIRK_AUDIO_FIXED_ENDPOINT,
+				.data = & (const struct audioformat) {
+					/* these might as well be wrong */
+					.format = SNDRV_PCM_FORMAT_S16_LE,
+					/* same for these */
+					.channels = 1,
+					.iface = 0,
+					.altsetting = 0,
+					.altset_idx = 0,
+					.attributes = 0,
+					.endpoint = 0x04,
+					.ep_attr = 0x05,
+					/* and those */
+					.rates = SNDRV_PCM_RATE_CONTINUOUS,
+					.rate_min = 44100,
+					.rate_max = 44100,
+				}
+			},
+			{
+				.ifnum = 1,
+				.type = QUIRK_AUDIO_FIXED_ENDPOINT,
+				.data = & (const struct audioformat) {
+					/* these might as well be wrong */
+					.format = SNDRV_PCM_FORMAT_S16_LE,
+					/* same for these */
+					.channels = 1,
+					.iface = 1,
+					.altsetting = 0,
+					.altset_idx = 0,
+					.attributes = 0,
+					.endpoint = 0x85,
+					.ep_attr = 0x05,
+					/* and those */
+					.rates = SNDRV_PCM_RATE_CONTINUOUS,
+					.rate_min = 44100,
+					.rate_max = 44100,
+				}
+			},
+			{
+				.ifnum = -1
+			}
+		}
 	}
 },
 
