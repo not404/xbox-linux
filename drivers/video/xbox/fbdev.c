@@ -654,6 +654,8 @@ static void riva_load_video_mode(struct fb_info *info)
 	struct riva_par *par = (struct riva_par *) info->par;
 	struct riva_regs newmode;
 	int encoder_ok = 0;	
+	xbox_hdtv_mode hdtv_mode;
+	xbox_video_mode encoder_mode;
 	
 	/* time to calculate */
 	xboxfb_blank(1, info);
@@ -716,9 +718,6 @@ static void riva_load_video_mode(struct fb_info *info)
 	newmode.ext.bpp = bpp;
 	newmode.ext.fb_start = par->riva_fb_start;
 
-	xbox_hdtv_mode hdtv_mode;
-	xbox_video_mode encoder_mode;
-	
 	switch (par->av_type) {
 		case AV_HDTV:
 			if (info->var.yres > 800) {
