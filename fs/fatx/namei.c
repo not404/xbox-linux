@@ -13,7 +13,9 @@
 #include <linux/fatx_fs.h>
 #include <linux/smp_lock.h>
 
-#define PRINTK(format, args...) do { if (debug) printk( format, ##args ); } while(0)
+extern unsigned int fatx_debug;
+
+#define PRINTK(format, args...) do { if (fatx_debug) printk( format, ##args ); } while(0)
 
 /* Characters that are undesirable in an MS-DOS file name */
 static unsigned char bad_chars[] = "*?<>|\"";

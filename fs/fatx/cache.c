@@ -16,7 +16,9 @@
 /* this must be > 0. */
 #define FAT_MAX_CACHE	8
 
-#define PRINTK(format, args...) do { if (debug) printk( format, ##args ); } while(0)
+extern unsigned int fatx_debug;
+
+#define PRINTK(format, args...) do { if (fatx_debug) printk( format, ##args ); } while(0)
 
 struct fatx_cache {
 	struct list_head cache_list;

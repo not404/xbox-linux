@@ -30,13 +30,9 @@
 #define CONFIG_FAT_DEFAULT_IOCHARSET    ""
 #endif
 
-// Breaks compilation - ed, fix?
-// fs/built-in.o(.bss+0x1a90): multiple definition of `debug'
-// arch/i386/kernel/built-in.o(.text+0x2130): first defined here
-// make: *** [vmlinux] Error 1
-//unsigned int debug = 0;
+unsigned int fatx_debug = 0;
 
-#define PRINTK(format, args...) do { if (debug) printk( format, ##args ); } while(0)
+#define PRINTK(format, args...) do { if (fatx_debug) printk( format, ##args ); } while(0)
 
 static char fatx_default_iocharset[] = CONFIG_FAT_DEFAULT_IOCHARSET;
 
@@ -983,5 +979,5 @@ module_exit(exit_fatx_fs)
 
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("FATX filesystem support");
-MODULE_PARM(debug,"i");
-MODULE_PARM_DESC(debug,"turn on fatx debugging output");
+MODULE_PARM(fatx_debug,"i");
+MODULE_PARM_DESC(fatx_debug,"turn on fatx debugging output");
