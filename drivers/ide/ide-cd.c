@@ -570,7 +570,7 @@ static void cdrom_queue_request_sense(ide_drive_t *drive, void *sense,
 /*
  * ide_error() takes action based on the error returned by the drive.
  */
-ide_startstop_t ide_cdrom_error (ide_drive_t *drive, const char *msg, byte stat)
+static ide_startstop_t ide_cdrom_error (ide_drive_t *drive, const char *msg, byte stat)
 {
 	struct request *rq;
 	byte err;
@@ -606,7 +606,7 @@ ide_startstop_t ide_cdrom_error (ide_drive_t *drive, const char *msg, byte stat)
 	return ide_stopped;
 }
 
-ide_startstop_t ide_cdrom_abort (ide_drive_t *drive, const char *msg)
+static ide_startstop_t ide_cdrom_abort (ide_drive_t *drive, const char *msg)
 {
 	struct request *rq;
 
@@ -873,20 +873,14 @@ static ide_startstop_t cdrom_start_packet_command(ide_drive_t *drive,
 {
 	ide_startstop_t startstop;
 	struct cdrom_info *info = drive->driver_data;
+	ide_hwif_t *hwif = drive->hwif;
 
 	/* Wait for the controller to be idle. */
 	if (ide_wait_stat(&startstop, drive, 0, BUSY_STAT, WAIT_READY))
 		return startstop;
 
-	if (info->dma) {
-		if (info->cmd == READ) {
-			info->dma = !HWIF(drive)->ide_dma_read(drive);
-		} else if (info->cmd == WRITE) {
-			info->dma = !HWIF(drive)->ide_dma_write(drive);
-		} else {
-			printk("ide-cd: DMA set, but not allowed\n");
-		}
-	}
+	if (info->dma)
+		info->dma = !hwif->dma_setup(drive);
 
 	/* Set up the controller registers. */
 	/* FIXME: for Virtual DMA we must check harder */
@@ -904,8 +898,14 @@ static ide_startstop_t cdrom_start_packet_command(ide_drive_t *drive,
 		ide_execute_command(drive, WIN_PACKETCMD, handler, ATAPI_WAIT_PC, cdrom_timer_expiry);
 		return ide_started;
 	} else {
+		unsigned long flags;
+
 		/* packet command */
-		HWIF(drive)->OUTB(WIN_PACKETCMD, IDE_COMMAND_REG);
+		spin_lock_irqsave(&ide_lock, flags);
+		hwif->OUTBSYNC(drive, WIN_PACKETCMD, IDE_COMMAND_REG);
+		ndelay(400);
+		spin_unlock_irqrestore(&ide_lock, flags);
+
 		return (*handler) (drive);
 	}
 }
@@ -924,6 +924,7 @@ static ide_startstop_t cdrom_transfer_packet_command (ide_drive_t *drive,
 					  struct request *rq,
 					  ide_handler_t *handler)
 {
+	ide_hwif_t *hwif = drive->hwif;
 	int cmd_len;
 	struct cdrom_info *info = drive->driver_data;
 	ide_startstop_t startstop;
@@ -955,7 +956,7 @@ static ide_startstop_t cdrom_transfer_packet_command (ide_drive_t *drive,
 
 	/* Start the DMA if need be */
 	if (info->dma)
-		(void) HWIF(drive)->ide_dma_begin(drive);
+		hwif->dma_start(drive);
 
 	return ide_started;
 }
@@ -1940,6 +1941,8 @@ static ide_startstop_t cdrom_start_write(ide_drive_t *drive, struct request *rq)
 	info->dma = drive->using_dma ? 1 : 0;
 	info->cmd = WRITE;
 
+	info->devinfo.media_written = 1;
+
 	/* Start sending the write request to the drive. */
 	return cdrom_start_packet_command(drive, 32768, cdrom_start_write_cont);
 }
@@ -2007,7 +2010,7 @@ ide_do_rw_cdrom (ide_drive_t *drive, struct request *rq, sector_t block)
 			}
 			CDROM_CONFIG_FLAGS(drive)->seeking = 0;
 		}
-		if (IDE_LARGE_SEEK(info->last_block, block, IDECD_SEEK_THRESHOLD) && drive->dsc_overlap) {
+		if ((rq_data_dir(rq) == READ) && IDE_LARGE_SEEK(info->last_block, block, IDECD_SEEK_THRESHOLD) && drive->dsc_overlap) {
 			action = cdrom_start_seek(drive, block);
 		} else {
 			if (rq_data_dir(rq) == READ)
@@ -2391,24 +2394,30 @@ static int cdrom_read_toc(ide_drive_t *drive, struct request_sense *sense)
 	/* Read the multisession information. */
 	if (toc->hdr.first_track != CDROM_LEADOUT) {
 		/* Read the multisession information. */
-		stat = cdrom_read_tocentry(drive, 0, 1, 1, (char *)&ms_tmp,
+		stat = cdrom_read_tocentry(drive, 0, 0, 1, (char *)&ms_tmp,
 					   sizeof(ms_tmp), sense);
 		if (stat) return stat;
+
+		toc->last_session_lba = be32_to_cpu(ms_tmp.ent.addr.lba);
 	} else {
-		ms_tmp.ent.addr.msf.minute = 0;
-		ms_tmp.ent.addr.msf.second = 2;
-		ms_tmp.ent.addr.msf.frame  = 0;
 		ms_tmp.hdr.first_track = ms_tmp.hdr.last_track = CDROM_LEADOUT;
+		toc->last_session_lba = msf_to_lba(0, 2, 0); /* 0m 2s 0f */
 	}
 
 #if ! STANDARD_ATAPI
-	if (CDROM_CONFIG_FLAGS(drive)->tocaddr_as_bcd)
-		msf_from_bcd (&ms_tmp.ent.addr.msf);
-#endif  /* not STANDARD_ATAPI */
+	if (CDROM_CONFIG_FLAGS(drive)->tocaddr_as_bcd) {
+		/* Re-read multisession information using MSF format */
+		stat = cdrom_read_tocentry(drive, 0, 1, 1, (char *)&ms_tmp,
+					   sizeof(ms_tmp), sense);
+		if (stat)
+			return stat;
 
-	toc->last_session_lba = msf_to_lba (ms_tmp.ent.addr.msf.minute,
-					    ms_tmp.ent.addr.msf.second,
-					    ms_tmp.ent.addr.msf.frame);
+		msf_from_bcd (&ms_tmp.ent.addr.msf);
+		toc->last_session_lba = msf_to_lba(ms_tmp.ent.addr.msf.minute,
+					  	   ms_tmp.ent.addr.msf.second,
+						   ms_tmp.ent.addr.msf.frame);
+	}
+#endif  /* not STANDARD_ATAPI */
 
 	toc->xa_flag = (ms_tmp.hdr.first_track != ms_tmp.hdr.last_track);
 
@@ -2995,8 +3004,10 @@ int ide_cdrom_probe_capabilities (ide_drive_t *drive)
 		CDROM_CONFIG_FLAGS(drive)->no_eject = 0;
 	if (cap.cd_r_write)
 		CDROM_CONFIG_FLAGS(drive)->cd_r = 1;
-	if (cap.cd_rw_write)
+	if (cap.cd_rw_write) {
 		CDROM_CONFIG_FLAGS(drive)->cd_rw = 1;
+		CDROM_CONFIG_FLAGS(drive)->ram = 1;
+	}
 	if (cap.test_write)
 		CDROM_CONFIG_FLAGS(drive)->test_write = 1;
 	if (cap.dvd_ram_read || cap.dvd_r_read || cap.dvd_rom)
@@ -3075,10 +3086,9 @@ int ide_cdrom_probe_capabilities (ide_drive_t *drive)
 
 	printk(", %dkB Cache", be16_to_cpu(cap.buffer_size));
 
-#ifdef CONFIG_BLK_DEV_IDEDMA
 	if (drive->using_dma)
-		(void) HWIF(drive)->ide_dma_verbose(drive);
-#endif /* CONFIG_BLK_DEV_IDEDMA */
+		ide_dma_verbose(drive);
+
 	printk("\n");
 
 	return nslots;
@@ -3523,9 +3533,9 @@ static struct block_device_operations idecd_ops = {
 };
 
 /* options */
-char *ignore = NULL;
+static char *ignore = NULL;
 
-MODULE_PARM(ignore, "s");
+module_param(ignore, charp, 0400);
 MODULE_DESCRIPTION("ATAPI CD-ROM Driver");
 
 static int ide_cdrom_attach (ide_drive_t *drive)

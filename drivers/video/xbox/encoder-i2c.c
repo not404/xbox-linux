@@ -29,7 +29,10 @@
 
 #define DRIVER_NAME "xbox-tv-i2c"
 
+
+#ifndef MODULE
 extern int __init i2c_xbox_init(void);
+#endif
 
 static int tv_attach_adapter(struct i2c_adapter *adap);
 
@@ -111,7 +114,11 @@ static int tv_attach_adapter(struct i2c_adapter *adap)
 
 int tv_i2c_init(void) {
 	int res;
+
+#ifndef MODULE
 	i2c_xbox_init();
+#endif
+
 	if ((res = i2c_add_driver(&tv_driver))) {
 		printk(KERN_ERR DRIVER_NAME ": XBox tv driver registration failed.\n");
 		return res;
@@ -170,7 +177,7 @@ int xcalibur_i2c_read_block(unsigned char adr, unsigned char *data) {
 		return -1;
 	}
 	udelay(500);
-	return i2c_smbus_read_block_data(&xcalibur_client, adr, data);
+	return i2c_smbus_read_i2c_block_data(&xcalibur_client, adr, data);
 }
 
 int xcalibur_i2c_write_block(unsigned char adr, unsigned char *data, int len){

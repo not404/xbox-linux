@@ -150,9 +150,7 @@ static int forceCRTC __initdata = -1;
 static int nomtrr __initdata = 0;
 #endif
 
-#ifndef MODULE
 static char *mode_option __initdata = NULL;
-#endif
 
 static xbox_tv_encoding tv_encoding  __initdata = TV_ENC_INVALID;
 static xbox_av_type av_type __initdata = AV_INVALID;
@@ -416,53 +414,37 @@ static inline void reverse_order(u32 *l)
  * parameters) will be updated.
  *
  * CALLED FROM:
- * xboxfb_cursor()
+ * rivafb_cursor()
  */
-static void xboxfb_load_cursor_image(struct riva_par *par, u8 *data, 
-				     u8* mask, u16 bg, u16 fg, u32 w, u32 h)
+static void xboxfb_load_cursor_image(struct riva_par *par, u8 *data8,
+				     u16 bg, u16 fg, u32 w, u32 h)
 {
 	int i, j, k = 0;
-	u32 b, m, tmp;
+	u32 b, tmp;
+	u32 *data = (u32 *)data8;
+	bg = le16_to_cpu(bg);
+	fg = le16_to_cpu(fg);
+
+	w = (w + 1) & ~1;
 
 	for (i = 0; i < h; i++) {
-		b = *((u32 *)data);
-		data = (u8 *)((u32 *)data + 1);
-		m = *((u32 *)mask);
-		mask = (u8 *)((u32 *)mask + 1);
+		b = *data++;
 		reverse_order(&b);
 		
 		for (j = 0; j < w/2; j++) {
 			tmp = 0;
 #if defined (__BIG_ENDIAN)
 			tmp = (b & (1 << 31)) ? fg << 16 : bg << 16;
-			if (m & (1 << 31)) {
-				tmp |= 1 << 31;
-			}
 			b <<= 1;
-			m <<= 1;
-
 			tmp |= (b & (1 << 31)) ? fg : bg;
-			if (m & (1 << 31)) {
-				tmp |= 1 << 15;
-			}
 			b <<= 1;
-			m <<= 1;
 #else
 			tmp = (b & 1) ? fg : bg;
-			if (m & 1) {
-				tmp |= 1 << 15;
-			}
 			b >>= 1;
-			m >>= 1;
-			
 			tmp |= (b & 1) ? fg << 16 : bg << 16;
-			if (m & 1) {
-				tmp |= 1 << 31;
-			}
 			b >>= 1;
-			m >>= 1;
 #endif
-			writel(tmp, par->riva.CURSOR + k++);
+			writel(tmp, &par->riva.CURSOR[k++]);
 		}
 		k += (MAX_CURS - w)/2;
 	}
@@ -1590,60 +1572,88 @@ static void xboxfb_imageblit(struct fb_info *info,
 static int xboxfb_cursor(struct fb_info *info, struct fb_cursor *cursor)
 {
 	struct riva_par *par = (struct riva_par *) info->par;
-	u8 mask[MAX_CURS * MAX_CURS/8];
+	u8 data[MAX_CURS * MAX_CURS/8];
 	u16 fg, bg;
+	int i, set = cursor->set;
+
+	if (cursor->image.width > MAX_CURS ||
+	    cursor->image.height > MAX_CURS)
+		return soft_cursor(info, cursor);
 
 	par->riva.ShowHideCursor(&par->riva, 0);
 
-	if (cursor->set & FB_CUR_SETPOS) {
+	if (par->cursor_reset) {
+		set = FB_CUR_SETALL;
+		par->cursor_reset = 0;
+	}
+
+	if (set & FB_CUR_SETSIZE)
+		memset_io(par->riva.CURSOR, 0, MAX_CURS * MAX_CURS * 2);
+
+	if (set & FB_CUR_SETPOS) {
 		u32 xx, yy, temp;
 
-		info->cursor.image.dx = cursor->image.dx;
-		info->cursor.image.dy = cursor->image.dy;
 		yy = cursor->image.dy - info->var.yoffset;
 		xx = cursor->image.dx - info->var.xoffset;
 		temp = xx & 0xFFFF;
 		temp |= yy << 16;
 
-		par->riva.PRAMDAC[0x0000300/4] = temp;
+		NV_WR32(par->riva.PRAMDAC, 0x0000300, temp);
 	}
 
-	if (cursor->set & FB_CUR_SETSIZE) {
-		info->cursor.image.height = cursor->image.height;
-		info->cursor.image.width = cursor->image.width;
-		memset_io(par->riva.CURSOR, 0, MAX_CURS * MAX_CURS * 2);
-	}
 
-	if (cursor->set & FB_CUR_SETCMAP) {
-		info->cursor.image.bg_color = cursor->image.bg_color;
-		info->cursor.image.fg_color = cursor->image.fg_color;
-	}
-
-	if (cursor->set & (FB_CUR_SETSHAPE | FB_CUR_SETCMAP)) {
-		u32 bg_idx = info->cursor.image.bg_color;
-		u32 fg_idx = info->cursor.image.fg_color;
-		u32 s_pitch = (info->cursor.image.width+7) >> 3;
+	if (set & (FB_CUR_SETSHAPE | FB_CUR_SETCMAP | FB_CUR_SETIMAGE)) {
+		u32 bg_idx = cursor->image.bg_color;
+		u32 fg_idx = cursor->image.fg_color;
+		u32 s_pitch = (cursor->image.width+7) >> 3;
 		u32 d_pitch = MAX_CURS/8;
-		u8 *msk = (u8 *) info->cursor.mask;
+		u8 *dat = (u8 *) cursor->image.data;
+		u8 *msk = (u8 *) cursor->mask;
+		u8 *src;
 		
-		fb_sysmove_buf_aligned(info, &info->sprite, mask, d_pitch,
-				msk, s_pitch, info->cursor.image.height);
-		bg = ((info->cmap.red[bg_idx] & 0xf8) << 7) |
-		     ((info->cmap.green[bg_idx] & 0xf8) << 2) |
-		     ((info->cmap.blue[bg_idx] & 0xf8) >> 3);
+		src = kmalloc(s_pitch * cursor->image.height, GFP_ATOMIC);
 
-		fg = ((info->cmap.red[fg_idx] & 0xf8) << 7) |
-		     ((info->cmap.green[fg_idx] & 0xf8) << 2) |
-		     ((info->cmap.blue[fg_idx] & 0xf8) >> 3);
+		if (src) {
+			switch (cursor->rop) {
+			case ROP_XOR:
+				for (i = 0; i < s_pitch * cursor->image.height;
+				     i++)
+					src[i] = dat[i] ^ msk[i];
+				break;
+			case ROP_COPY:
+			default:
+				for (i = 0; i < s_pitch * cursor->image.height;
+				     i++)
+					src[i] = dat[i] & msk[i];
+				break;
+			}
 
-		par->riva.LockUnlock(&par->riva, 0);
+			fb_sysmove_buf_aligned(info, &info->pixmap, data,
+					       d_pitch, src, s_pitch,
+					       cursor->image.height);
 
-		xboxfb_load_cursor_image(par, mask, mask, bg, fg,
-					 info->cursor.image.width, 
-					 info->cursor.image.height);
+			bg = ((info->cmap.red[bg_idx] & 0xf8) << 7) |
+				((info->cmap.green[bg_idx] & 0xf8) << 2) |
+				((info->cmap.blue[bg_idx] & 0xf8) >> 3) |
+				1 << 15;
+
+			fg = ((info->cmap.red[fg_idx] & 0xf8) << 7) |
+				((info->cmap.green[fg_idx] & 0xf8) << 2) |
+				((info->cmap.blue[fg_idx] & 0xf8) >> 3) |
+				1 << 15;
+
+			par->riva.LockUnlock(&par->riva, 0);
+
+			xboxfb_load_cursor_image(par, data, bg, fg,
+						 cursor->image.width,
+						 cursor->image.height);
+			kfree(src);
+		}
 	}
-	if (info->cursor.enable)
+
+	if (cursor->enable)
 		par->riva.ShowHideCursor(&par->riva, 1);
+
 	return 0;
 }
 
@@ -2165,7 +2175,6 @@ static void __exit xboxfb_remove(struct pci_dev *pd)
  *
  * ------------------------------------------------------------------------- */
 
-#ifndef MODULE
 int __init xboxfb_setup(char *options)
 {
 	char *this_opt;
@@ -2207,7 +2216,6 @@ int __init xboxfb_setup(char *options)
 	}
 	return 0;
 }
-#endif /* !MODULE */
 
 static struct pci_driver xboxfb_driver = {
 	.name		= "xboxfb",
