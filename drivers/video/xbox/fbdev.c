@@ -2224,14 +2224,24 @@ static struct pci_driver xboxfb_driver = {
  *
  * ------------------------------------------------------------------------- */
 
-int __init xboxfb_init(void)
+int __devinit xboxfb_init(void)
 {
-	if (pci_register_driver(&xboxfb_driver) > 0)
+        char *option = NULL;
+
+	//Ignore error here, vesafb does!
+	fb_get_options("xboxfb", &option);
+//        if (fb_get_options("xboxfb", &option))
+//		return -ENODEV;
+	xboxfb_setup(option);
+	
+	if (pci_register_driver(&xboxfb_driver) > 0) {
 		return 0;
-	pci_unregister_driver(&xboxfb_driver);
-	return -ENODEV;
+	}
+      	pci_unregister_driver(&xboxfb_driver);
+     	return -ENODEV;
 }
 
+module_init(xboxfb_init);
 
 #ifdef MODULE
 static void __exit xboxfb_exit(void)
@@ -2239,7 +2249,6 @@ static void __exit xboxfb_exit(void)
 	pci_unregister_driver(&xboxfb_driver);
 }
 
-module_init(xboxfb_init);
 module_exit(xboxfb_exit);
 
 MODULE_PARM(flatpanel, "i");

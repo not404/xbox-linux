@@ -289,7 +289,7 @@ config FS_POSIX_ACL
 # 	Never use this symbol for ifdefs.
 #
 	bool
-	depends on EXT2_FS_POSIX_ACL || EXT3_FS_POSIX_ACL || JFS_POSIX_ACL || REISERFS_FS_POSIX_ACL
+	depends on EXT2_FS_POSIX_ACL || EXT3_FS_POSIX_ACL || JFS_POSIX_ACL || REISERFS_FS_POSIX_ACL || NFSD_V4
 	default y
 
 config XFS_FS
@@ -650,18 +650,21 @@ config FAT_DEFAULT_CODEPAGE
 	default 437
 	help
 	  This option should be set to the codepage of your FAT filesystems.
-	  It can be overridden with the 'codepage' mount option.
+	  It can be overridden with the "codepage" mount option.
+	  See <file:Documentation/filesystems/vfat.txt> for more information.
 
 config FAT_DEFAULT_IOCHARSET
 	string "Default iocharset for FAT"
 	depends on VFAT_FS
 	default "iso8859-1"
 	help
-	  Set this to the default I/O character set you'd like FAT to use.
-	  It should probably match the character set that most of your
-	  FAT filesystems use, and can be overridded with the 'iocharset'
-	  mount option for FAT filesystems.  Note that UTF8 is *not* a
-	  supported charset for FAT filesystems.
+	  Set this to the default input/output character set you'd
+	  like FAT to use. It should probably match the character set
+	  that most of your FAT filesystems use, and can be overridden
+	  with the "iocharset" mount option for FAT filesystems.
+	  Note that "utf8" is not recommended for FAT filesystems.
+	  If unsure, you shouldn't set "utf8" here.
+	  See <file:Documentation/filesystems/vfat.txt> for more information.
 
 config UMSDOS_FS
 #dep_tristate '    UMSDOS: Unix-like file system on top of standard MSDOS fs' CONFIG_UMSDOS_FS $CONFIG_MSDOS_FS
@@ -1239,7 +1242,7 @@ config JFFS2_CMODE_SIZE
 endchoice
 
 config CRAMFS
-	tristate "Compressed ROM file system support"
+	tristate "Compressed ROM file system support (cramfs)"
 	select ZLIB_INFLATE
 	help
 	  Saying Y here includes support for CramFs (Compressed ROM File
@@ -1441,8 +1444,8 @@ config NFS_V3
 	bool "Provide NFSv3 client support"
 	depends on NFS_FS
 	help
-	  Say Y here if you want your NFS client to be able to speak the newer
-	  version 3 of the NFS protocol.
+	  Say Y here if you want your NFS client to be able to speak version
+	  3 of the NFS protocol.
 
 	  If unsure, say Y.
 
@@ -1521,6 +1524,7 @@ config NFSD_V3
 config NFSD_V4
 	bool "Provide NFSv4 server support (EXPERIMENTAL)"
 	depends on NFSD_V3 && EXPERIMENTAL
+	select NFSD_TCP
 	help
 	  If you would like to include the NFSv4 server as well as the NFSv2
 	  and NFSv3 servers, say Y here.  This feature is experimental, and
@@ -1582,6 +1586,22 @@ config RPCSEC_GSS_KRB5
 
 	  Note: Requires an auxiliary userspace daemon which may be found on
 		http://www.citi.umich.edu/projects/nfsv4/
+
+	  If unsure, say N.
+
+config RPCSEC_GSS_SPKM3
+	tristate "Secure RPC: SPKM3 mechanism (EXPERIMENTAL)"
+	depends on SUNRPC && EXPERIMENTAL
+	select SUNRPC_GSS
+	select CRYPTO
+	select CRYPTO_MD5
+	select CRYPTO_DES
+	help
+	  Provides for secure RPC calls by means of a gss-api
+	  mechanism based on the SPKM3 public-key mechanism.
+
+	  Note: Requires an auxiliary userspace daemon which may be found on
+	  	http://www.citi.umich.edu/projects/nfsv4/
 
 	  If unsure, say N.
 
