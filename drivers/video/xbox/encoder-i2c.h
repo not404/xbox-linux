@@ -23,6 +23,8 @@ int conexant_i2c_read_reg(unsigned char adr);
 int conexant_i2c_write_reg(unsigned char adr, unsigned char value);
 int focus_i2c_read_reg(unsigned char adr);
 int focus_i2c_write_reg(unsigned char adr, unsigned char value);
+int xlb_i2c_read_reg(unsigned char adr);
+int xlb_i2c_write_reg(unsigned char adr, unsigned char value);
 unsigned char pic_i2c_read_reg(unsigned char adr);
 unsigned char eeprom_i2c_read(unsigned char adr);
 

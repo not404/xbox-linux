@@ -36,17 +36,20 @@ static const double pll_base = 13.5e6;
 
 xbox_encoder_type tv_get_video_encoder(void) {
 	unsigned char b = 0;
-	xbox_encoder_type encoder = 0;
 
 	b = conexant_i2c_read_reg(0x00);
 	if(b != 255) {
-		encoder = ENCODER_CONEXANT;
+		return ENCODER_CONEXANT;
 	}
 	b = focus_i2c_read_reg(0x00);
 	if(b != 255) {
-		encoder = ENCODER_FOCUS;
+		return ENCODER_FOCUS;
 	}
-	return encoder;
+	b = xlb_i2c_read_reg(0x00);
+	if(b != 255) {
+		return ENCODER_XLB;
+	}
+	return 0;
 }
 
 int tv_init(void) {
@@ -103,8 +106,7 @@ void tv_load_mode(unsigned char * mode) {
 		conexant_i2c_write_reg(0xAC, 0x8C);
 		
 	} 
-	
-	if(encoder == ENCODER_FOCUS) {
+	else if(encoder == ENCODER_FOCUS) {
 		//Set the command register soft reset
 		focus_i2c_write_reg(0x0c,0x03);
 		focus_i2c_write_reg(0x0d,0x21);
@@ -118,6 +120,9 @@ void tv_load_mode(unsigned char * mode) {
 		focus_i2c_write_reg(0x0c,b);
 		b = focus_i2c_read_reg(0x0d);
 		focus_i2c_write_reg(0x0d,b);
+	}
+	else if (encoder == ENCODER_XLB) {
+
 	}
 }
 
@@ -139,6 +144,9 @@ void tv_save_mode(unsigned char * mode) {
 		for (n=0;n<0xc4;n++) {
 			mode[n] = focus_i2c_read_reg(n);
 		}
+
+	}
+	else if (encoder == ENCODER_XLB) {
 
 	}
 }
