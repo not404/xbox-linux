@@ -224,7 +224,7 @@ static void xpad_mouse_close(struct input_dev *dev)
 	del_timer(&xpad->timer);
 }
 
-int xpad_mouse_init_input_device(struct usb_interface *intf, struct xpad_device device)
+void xpad_mouse_init_input_device(struct usb_interface *intf, struct xpad_device device)
 {
 	struct usb_xpad *xpad = usb_get_intfdata(intf);
 	struct usb_device *udev = interface_to_usbdev(intf);
