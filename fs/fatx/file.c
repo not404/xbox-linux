@@ -13,8 +13,6 @@
 #include <linux/smp_lock.h>
 #include <linux/buffer_head.h>
 
-extern unsigned int fatx_debug;
-
 #define PRINTK(format, args...) do { if (fatx_debug) printk( format, ##args ); } while(0)
 
 static ssize_t fatx_file_write(struct file *filp, const char __user *buf,

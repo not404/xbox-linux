@@ -23,8 +23,6 @@
 #include <linux/buffer_head.h>
 #include <asm/uaccess.h>
 
-extern unsigned int fatx_debug;
-
 #define PRINTK(format, args...) do { if (fatx_debug) printk( format, ##args ); } while(0)
 
 static inline void fatx_printname(const char *name, int length)

@@ -236,7 +236,7 @@ extern struct inode *fatx_build_inode(struct super_block *sb,
 			struct fatx_dir_entry *de, loff_t i_pos, int *res);
 int fatx_fill_super_inode(struct super_block *sb, void *data, int silent,
 		   struct inode_operations *fs_dir_inode_ops);
-extern unsigned int debug;
+extern unsigned int fatx_debug;
 
 /* fatx/misc.c */
 extern int fatx_date_dos2unix(unsigned short time,unsigned short date);
