@@ -78,7 +78,7 @@ static int fatx_raw_scan_sector(struct super_block *sb,	int sector,
 			return -ENOENT;
 		} else if (name) { //search for name
 			done = 	(data[entry].name_length == name_length) &&
-				!fatx_strnicmp(t,data[entry].name,name,name_length);
+				!strncmp(data[entry].name,name,name_length);
 		} else if (!i_pos) { /* count subdirectories */
 			done = 0;
 			if (!FATX_IS_FREE(&data[entry]) && (data[entry].attr & ATTR_DIR))
@@ -307,7 +307,10 @@ int fatx_new_dir(struct inode *dir, struct inode *parent)
 	}
 	/* zeroed out, so... */
 	de = (struct fatx_dir_entry*)&bh->b_data[0];
+	de[0].attr = de[1].attr = ATTR_DIR;
 	de[0].name_length = 0xFF; //end of dir marker
+        de[0].start = CT_LE_W(FATX_I(dir)->i_logstart);
+	de[1].start = CT_LE_W(FATX_I(parent)->i_logstart);	
 	mark_buffer_dirty(bh);
 	if(bh) brelse(bh);
 	dir->i_atime = dir->i_ctime = dir->i_mtime = CURRENT_TIME;
