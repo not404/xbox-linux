@@ -6,25 +6,12 @@
  *  June 2002 by SpeedBump:	initial implementation
  */
 
-#include <linux/config.h>
-#include <linux/delay.h>
-#include <linux/fs.h>
+#include <linux/errno.h>
 #include <linux/genhd.h>
 #include <linux/kernel.h>
-#include <linux/major.h>
-#include <linux/string.h>
-#include <linux/blkdev.h>
-
-#ifdef CONFIG_BLK_DEV_IDE
-#include <linux/ide.h>	/* IDE xlate */
-#endif /* CONFIG_BLK_DEV_IDE */
-
-#include <asm/system.h>
 
 #include "check.h"
 #include "xbox.h"
-
-#define DEBUG
 
 #define XBOX_SECTOR_STORE	(0x0055F400L)
 #define XBOX_SECTOR_SYSTEM	(0x00465400L)
@@ -54,7 +41,6 @@ xbox_sig_string_match(	struct block_device *bdev,
 	char *data;
 
 	data = read_dev_sector(bdev, at_sector, &sect);
-	
 	if (!data) return 0;
 
 	if (*(u32*)expect == *(u32*)data) retv = 1; else retv = 0;
@@ -79,61 +65,46 @@ xbox_drive_detect(struct block_device *bdev)
 	*
 	* @see check.c
 	*/
-	if (	(xbox_sig_string_match(bdev,XBOX_SECTOR_MAGIC ,"BRFR")) &&
-		(xbox_sig_string_match(bdev,XBOX_SECTOR_SYSTEM,"FATX")) &&
-		(xbox_sig_string_match(bdev,XBOX_SECTOR_STORE ,"FATX"))) {
-		return 1; //success
-	}
-	
-	return -1; //failed
+	return (xbox_sig_string_match(bdev, XBOX_SECTOR_MAGIC, "BRFR") &&
+		xbox_sig_string_match(bdev, XBOX_SECTOR_SYSTEM, "FATX") &&
+		xbox_sig_string_match(bdev, XBOX_SECTOR_STORE, "FATX")) ?
+		0 : -ENODEV;
 }
 
 int xbox_partition(struct parsed_partitions *state, struct block_device *bdev)
 {
-	ide_drive_t *drive = bdev->bd_disk->private_data;
-	u64 last_sector = drive->capacity64 - 1;
-	int retv;
-	int start,length,num;
-	
-	retv = xbox_drive_detect(bdev);
-	if (retv > 0) {
-		/* trying to find the first free partition */
+	int slot, err;
+	sector_t last, size;
 
-		state->next = 50;
-		printk("\n");
-		start = XBOX_SECTOR_STORE; 
-		length = XBOX_SECTORS_STORE;
-		put_partition(state,state->next++,start ,length);
+	err = xbox_drive_detect(bdev);
+	if (err)
+		return err;
 
-		start = XBOX_SECTOR_SYSTEM; 
-		length = XBOX_SECTORS_SYSTEM;
-		put_partition(state,state->next++,start ,length);
-		
-		start = XBOX_SECTOR_CACHE1; 
-		length = XBOX_SECTORS_CACHE1;
-		put_partition(state,state->next++,start ,length);
-		
-		start = XBOX_SECTOR_CACHE2; 
-		length = XBOX_SECTORS_CACHE2;
-		put_partition(state,state->next++,start ,length);
-		
-		start = XBOX_SECTOR_CACHE3; 
-		length = XBOX_SECTORS_CACHE3;
-		put_partition(state,state->next++,start ,length);
-		
-		//there are some questions about the usage of any "extra" sectors...
-		//I'll map everything after the end to an aditional sector.
-		if (XBOX_SECTOR_EXTEND < last_sector) {
-			if (xbox_sig_string_match(bdev,XBOX_SECTOR_EXTEND ,"FATX")) {
-				start = XBOX_SECTOR_EXTEND; 
-				length = last_sector - XBOX_SECTOR_EXTEND; 
-				num = state->next - 1;
-				put_partition(state,state->next++,start ,length);
-			}
-		}
-		printk("\n");
-		return 1;
-	}
-	
-	return 0;
+	slot = 50;
+	printk(" [xbox]");
+
+	put_partition(state, slot++, XBOX_SECTOR_CACHE1, XBOX_SECTORS_CACHE1);
+	put_partition(state, slot++, XBOX_SECTOR_CACHE2, XBOX_SECTORS_CACHE2);
+	put_partition(state, slot++, XBOX_SECTOR_CACHE3, XBOX_SECTORS_CACHE3);
+	put_partition(state, slot++, XBOX_SECTOR_SYSTEM, XBOX_SECTORS_SYSTEM);
+	put_partition(state, slot++, XBOX_SECTOR_STORE, XBOX_SECTORS_STORE);
+
+	/*
+	 * Xbox HDDs come in two sizes - 8GB and 10GB. The native Xbox kernel
+	 * will only acknowledge the first 8GB, regardless of actual disk
+	 * size. For disks larger than 8GB, anything above that limit is made
+	 * available as a seperate partition.
+	 */
+	last = bdev->bd_disk->capacity;
+	if (last == XBOX_SECTOR_EXTEND)
+		goto out;
+
+	printk(" <");
+	size = last - XBOX_SECTOR_EXTEND;
+	put_partition(state, slot++, XBOX_SECTOR_EXTEND, size);
+	printk(" >");
+
+out:
+	printk("\n");
+	return 1;
 }
