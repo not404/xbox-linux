@@ -716,9 +716,8 @@ static void riva_load_video_mode(struct fb_info *info)
 	newmode.ext.bpp = bpp;
 	newmode.ext.fb_start = par->riva_fb_start;
 
-	if((par->av_type == AV_VGA) || (par->av_type == AV_VGA_SOG) || (par->av_type == AV_HDTV)) {
-		unsigned char pll_int = (unsigned char)((double)dotClock * 6.0 / 13.5e3 + 0.5);
-		if (par->av_type == AV_HDTV) {
+	switch (par->av_type) {
+		case AV_HDTV:
 			xbox_hdtv_mode hdtv_mode = HDTV_480p;
 			if (info->var.yres > 800) {
 				hdtv_mode = HDTV_1080i;
@@ -730,89 +729,90 @@ static void riva_load_video_mode(struct fb_info *info)
 			}
 			switch (par->video_encoder) {
 				case ENCODER_CONEXANT:
-					encoder_ok = conexant_calc_hdtv_mode(hdtv_mode, pll_int, &(newmode.encoder_regs));
+					encoder_ok = conexant_calc_hdtv_mode(hdtv_mode, dotClock, &(newmode.encoder_regs));
 					break;
 				case ENCODER_FOCUS:
-					encoder_ok = focus_calc_hdtv_mode(hdtv_mode, pll_int, &(newmode.encoder_regs));
+					encoder_ok = focus_calc_hdtv_mode(hdtv_mode, dotClock, &(newmode.encoder_regs));
 					break;
 				case ENCODER_XCALIBUR:
-					encoder_ok = xcalibur_calc_hdtv_mode(hdtv_mode, pll_int, &(newmode.encoder_regs));
+					encoder_ok = xcalibur_calc_hdtv_mode(hdtv_mode, dotClock, &(newmode.encoder_regs));
 					break;
 				default:
 					printk("Error - unknown encoder type detected\n");
 			}
-		}
-		else {
+			break;
+	
+		case AV_VGA:
+		case AV_VGA_SOG:
 			switch (par->video_encoder) {
 				case ENCODER_CONEXANT:
-					encoder_ok = conexant_calc_vga_mode(par->av_type, pll_int, &(newmode.encoder_regs));
+					encoder_ok = conexant_calc_vga_mode(par->av_type, dotClock, &(newmode.encoder_regs));
 					break;
 				case ENCODER_FOCUS:
 					//No vga functions as yet - so set up for 480p otherwise we dont boot at all. 
-					encoder_ok = focus_calc_hdtv_mode(HDTV_480p, pll_int, &(newmode.encoder_regs));
+					encoder_ok = focus_calc_hdtv_mode(HDTV_480p, dotClock, &(newmode.encoder_regs));
 					break;
 				case ENCODER_XCALIBUR:
 					//No vga functions as yet - so set up for 480p otherwise we dont boot at all. 
-					encoder_ok = xcalibur_calc_hdtv_mode(HDTV_480p, pll_int, &(newmode.encoder_regs));
+					encoder_ok = xcalibur_calc_hdtv_mode(HDTV_480p, dotClock, &(newmode.encoder_regs));
 					break;
 				default:
 					printk("Error - unknown encoder type detected\n");
 			}
-		}
-		newmode.ext.vend = info->var.yres - 1;
-		newmode.ext.vtotal = vTotal;
-		newmode.ext.vcrtc = info->var.yres - 1;
-		newmode.ext.vsyncstart = vStart;
-		newmode.ext.vsyncend = vStart + 3;
-		newmode.ext.vvalidstart = 0;
-		newmode.ext.vvalidend = info->var.yres - 1;
-		newmode.ext.hend = info->var.xres - 1;
-		newmode.ext.htotal = hTotal;
-		newmode.ext.hcrtc = info->var.xres - 1;
-		newmode.ext.hsyncstart = hStart;
-		newmode.ext.hsyncend = hStart + 32;
-		newmode.ext.hvalidstart = 0;
-		newmode.ext.hvalidend = info->var.xres - 1;
-	}
-
-	/* Normal composite */
-	else {
-		xbox_video_mode encoder_mode;
-		encoder_mode.xres = info->var.xres;
-		encoder_mode.yres = info->var.yres;
-		encoder_mode.tv_encoding = par->tv_encoding;
-		encoder_mode.bpp = bpp;
-		encoder_mode.hoc = par->hoc;
-		encoder_mode.voc = par->voc;
-		encoder_mode.av_type = par->av_type;
-
-		switch (par->video_encoder) {
-			case ENCODER_CONEXANT:
-				encoder_ok = conexant_calc_mode(&encoder_mode, &newmode);
-				break;
-			case ENCODER_FOCUS:
-				encoder_ok = focus_calc_mode(&encoder_mode, &newmode);
-				break;
-			case ENCODER_XCALIBUR:
-				encoder_ok = xcalibur_calc_mode(&encoder_mode, &newmode);
-				break;
-			default:
-				printk("Error - unknown encoder type detected\n");
-		}
-
-		crtc_hDisplay = (newmode.ext.crtchdispend / 8) - 1;
-		crtc_hStart = (newmode.ext.htotal - 32) / 8;
-		crtc_hEnd = crtc_hStart + 1;
-		crtc_hTotal = (newmode.ext.htotal) / 8 - 5;
-		crtc_hBlankStart = crtc_hDisplay;
-		crtc_hBlankEnd = (newmode.ext.htotal) / 8 - 1;
-		
-		crtc_vDisplay = info->var.yres - 1;
-		crtc_vStart = newmode.ext.crtcvstart;
-		crtc_vEnd = newmode.ext.crtcvstart + 3;
-		crtc_vTotal = newmode.ext.crtcvtotal;
-		crtc_vBlankStart = crtc_vDisplay;
-		crtc_vBlankEnd = crtc_vTotal + 1;
+			newmode.ext.vend = info->var.yres - 1;
+			newmode.ext.vtotal = vTotal;
+			newmode.ext.vcrtc = info->var.yres - 1;
+			newmode.ext.vsyncstart = vStart;
+			newmode.ext.vsyncend = vStart + 3;
+			newmode.ext.vvalidstart = 0;
+			newmode.ext.vvalidend = info->var.yres - 1;
+			newmode.ext.hend = info->var.xres - 1;
+			newmode.ext.htotal = hTotal;
+			newmode.ext.hcrtc = info->var.xres - 1;
+			newmode.ext.hsyncstart = hStart;
+			newmode.ext.hsyncend = hStart + 32;
+			newmode.ext.hvalidstart = 0;
+			newmode.ext.hvalidend = info->var.xres - 1;
+			break;
+	
+		default:	
+			/* Normal composite */
+			xbox_video_mode encoder_mode;
+			encoder_mode.xres = info->var.xres;
+			encoder_mode.yres = info->var.yres;
+			encoder_mode.tv_encoding = par->tv_encoding;
+			encoder_mode.bpp = bpp;
+			encoder_mode.hoc = par->hoc;
+			encoder_mode.voc = par->voc;
+			encoder_mode.av_type = par->av_type;
+	
+			switch (par->video_encoder) {
+				case ENCODER_CONEXANT:
+					encoder_ok = conexant_calc_mode(&encoder_mode, &newmode);
+					break;
+				case ENCODER_FOCUS:
+					encoder_ok = focus_calc_mode(&encoder_mode, &newmode);
+					break;
+				case ENCODER_XCALIBUR:
+					encoder_ok = xcalibur_calc_mode(&encoder_mode, &newmode);
+					break;
+				default:
+					printk("Error - unknown encoder type detected\n");
+			}
+	
+			crtc_hDisplay = (newmode.ext.crtchdispend / 8) - 1;
+			crtc_hStart = (newmode.ext.htotal - 32) / 8;
+			crtc_hEnd = crtc_hStart + 1;
+			crtc_hTotal = (newmode.ext.htotal) / 8 - 5;
+			crtc_hBlankStart = crtc_hDisplay;
+			crtc_hBlankEnd = (newmode.ext.htotal) / 8 - 1;
+			
+			crtc_vDisplay = info->var.yres - 1;
+			crtc_vStart = newmode.ext.crtcvstart;
+			crtc_vEnd = newmode.ext.crtcvstart + 3;
+			crtc_vTotal = newmode.ext.crtcvtotal;
+			crtc_vBlankStart = crtc_vDisplay;
+			crtc_vBlankEnd = crtc_vTotal + 1;
 	}
 
 	if (encoder_ok) {
