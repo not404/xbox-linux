@@ -11,7 +11,7 @@
 
 #ifdef CONFIG_X86_PC9800
    extern int CLOCK_TICK_RATE;
-#elif defined(CONFIG_MELAN)
+#elif defined(CONFIG_X86_ELAN)
 # define CLOCK_TICK_RATE 1189200 /* AMD Elan has different frequency! */
 #elif defined(CONFIG_X86_XBOX)
 # define CLOCK_TICK_RATE 1125000

@@ -55,7 +55,7 @@ config FB_CIRRUS
 
 config FB_PM2
 	tristate "Permedia2 support"
-	depends on FB && (AMIGA || PCI)
+	depends on FB && ((AMIGA && BROKEN) || PCI)
 	help
 	  This is the frame buffer device driver for the Permedia2 AGP frame
 	  buffer card from ASK, aka `Graphic Blaster Exxtreme'.  There is a
@@ -75,10 +75,6 @@ config FB_ACORN
 	  This is the frame buffer device driver for the Acorn VIDC graphics
 	  hardware found in Acorn RISC PCs and other ARM-based machines.  If
 	  unsure, say N.
-
-config FB_ANAKIN
-	bool "Anakin LCD support"
-	depends on FB && ARM && ARCH_ANAKIN
 
 config FB_CLPS711X
 	bool "CLPS711X LCD support"
