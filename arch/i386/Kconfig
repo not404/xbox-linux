@@ -518,6 +518,10 @@ config X86_UP_IOAPIC
 	  If you have a system with several CPUs, you do not need to say Y
 	  here: the IO-APIC will be used automatically.
 
+config XBOX_EJECT
+	depends on X86_XBOX
+	bool "XBOX eject fix"
+
 config X86_LOCAL_APIC
 	bool
 	depends on !SMP && X86_UP_APIC

@@ -23,7 +23,7 @@ static int pci_conf1_read (int seg, int bus, int devfn, int reg, int len, u32 *v
 
 	if (mach_pci_is_blacklisted(bus, PCI_SLOT(devfn), PCI_FUNC(devfn)))
 		return -EINVAL;
-	
+
 	spin_lock_irqsave(&pci_config_lock, flags);
 
 	outl(PCI_CONF1_ADDRESS(bus, devfn, reg), 0xCF8);
