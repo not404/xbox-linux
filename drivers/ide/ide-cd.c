@@ -326,10 +326,10 @@
 
 #ifdef CONFIG_X86_XBOX
 #include <linux/xbox.h>
- /* Global flag indicating whether to simulate Xbox drive locking in
-  *    software.  There should only be one Xbox drive in a system!  This
-  *       variable is externally referenced by arch/i386/kernel/xboxejectfix.c. */
- volatile int Xbox_simulate_drive_locked = 0;
+/* Global flag indicating whether to simulate Xbox drive locking in
+ * software.  There should only be one Xbox drive in a system!  This
+ * variable is externally referenced by arch/i386/kernel/xboxejectfix.c. */
+volatile int Xbox_simulate_drive_locked = 0;
 #endif /* CONFIG_X86_XBOX */
  
 /****************************************************************************
@@ -2168,7 +2168,7 @@ cdrom_lockdoor(ide_drive_t *drive, int lockflag, struct request_sense *sense)
 	if (sense == NULL)
 		sense = &my_sense;
 
-#ifdef CONFIG__X86_XBOX
+#ifdef CONFIG_X86_XBOX
 	/* If we're on an Xbox and this is an Xbox drive, simulate the lock
 	   request in software.  (See arch/i386/kernel/xboxejectfix.c) */
 	if (CDROM_CONFIG_FLAGS(drive)->xbox_drive && machine_is_xbox) {
