@@ -613,6 +613,7 @@ out_unload_nls:
 	unload_nls(sbi->nls_io);
 	goto out_fail;
 out_invalid:
+	error = -EINVAL;
 	if (!silent) {
 		PRINTK("VFS: Can't find a valid FAT filesystem on dev %s.\n",
 			sb->s_id);
