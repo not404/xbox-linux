@@ -36,8 +36,8 @@ static void xbox_pic_cmd(u8 command)
 
 void machine_restart(char * __unused)
 {
-	printk(KERN_INFO "Sending POWER_RESET to XBOX-PIC.\n");
-	xbox_pic_cmd(SMC_SUBCMD_POWER_RESET);  
+	printk(KERN_INFO "Sending POWER_CYCLE to XBOX-PIC.\n");
+	xbox_pic_cmd(SMC_SUBCMD_POWER_CYCLE);  
 }
 
 void machine_power_off(void)
