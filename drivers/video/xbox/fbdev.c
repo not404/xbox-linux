@@ -599,15 +599,15 @@ static void riva_load_state(struct riva_par *par, struct riva_regs *regs)
 	/* Switch GPU to RGB output */
 	par->riva.PRAMDAC[0x00000630/4] = 0; 
 	/* These fix the maroon borders seen when booting from Xromwell or 
-	* xbeboot - note - this needs a rethink. The val of 8c4 fixes the 
-	* problem - but looking at the YCrCb line below, I suspect the old
-	* 84c 'fix' might've been a typo - dimetos, could you check please?*/
+	* xbeboot
+	*/
 	par->riva.PRAMDAC[0x0000084c/4] = 0;
 	par->riva.PRAMDAC[0x000008c4/4] = 0x00801080;
 	
 	/* for YCrCb:
 	par->riva.PRAMDAC[0x00000630/4] = 2; 
-	par->riva.PRAMDAC[0x0000084c/4] =0x801080;
+	par->riva.PRAMDAC[0x0000084c/4] =0x00801080;
+	par->riva.PRAMDAC[0x000008c4/4] =0x40801080;
 	*/
 	MISCout(par, regs->misc_output);
 
