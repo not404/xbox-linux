@@ -138,7 +138,7 @@ static struct i2c_algorithm smbus_algorithm = {
 
 static struct i2c_adapter xbox_adapter = {
 	.owner          = THIS_MODULE,
-	.class          = I2C_CLASSES_HWMON,
+	.class          = I2C_CLASS_HWMON,
 	.algo           = &smbus_algorithm,
 	.name           = "unset",
 };
