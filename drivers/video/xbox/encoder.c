@@ -122,7 +122,7 @@ void tv_load_mode(unsigned char * mode) {
 			//Nothing yet
 			break;		
 		}	
-
+}
 
 void tv_save_mode(unsigned char * mode) {
 	int n, n1;

@@ -41,7 +41,8 @@ typedef enum enumAvTypes {
 
 typedef enum enumEncoderType {
 	ENCODER_CONEXANT,
-	ENCODER_FOCUS
+	ENCODER_FOCUS,
+	ENCODER_XLB
 } xbox_encoder_type;
 
 typedef struct _xboxOverscan {
