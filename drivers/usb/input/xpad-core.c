@@ -64,6 +64,7 @@
 static struct xpad_device xpad_device[] = {
 	/* please keep those ordered wrt. vendor/product ids
 	  vendor, product, isMat, name                              */
+	{ 0x044f, 0x0f07, 0, "Thrustmaster, Inc. Controller" },
 	{ 0x045e, 0x0202, 0, "Microsoft Xbox Controller" },
 	{ 0x045e, 0x0285, 0, "Microsoft Xbox Controller S" },
 	{ 0x045e, 0x0289, 0, "Microsoft Xbox Controller S" }, /* microsoft is stupid */
@@ -77,11 +78,11 @@ static struct xpad_device xpad_device[] = {
 	{ 0x0738, 0x4540, 1, "Mad Catz Beat Pad" },
 	{ 0x0738, 0x4556, 0, "Mad Catz Lynx Wireless Controller" },
 	{ 0x0738, 0x6040, 1, "Mad Catz Beat Pad Pro" },
-	{ 0x0c12, 0x9902, 0, "HAMA VibraX - lucky boy" }, /* these are broken */
+	{ 0x0c12, 0x9902, 0, "HAMA VibraX - *FAULTY HARDWARE*" }, /* these are broken */
 	{ 0x0e6f, 0x0003, 0, "Logic3 Freebird wireless Controller" },
 	{ 0x0f30, 0x0202, 0, "Joytech Advanced Controller" },
 	{ 0x12ab, 0x8809, 1, "Xbox DDR dancepad" },
-	{ 0xffff, 0xffff, 0, "Chinese crap Xbox Controller" }, /* WTF are device IDs for? */
+	{ 0xffff, 0xffff, 0, "Chinese-made Xbox Controller" }, /* WTF are device IDs for? */
 	{ 0x0000, 0x0000, 0, "nothing detected - FAIL" }
 };
 
