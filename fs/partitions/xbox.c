@@ -13,22 +13,28 @@
 #include "check.h"
 #include "xbox.h"
 
-#define XBOX_SECTOR_STORE	(0x0055F400L)
-#define XBOX_SECTOR_SYSTEM	(0x00465400L)
-#define XBOX_SECTOR_CONFIG	(0x00000000L)
-#define XBOX_SECTOR_CACHE1	(0x00000400L)
-#define XBOX_SECTOR_CACHE2	(0x00177400L)
-#define XBOX_SECTOR_CACHE3	(0x002EE400L)
-#define XBOX_SECTOR_EXTEND	(0x00EE8AB0L)
 
-#define XBOX_SECTORS_STORE	(XBOX_SECTOR_EXTEND - XBOX_SECTOR_STORE)
-#define XBOX_SECTORS_SYSTEM	(XBOX_SECTOR_STORE  - XBOX_SECTOR_SYSTEM)
-#define XBOX_SECTORS_CACHE1	(XBOX_SECTOR_CACHE2 - XBOX_SECTOR_CACHE1)
-#define XBOX_SECTORS_CACHE2	(XBOX_SECTOR_CACHE3 - XBOX_SECTOR_CACHE2)
-#define XBOX_SECTORS_CACHE3	(XBOX_SECTOR_SYSTEM - XBOX_SECTOR_CACHE3)
-#define XBOX_SECTORS_CONFIG	(XBOX_SECTOR_CACHE1 - XBOX_SECTOR_CONFIG)
+/*
+ * The native Xbox kernel makes use of an implicit partitioning
+ * scheme. Partition locations and sizes on-disk are hard-coded.
+ */
+#define XBOX_CONFIG_START	0x00000000L
+#define XBOX_CACHE1_START	0x00000400L
+#define XBOX_CACHE2_START	0x00177400L
+#define XBOX_CACHE3_START	0x002EE400L
+#define XBOX_SYSTEM_START	0x00465400L
+#define XBOX_DATA_START		0x0055F400L
+#define XBOX_EXTEND_START	0x00EE8AB0L
 
-#define XBOX_SECTOR_MAGIC	(3L)
+#define XBOX_CONFIG_SIZE	(XBOX_CACHE1_START - XBOX_CONFIG_START)
+#define XBOX_CACHE1_SIZE	(XBOX_CACHE2_START - XBOX_CACHE1_START)
+#define XBOX_CACHE2_SIZE	(XBOX_CACHE3_START - XBOX_CACHE2_START)
+#define XBOX_CACHE3_SIZE	(XBOX_SYSTEM_START - XBOX_CACHE3_START)
+#define XBOX_SYSTEM_SIZE	(XBOX_DATA_START - XBOX_SYSTEM_START)
+#define XBOX_DATA_SIZE		(XBOX_EXTEND_START - XBOX_DATA_START)
+
+#define XBOX_MAGIC_SECT		3L
+
 
 static int xbox_check_magic(struct block_device *bdev, sector_t at_sect,
 		char *magic)
@@ -62,9 +68,9 @@ static inline int xbox_drive_detect(struct block_device *bdev)
 	*
 	* @see check.c
 	*/
-	return (xbox_check_magic(bdev, XBOX_SECTOR_MAGIC, "BRFR") &&
-		xbox_check_magic(bdev, XBOX_SECTOR_SYSTEM, "FATX") &&
-		xbox_check_magic(bdev, XBOX_SECTOR_STORE, "FATX")) ?
+	return (xbox_check_magic(bdev, XBOX_MAGIC_SECT, "BRFR") &&
+		xbox_check_magic(bdev, XBOX_SYSTEM_START, "FATX") &&
+		xbox_check_magic(bdev, XBOX_DATA_START, "FATX")) ?
 		0 : -ENODEV;
 }
 
@@ -80,11 +86,11 @@ int xbox_partition(struct parsed_partitions *state, struct block_device *bdev)
 	slot = 50;
 	printk(" [xbox]");
 
-	put_partition(state, slot++, XBOX_SECTOR_CACHE1, XBOX_SECTORS_CACHE1);
-	put_partition(state, slot++, XBOX_SECTOR_CACHE2, XBOX_SECTORS_CACHE2);
-	put_partition(state, slot++, XBOX_SECTOR_CACHE3, XBOX_SECTORS_CACHE3);
-	put_partition(state, slot++, XBOX_SECTOR_SYSTEM, XBOX_SECTORS_SYSTEM);
-	put_partition(state, slot++, XBOX_SECTOR_STORE, XBOX_SECTORS_STORE);
+	put_partition(state, slot++, XBOX_CACHE1_START, XBOX_CACHE1_SIZE);
+	put_partition(state, slot++, XBOX_CACHE2_START, XBOX_CACHE2_SIZE);
+	put_partition(state, slot++, XBOX_CACHE3_START, XBOX_CACHE3_SIZE);
+	put_partition(state, slot++, XBOX_SYSTEM_START, XBOX_SYSTEM_SIZE);
+	put_partition(state, slot++, XBOX_DATA_START, XBOX_DATA_SIZE);
 
 	/*
 	 * Xbox HDDs come in two sizes - 8GB and 10GB. The native Xbox kernel
@@ -93,12 +99,12 @@ int xbox_partition(struct parsed_partitions *state, struct block_device *bdev)
 	 * available as a seperate partition.
 	 */
 	last = bdev->bd_disk->capacity;
-	if (last == XBOX_SECTOR_EXTEND)
+	if (last == XBOX_EXTEND_START)
 		goto out;
 
 	printk(" <");
-	size = last - XBOX_SECTOR_EXTEND;
-	put_partition(state, slot++, XBOX_SECTOR_EXTEND, size);
+	size = last - XBOX_EXTEND_START;
+	put_partition(state, slot++, XBOX_EXTEND_START, size);
 	printk(" >");
 
 out:
