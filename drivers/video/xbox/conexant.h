@@ -18,11 +18,12 @@
 #define conexant_h
 
 #include <linux/xboxfbctl.h>
+#include <linux/slab.h>
 #include "xboxfb.h"
 #include "encoder.h"
 
 int conexant_calc_mode(xbox_video_mode * mode, struct riva_regs * riva_out);
-int conexant_calc_vga_mode(xbox_av_type av_type, unsigned char pll_int, unsigned char * mode_out);
-int conexant_calc_hdtv_mode(xbox_hdtv_mode hdtv_mode, unsigned char pll_int, unsigned char * mode_out);
+int conexant_calc_vga_mode(xbox_av_type av_type, int dotClock, void **encoder_regs);
+int conexant_calc_hdtv_mode(xbox_hdtv_mode hdtv_mode, int dotClock, void **encoder_regs);
 
 #endif

@@ -45,9 +45,9 @@ xbox_encoder_type tv_get_video_encoder(void) {
 	if(b != 255) {
 		return ENCODER_FOCUS;
 	}
-	b = xlb_i2c_read_reg(0x00);
+	b = xcalibur_i2c_read_reg(0x00);
 	if(b != 255) {
-		return ENCODER_XLB;
+		return ENCODER_XCALIBUR;
 	}
 	return 0;
 }
@@ -60,14 +60,15 @@ void tv_exit(void) {
 	tv_i2c_exit();
 }
 
-void tv_load_mode(unsigned char * mode) {
+void tv_load_mode(unsigned char *encoder_regs) {
 	int n, n1;
 	unsigned char b;
-	
+	unsigned char *mode;
+	u32 *XCal_Reg;
 	switch (tv_get_video_encoder()) {
 		case ENCODER_CONEXANT:
 			conexant_i2c_write_reg(0xc4, 0x00); // EN_OUT = 1
-
+			mode = (unsigned char *)encoder_regs;
 			// Conexant init (starts at register 0x2e)
 			n1=0;
 			for(n=0x2e;n<0x100;n+=2) {
@@ -104,6 +105,7 @@ void tv_load_mode(unsigned char * mode) {
 			conexant_i2c_write_reg(0xAC, 0x8C);
 			break;
 		case ENCODER_FOCUS:
+			mode = (unsigned char *)encoder_regs;
 			//Set the command register soft reset
 			focus_i2c_write_reg(0x0c,0x03);
 			focus_i2c_write_reg(0x0d,0x21);
@@ -118,16 +120,32 @@ void tv_load_mode(unsigned char * mode) {
 			b = focus_i2c_read_reg(0x0d);
 			focus_i2c_write_reg(0x0d,b);
 			break;
-		case ENCODER_XLB:
-			//Nothing yet
-			break;		
-		}	
+		case ENCODER_XCALIBUR:
+			//Xcalibur regs are 4 bytes long
+			XCal_Reg = (u32*)encoder_regs;
+			mode = kmalloc(4*sizeof(char),GFP_KERNEL);
+			for(n = 0; n < 0x90; n++) {
+				//Endianness.
+				memcpy(&mode[0],(unsigned char*)(&XCal_Reg[n])+3,0x01);
+				memcpy(&mode[1],(unsigned char*)(&XCal_Reg[n])+2,0x01);
+				memcpy(&mode[2],(unsigned char*)(&XCal_Reg[n])+1,0x01);
+				memcpy(&mode[3],(unsigned char*)(&XCal_Reg[n]),0x01);
+				xcalibur_i2c_write_block(n, mode, 0x04);
+			}
+						
+			kfree(mode);
+		}
+	kfree(encoder_regs);
 }
 
-void tv_save_mode(unsigned char * mode) {
+void tv_save_mode(unsigned char *encoder_regs) {
 	int n, n1;
+	char *mode;
+	
 	switch (tv_get_video_encoder()) {
 		case ENCODER_CONEXANT:
+			encoder_regs = kmalloc(256*sizeof(char),GFP_KERNEL);
+			mode = (unsigned char*) encoder_regs;
 			// Conexant init (starts at register 0x2e)
 			n1=0;		
 			for(n=0x2e;n<0x100;n+=2) {
@@ -136,11 +154,15 @@ void tv_save_mode(unsigned char * mode) {
 			}
 			break;
 		case ENCODER_FOCUS:
+			encoder_regs = kmalloc(256*sizeof(char),GFP_KERNEL);
+			mode = (unsigned char*) encoder_regs;
 			for (n=0;n<0xc4;n++) {
 				mode[n] = focus_i2c_read_reg(n);
 			}
 			break;
-		case ENCODER_XLB:
+		case ENCODER_XCALIBUR:
+			encoder_regs = kmalloc(0x90*sizeof(char)*4, GFP_KERNEL);
+			//We don't save these yet - sorry!
 			break;
 	}			
 }

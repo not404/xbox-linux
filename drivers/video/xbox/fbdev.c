@@ -60,7 +60,7 @@
 #include "encoder-i2c.h"
 #include "conexant.h"
 #include "focus.h"
-#include "xlb.h"
+#include "xcalibur.h"
 
 #ifndef CONFIG_PCI		/* sanity check */
 #error This driver requires PCI support.
@@ -597,19 +597,23 @@ static void riva_load_state(struct riva_par *par, struct riva_regs *regs)
 	par->riva.PRAMDAC[0x000008a0/4] = 0;
 	par->riva.PMC[0x00008908/4] = par->riva.RamAmountKBytes * 1024 - 1;
 	par->riva.PMC[0x0000890c/4] = par->riva.RamAmountKBytes * 1024 - 1;
-	/* Switch GPU to RGB output */
-	par->riva.PRAMDAC[0x00000630/4] = 0; 
-	/* These fix the maroon borders seen when booting from Xromwell or 
-	* xbeboot
-	*/
-	par->riva.PRAMDAC[0x0000084c/4] = 0;
-	par->riva.PRAMDAC[0x000008c4/4] = 0;
 	
-	/* for YCrCb:
-	par->riva.PRAMDAC[0x00000630/4] = 2; 
-	par->riva.PRAMDAC[0x0000084c/4] =0x00801080;
-	par->riva.PRAMDAC[0x000008c4/4] =0x40801080;
-	*/
+        /* It has been decided to leave the GPU in RGB mode always, and handle
+	* the scaling in the encoder, if necessary. This sidesteps the 2.6
+	* kernel cursor issue seen with YUV output */
+	if(par->video_encoder == ENCODER_XCALIBUR) {
+		par->riva.PRAMDAC[0x00000630/4] = 2; // switch GPU to YCrCb
+		/* YUV values: */
+		par->riva.PRAMDAC[0x0000084c/4] = 0x00801080;
+		par->riva.PRAMDAC[0x000008c4/4] = 0x40801080;
+	} else {
+		par->riva.PRAMDAC[0x00000630/4] = 0;
+		/* These two need to be 0 on RGB to fix the maroon
+		* borders issue */
+		par->riva.PRAMDAC[0x0000084c/4] = 0;
+		par->riva.PRAMDAC[0x000008c4/4] = 0;
+	}
+	
 	MISCout(par, regs->misc_output);
 
 	for (i = 0; i < NUM_CRT_REGS; i++) {
@@ -632,7 +636,7 @@ static void riva_load_state(struct riva_par *par, struct riva_regs *regs)
 
 	for (i = 0; i < NUM_SEQ_REGS; i++)
 		SEQout(par, i, regs->seq[i]);
-	tv_save_mode(regs->encoder_mode);
+	tv_save_mode(regs->encoder_regs);
 }
 
 static inline unsigned long xbox_memory_size(void) {
@@ -684,6 +688,13 @@ static void riva_load_video_mode(struct fb_info *info)
 	vStart = info->var.yres + info->var.lower_margin;
 	vTotal = info->var.yres + info->var.lower_margin +
 		 info->var.vsync_len + info->var.upper_margin;
+	
+	if (par->video_encoder==ENCODER_XCALIBUR) {
+		/* This info should be in the xcalibur.c file, but
+		* the HDTV api doesn't allow for it right now. */
+		hTotal = 779;
+		vTotal = 524;
+	}
 	
 	crtc_hDisplay = (hDisplaySize / 8) - 1;
 	crtc_hStart = (hTotal - 32) / 8;
@@ -737,13 +748,13 @@ static void riva_load_video_mode(struct fb_info *info)
 			}
 			switch (par->video_encoder) {
 				case ENCODER_CONEXANT:
-					encoder_ok = conexant_calc_hdtv_mode(hdtv_mode, pll_int, newmode.encoder_mode);
+					encoder_ok = conexant_calc_hdtv_mode(hdtv_mode, pll_int, &(newmode.encoder_regs));
 					break;
 				case ENCODER_FOCUS:
-					encoder_ok = focus_calc_hdtv_mode(hdtv_mode, pll_int, newmode.encoder_mode);
+					encoder_ok = focus_calc_hdtv_mode(hdtv_mode, pll_int, &(newmode.encoder_regs));
 					break;
-				case ENCODER_XLB:
-					encoder_ok = xlb_calc_hdtv_mode(hdtv_mode, pll_int, newmode.encoder_mode);
+				case ENCODER_XCALIBUR:
+					encoder_ok = xcalibur_calc_hdtv_mode(hdtv_mode, pll_int, &(newmode.encoder_regs));
 					break;
 				default:
 					printk("Error - unknown encoder type detected\n");
@@ -752,15 +763,15 @@ static void riva_load_video_mode(struct fb_info *info)
 		else {
 			switch (par->video_encoder) {
 				case ENCODER_CONEXANT:
-					encoder_ok = conexant_calc_vga_mode(par->av_type, pll_int, newmode.encoder_mode);
+					encoder_ok = conexant_calc_vga_mode(par->av_type, pll_int, &(newmode.encoder_regs));
 					break;
 				case ENCODER_FOCUS:
 					//No vga functions as yet - so set up for 480p otherwise we dont boot at all. 
-					encoder_ok = focus_calc_hdtv_mode(HDTV_480p, pll_int, newmode.encoder_mode);
+					encoder_ok = focus_calc_hdtv_mode(HDTV_480p, pll_int, &(newmode.encoder_regs));
 					break;
-				case ENCODER_XLB:
+				case ENCODER_XCALIBUR:
 					//No vga functions as yet - so set up for 480p otherwise we dont boot at all. 
-					encoder_ok = xlb_calc_hdtv_mode(HDTV_480p, pll_int, newmode.encoder_mode);
+					encoder_ok = xcalibur_calc_hdtv_mode(HDTV_480p, pll_int, &(newmode.encoder_regs));
 					break;
 				default:
 					printk("Error - unknown encoder type detected\n");
@@ -800,8 +811,8 @@ static void riva_load_video_mode(struct fb_info *info)
 			case ENCODER_FOCUS:
 				encoder_ok = focus_calc_mode(&encoder_mode, &newmode);
 				break;
-			case ENCODER_XLB:
-				encoder_ok = xlb_calc_mode(&encoder_mode, &newmode);
+			case ENCODER_XCALIBUR:
+				encoder_ok = xcalibur_calc_mode(&encoder_mode, &newmode);
 				break;
 			default:
 				printk("Error - unknown encoder type detected\n");
@@ -910,7 +921,7 @@ static void riva_load_video_mode(struct fb_info *info)
 		newmode.ext.cursorConfig = 0x02000100;
 		par->current_state = newmode;
 		riva_load_state(par, &par->current_state);
-		tv_load_mode(newmode.encoder_mode);
+		tv_load_mode(newmode.encoder_regs);
 		par->riva.LockUnlock(&par->riva, 0); /* important for HW cursor */
 	}
 	else {
@@ -1969,7 +1980,7 @@ static int __devinit xboxfb_probe(struct pci_dev *pd,
 		case ENCODER_FOCUS:
 			printk(KERN_INFO PFX "detected focus encoder\n");
 			break;
-		case ENCODER_XLB:
+		case ENCODER_XCALIBUR:
 			printk(KERN_INFO PFX "detected Xcalibur encoder\n");
 			break;
 		default: 

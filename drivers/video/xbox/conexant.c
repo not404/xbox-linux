@@ -82,9 +82,13 @@ static double fabs(double d) {
 
 int conexant_calc_vga_mode(
 	xbox_av_type av_type,
-	unsigned char pll_int,
-	unsigned char * regs
+	int dotClock,
+	void **encoder_regs
 ){
+	unsigned char *regs;
+	unsigned char pll_int = (unsigned char)((double)dotClock * 6.0 / 13.5e3 + 0.5);
+	*encoder_regs = kmalloc(NUM_CONEXANT_REGS*sizeof(char), GFP_KERNEL);
+	regs = (unsigned char*)*encoder_regs;
 	memset(regs, 0, NUM_CONEXANT_REGS);
 	// Protect against overclocking
 	if (pll_int > 36) {
@@ -119,9 +123,14 @@ int conexant_calc_vga_mode(
 
 int conexant_calc_hdtv_mode(
 	xbox_hdtv_mode hdtv_mode,
-	unsigned char pll_int,
-	unsigned char * regs
+	int dotClock,
+	void  **encoder_regs
 ){
+	unsigned char pll_int = (unsigned char)((double)dotClock * 6.0 / 13.5e3 + 0.5);
+	unsigned char *regs;
+	*encoder_regs=kmalloc(NUM_CONEXANT_REGS*sizeof(char), GFP_KERNEL);
+	regs = (unsigned char*)*encoder_regs;
+	
 	memset(regs, 0, NUM_CONEXANT_REGS);
 	// Protect against overclocking
 	if (pll_int > 36) {
@@ -172,8 +181,12 @@ int conexant_calc_mode(xbox_video_mode * mode, struct riva_regs * riva_out)
 	unsigned int m = 0;
 	double dPllOutputFrequency;
 	xbox_tv_mode_parameter param;
-	char* regs = riva_out->encoder_mode;
+	char* regs;
 	int ret = 0;
+
+	riva_out->encoder_regs = kmalloc(NUM_CONEXANT_REGS*sizeof(char),GFP_KERNEL);
+	regs = (unsigned char*)riva_out->encoder_regs;
+	
 	kernel_fpu_begin();
 	if (conexant_calc_mode_params(mode, &param))
 	{

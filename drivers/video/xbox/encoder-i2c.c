@@ -67,8 +67,8 @@ static struct i2c_client focus_client = {
 	.driver		= &tv_driver,
 };
 
-static struct i2c_client xlb_client = {
-	.name		= "I2C xbox XLB client",
+static struct i2c_client xcalibur_client = {
+	.name		= "I2C xbox Xcalibur client",
 	.id		= 1,
 	.flags		= 0,
 	.addr		= XLB_ADDRESS,
@@ -97,12 +97,12 @@ static int tv_attach_adapter(struct i2c_adapter *adap)
 	printk(KERN_INFO DRIVER_NAME ": Using '%s'!\n",adap->name);
 	conexant_client.adapter = adap;
 	focus_client.adapter = adap;
-	xlb_client.adapter = adap;
+	xcalibur_client.adapter = adap;
 	pic_client.adapter = adap;
 	eeprom_client.adapter = adap;
 	i2c_attach_client(&conexant_client);
 	i2c_attach_client(&focus_client);
-	i2c_attach_client(&xlb_client);
+	i2c_attach_client(&xcalibur_client);
 	i2c_attach_client(&pic_client);
 	i2c_attach_client(&eeprom_client);
 
@@ -155,22 +155,31 @@ int focus_i2c_write_reg(unsigned char adr, unsigned char value) {
 	return i2c_smbus_write_byte_data(&focus_client, adr, value);
 }
 
-int xlb_i2c_read_reg(unsigned char adr) {
-	if (!xlb_client.adapter) {
-		printk(KERN_ERR DRIVER_NAME " : No XLB client attached.\n");
+int xcalibur_i2c_read_reg(unsigned char adr) {
+	if (!xcalibur_client.adapter) {
+		printk(KERN_ERR DRIVER_NAME " : No Xcalibur client attached.\n");
 		return -1;
 	}
 	udelay(500);
-	return i2c_smbus_read_byte_data(&xlb_client, adr);
+	return i2c_smbus_read_byte_data(&xcalibur_client, adr);
 }
 
-int xlb_i2c_write_reg(unsigned char adr, unsigned char value) {
-	if (!xlb_client.adapter) {
-		printk(KERN_ERR DRIVER_NAME " : No XLB client attached.\n");
+int xcalibur_i2c_read_block(unsigned char adr, unsigned char *data) {
+	if (!xcalibur_client.adapter) {
+		printk(KERN_ERR DRIVER_NAME " : No Xcalibur client attached.\n");
 		return -1;
 	}
 	udelay(500);
-	return i2c_smbus_write_byte_data(&xlb_client, adr, value);
+	return i2c_smbus_read_block_data(&xcalibur_client, adr, data);
+}
+
+int xcalibur_i2c_write_block(unsigned char adr, unsigned char *data, int len){
+	if (!xcalibur_client.adapter) {
+		printk(KERN_ERR DRIVER_NAME " : No Xcalibur client attached.\n");
+		return -1;
+	}
+	udelay(500);
+	return i2c_smbus_write_block_data(&xcalibur_client, adr, len, data);
 }
 
 unsigned char pic_i2c_read_reg(unsigned char adr) {

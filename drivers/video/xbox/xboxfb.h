@@ -26,7 +26,7 @@ struct riva_regs {
 	u8 seq[NUM_SEQ_REGS];
 	u8 misc_output;
 	RIVA_HW_STATE ext;
-	u8 encoder_mode[MAX_ENCODER_REGS];
+	void *encoder_regs;
 };
 
 struct riva_par {
