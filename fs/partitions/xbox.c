@@ -31,27 +31,25 @@
 
 #define XBOX_SECTOR_MAGIC	(3L)
 
-static int
-xbox_sig_string_match(	struct block_device *bdev, 
-			unsigned long at_sector,
-			char *expect )
+static int xbox_check_magic(struct block_device *bdev, sector_t at_sect,
+		char *magic)
 {
 	Sector sect;
-	int retv;
 	char *data;
+	int ret;
 
-	data = read_dev_sector(bdev, at_sector, &sect);
-	if (!data) return 0;
+	data = read_dev_sector(bdev, at_sect, &sect);
+	if (!data)
+		return -1;
 
-	if (*(u32*)expect == *(u32*)data) retv = 1; else retv = 0;
-	
+	/* Ick! */
+	ret = (*(u32*)data == *(u32*)magic) ? 1 : 0;
 	put_dev_sector(sect);
-	
-	return retv;
+
+	return ret;
 }
 
-static inline int
-xbox_drive_detect(struct block_device *bdev)
+static inline int xbox_drive_detect(struct block_device *bdev)
 {
 	/** 
 	* "BRFR" is apparently the magic number in the config area
@@ -65,9 +63,9 @@ xbox_drive_detect(struct block_device *bdev)
 	*
 	* @see check.c
 	*/
-	return (xbox_sig_string_match(bdev, XBOX_SECTOR_MAGIC, "BRFR") &&
-		xbox_sig_string_match(bdev, XBOX_SECTOR_SYSTEM, "FATX") &&
-		xbox_sig_string_match(bdev, XBOX_SECTOR_STORE, "FATX")) ?
+	return (xbox_check_magic(bdev, XBOX_SECTOR_MAGIC, "BRFR") &&
+		xbox_check_magic(bdev, XBOX_SECTOR_SYSTEM, "FATX") &&
+		xbox_check_magic(bdev, XBOX_SECTOR_STORE, "FATX")) ?
 		0 : -ENODEV;
 }
 
