@@ -596,23 +596,13 @@ static void riva_load_state(struct riva_par *par, struct riva_regs *regs)
 	par->riva.PRAMDAC[0x000008a0/4] = 0;
 	par->riva.PMC[0x00008908/4] = par->riva.RamAmountKBytes * 1024 - 1;
 	par->riva.PMC[0x0000890c/4] = par->riva.RamAmountKBytes * 1024 - 1;
-	switch(par->av_type) {
-		case AV_COMPOSITE:
-		case AV_SVIDEO:
-		case AV_HDTV:
-			par->riva.PRAMDAC[0x00000630/4] = 2; /* switch GPU to YCrCb */
-			par->riva.PRAMDAC[0x0000084c/4] =0x801080;
-			break;
-		case AV_SCART_RGB:
-		case AV_VGA:
-		case AV_VGA_SOG:
-			par->riva.PRAMDAC[0x00000630/4] = 0; /* switch GPU to RGB */
-			par->riva.PRAMDAC[0x0000084c/4] =0;
-			break;
-		default:
-			break;
-	}
-
+	/* use RGB output */
+	par->riva.PRAMDAC[0x00000630/4] = 0; /* switch GPU to RGB */
+	par->riva.PRAMDAC[0x0000084c/4] =0;
+	/* for YCrCb:
+	par->riva.PRAMDAC[0x00000630/4] = 2; 
+	par->riva.PRAMDAC[0x0000084c/4] =0x801080;
+	*/
 	MISCout(par, regs->misc_output);
 
 	for (i = 0; i < NUM_CRT_REGS; i++) {
@@ -732,6 +722,8 @@ static void riva_load_video_mode(struct fb_info *info)
 			xbox_hdtv_mode hdtv_mode = HDTV_480p;
 			if (info->var.yres > 800) {
 				hdtv_mode = HDTV_1080i;
+				crtc_vStart = vStart + 31;
+				crtc_vEnd = crtc_vStart + 2;
 			}
 			else if (info->var.yres > 600) {
 				hdtv_mode = HDTV_720p;
