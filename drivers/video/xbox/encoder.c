@@ -19,8 +19,6 @@
 #include "focus.h"
 #include <asm/io.h>
 
-#define ADR(x) (x / 2 - 0x17)
-
 xbox_encoder_type tv_get_video_encoder(void) {
 	unsigned char b = 0;
 
