@@ -425,10 +425,9 @@ config FB_RIVA
 
 config FB_XBOX
 	tristate "nVidia Xbox support"
-	depends on FB && PCI
+	depends on FB && PCI && I2C_XBOX && EXPERIMENTAL
 	help
-	  This driver supports the graphics chip of the Microsoft Xbox
-	  chips.
+	  This driver supports the graphics chip of the Microsoft Xbox. 
 	  Say Y if you have an Xbox, N otherwise
 
 	  To compile this driver as a module, choose M here: the
