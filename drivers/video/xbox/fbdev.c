@@ -15,7 +15,7 @@
  *
  *	Ferenc Bakonyi:  Bug fixes, cleanup, modularization
  *
- *	Jindrich Makovicka:  Accel code help, mtrr
+ *	Jindrich Makovicka:  Accel code help, hw cursor, mtrr
  *
  *	Paul Richards:  Bug fixes, updates
  *
@@ -98,6 +98,9 @@
 #define SetBitField(value,from,to) SetBF(to,GetBF(value,from))
 #define SetBit(n)		(1<<(n))
 #define Set8Bits(value)		((value)&0xff)
+
+/* HW cursor parameters */
+#define MAX_CURS		32
 
 /* ------------------------------------------------------------------------- *
  *
@@ -388,6 +391,80 @@ static inline void reverse_order(u32 *l)
 	*a = byte_rev[*a], a++;
 	*a = byte_rev[*a], a++;
 	*a = byte_rev[*a];
+}
+
+/* ------------------------------------------------------------------------- *
+ *
+ * cursor stuff
+ *
+ * ------------------------------------------------------------------------- */
+
+/**
+ * xboxfb_load_cursor_image - load cursor image to hardware
+ * @data: address to monochrome bitmap (1 = foreground color, 0 = background)
+ * @par:  pointer to private data
+ * @w:    width of cursor image in pixels
+ * @h:    height of cursor image in scanlines
+ * @bg:   background color (ARGB1555) - alpha bit determines opacity
+ * @fg:   foreground color (ARGB1555)
+ *
+ * DESCRIPTiON:
+ * Loads cursor image based on a monochrome source and mask bitmap.  The
+ * image bits determines the color of the pixel, 0 for background, 1 for
+ * foreground.  Only the affected region (as determined by @w and @h 
+ * parameters) will be updated.
+ *
+ * CALLED FROM:
+ * xboxfb_cursor()
+ */
+static void xboxfb_load_cursor_image(struct riva_par *par, u8 *data, 
+				     u8 *mask, u16 bg, u16 fg, u32 w, u32 h)
+{
+	int i, j, k = 0;
+	u32 b, m, tmp;
+
+	for (i = 0; i < h; i++) {
+		b = *((u32 *)data);
+		data = (u8 *)((u32 *)data + 1);
+		m = *((u32 *)mask);
+		mask = (u8 *)((u32 *)mask + 1);
+		reverse_order(&b);
+		
+		for (j = 0; j < w/2; j++) {
+			tmp = 0;
+#if defined (__BIG_ENDIAN)
+			tmp = (b & (1 << 31)) ? fg << 16 : bg << 16;
+			if (m & (1 << 31)) {
+				tmp |= 1 << 31;
+			}
+			b <<= 1;
+			m <<= 1;
+
+			tmp |= (b & (1 << 31)) ? fg : bg;
+			if (m & (1 << 31)) {
+				tmp |= 1 << 15;
+			}
+			b <<= 1;
+			m <<= 1;
+#else
+			tmp = (b & 1) ? fg : bg;
+			if (m & 1) {
+				tmp |= 1 << 15;
+			}
+			b >>= 1;
+			m >>= 1;
+			
+			tmp |= (b & 1) ? fg << 16 : bg << 16;
+			if (m & 1) {
+				tmp |= 1 << 31;
+			}
+			b >>= 1;
+			m >>= 1;
+#endif
+			writel(tmp, par->riva.CURSOR + k++);
+		}
+		k += (MAX_CURS - w)/2;
+	}
 }
 
 /* ------------------------------------------------------------------------- *
@@ -1462,6 +1539,96 @@ static void xboxfb_imageblit(struct fb_info *info,
 	}
 }
 
+/**
+ * xboxfb_cursor - hardware cursor function
+ * @info: pointer to info structure
+ * @cursor: pointer to fbcursor structure
+ *
+ * DESCRIPTION:
+ * A cursor function that supports displaying a cursor image via hardware.
+ * Within the kernel, copy and invert rops are supported.  If exported
+ * to user space, only the copy rop will be supported.
+ *
+ * CALLED FROM
+ * framebuffer hook
+ */
+static int xboxfb_cursor(struct fb_info *info, struct fb_cursor *cursor)
+{
+	struct riva_par *par = (struct riva_par *) info->par;
+	u8 data[MAX_CURS * MAX_CURS/8];
+	u8 mask[MAX_CURS * MAX_CURS/8];
+	u16 fg, bg;
+	int i;
+
+	par->riva.ShowHideCursor(&par->riva, 0);
+
+	if (cursor->set & FB_CUR_SETPOS) {
+		u32 xx, yy, temp;
+
+		info->cursor.image.dx = cursor->image.dx;
+		info->cursor.image.dy = cursor->image.dy;
+		yy = cursor->image.dy - info->var.yoffset;
+		xx = cursor->image.dx - info->var.xoffset;
+		temp = xx & 0xFFFF;
+		temp |= yy << 16;
+
+		par->riva.PRAMDAC[0x0000300/4] = temp;
+	}
+
+	if (cursor->set & FB_CUR_SETSIZE) {
+		info->cursor.image.height = cursor->image.height;
+		info->cursor.image.width = cursor->image.width;
+		memset_io(par->riva.CURSOR, 0, MAX_CURS * MAX_CURS * 2);
+	}
+
+	if (cursor->set & FB_CUR_SETCMAP) {
+		info->cursor.image.bg_color = cursor->image.bg_color;
+		info->cursor.image.fg_color = cursor->image.fg_color;
+	}
+
+	if (cursor->set & (FB_CUR_SETSHAPE | FB_CUR_SETCMAP)) {
+		u32 bg_idx = info->cursor.image.bg_color;
+		u32 fg_idx = info->cursor.image.fg_color;
+		u32 s_pitch = (info->cursor.image.width+7) >> 3;
+		u32 dsize = s_pitch * info->cursor.image.height;
+		u32 d_pitch = MAX_CURS/8;
+		u8 *dat = (u8 *) cursor->image.data;
+		u8 *msk = (u8 *) info->cursor.mask;
+		u8 src[64];	
+		switch (info->cursor.rop) {
+		case ROP_XOR:
+			for (i = 0; i < dsize; i++)
+					src[i] = dat[i] ^ msk[i];
+			break;
+		case ROP_COPY:
+		default:
+			for (i = 0; i < dsize; i++)
+					src[i] = dat[i] & msk[i];
+			break;
+		}
+		move_buf_aligned(info, data, src, d_pitch, s_pitch, info->cursor.image.height);
+
+		move_buf_aligned(info, mask, msk, d_pitch, s_pitch, info->cursor.image.height);
+
+		bg = ((info->cmap.red[bg_idx] & 0xf8) << 7) |
+		     ((info->cmap.green[bg_idx] & 0xf8) << 2) |
+		     ((info->cmap.blue[bg_idx] & 0xf8) >> 3);
+
+		fg = ((info->cmap.red[fg_idx] & 0xf8) << 7) |
+		     ((info->cmap.green[fg_idx] & 0xf8) << 2) |
+		     ((info->cmap.blue[fg_idx] & 0xf8) >> 3);
+
+		par->riva.LockUnlock(&par->riva, 0);
+
+		xboxfb_load_cursor_image(par, data, mask, bg, fg,
+					 info->cursor.image.width, 
+					 info->cursor.image.height);
+	}
+	if (info->cursor.enable)
+		par->riva.ShowHideCursor(&par->riva, 1);
+	return 0;
+}
+
 static int xboxfb_sync(struct fb_info *info)
 {
 	struct riva_par *par = (struct riva_par *)info->par;
@@ -1553,9 +1720,9 @@ static struct fb_ops riva_fb_ops = {
 	.fb_fillrect 	= xboxfb_fillrect,
 	.fb_copyarea 	= xboxfb_copyarea,
 	.fb_imageblit 	= xboxfb_imageblit,
+	.fb_cursor	= xboxfb_cursor,
 	.fb_sync 	= xboxfb_sync,
 	.fb_ioctl	= xboxfb_ioctl,
-	.fb_cursor      = soft_cursor,
 };
 
 static int __devinit riva_set_fbinfo(struct fb_info *info)
