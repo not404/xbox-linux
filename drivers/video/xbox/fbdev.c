@@ -1947,7 +1947,7 @@ static int __devinit xboxfb_probe(struct pci_dev *pd,
 	printk(KERN_INFO PFX "Using %dM framebuffer memory\n", (int)(fb_size/(1024*1024)));
 	default_par->riva_fb_start = fb_start;
 	xboxfb_fix.smem_start += fb_start;
-	xboxfb_fix.smem_len = fb_size - 2 * 1024; /* 2 KByte for Cursor */
+	xboxfb_fix.smem_len = fb_size - 1024 * 2; /* 2 KByte for Cursor */
 	tv_init();
 	if (tv_encoding == TV_ENC_INVALID) {
 		tv_encoding = get_tv_encoding();
@@ -2116,7 +2116,7 @@ static void __exit xboxfb_remove(struct pci_dev *pd)
 	unregister_framebuffer(info);
 #ifdef CONFIG_MTRR
 	if (par->mtrr.vram_valid)
-		mtrr_del(par->mtrr.vram, info->fix.smem_start, info->fix.smem_len + 2 * 1024);
+		mtrr_del(par->mtrr.vram, info->fix.smem_start, info->fix.smem_len + 1024 * 2);
 #endif /* CONFIG_MTRR */
 
 	iounmap(par->ctrl_base);
@@ -2124,7 +2124,7 @@ static void __exit xboxfb_remove(struct pci_dev *pd)
 
 	release_mem_region(info->fix.mmio_start,
 			   info->fix.mmio_len);
-	release_mem_region(info->fix.smem_start, info->fix.smem_len + 2 * 1024);
+	release_mem_region(info->fix.smem_start, info->fix.smem_len + 1024 * 2);
 
 	if (par->riva.Architecture == NV_ARCH_03) {
 		iounmap((caddr_t)par->riva.PRAMIN);

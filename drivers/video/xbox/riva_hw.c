@@ -127,6 +127,20 @@ static int ShowHideCursor
     return (cursor & 0x01);
 }
 
+static int nv10ShowHideCursor
+(
+    RIVA_HW_INST *chip,
+    int           ShowHide
+)
+{
+    unsigned int cursor;
+    cursor                           =  chip->CurrentState->cursorConfig;
+    chip->CurrentState->cursorConfig = (chip->PCRTC[0x00000810/4] & 0xFFFFFFFE) |
+                                  (ShowHide & 0x01);
+    chip->PCRTC[0x00000810/4] = chip->CurrentState->cursorConfig;
+    return (cursor & 0x01);
+}
+
 /****************************************************************************\
 *                                                                            *
 * The video arbitration routines calculate some "magic" numbers.  Fixes      *
@@ -1288,9 +1302,7 @@ static void CalcStateExt
                                          &(state->arbitration1),
                                           chip);
             }
-            state->cursor0  = 0x80 | (chip->CursorStart >> 17);
-            state->cursor1  = (chip->CursorStart >> 11) << 2;
-            state->cursor2  = chip->CursorStart >> 24;
+            state->cursor0  = chip->CursorStart;
             state->pllsel   = 0x10000700;
             state->config   = chip->PFB[0x00000200/4];
             state->general  = bpp == 16 ? 0x00101100 : 0x00100100;
@@ -1614,6 +1626,7 @@ static void LoadStateExt
             for (i = 0; i < 4; i++)
                 chip->PGRAPH[0x00000F54/4] = 0x00000000;
 
+            chip->PCRTC[0x0000080c/4] = state->cursor0;
             chip->PCRTC[0x00000810/4] = state->cursorConfig;
 
             if(chip->flatPanel) {
@@ -1655,11 +1668,6 @@ static void LoadStateExt
     VGA_WR08(chip->PCIO, 0x03D4, 0x20);
     VGA_WR08(chip->PCIO, 0x03D5, state->arbitration1);
     VGA_WR08(chip->PCIO, 0x03D4, 0x30);
-    VGA_WR08(chip->PCIO, 0x03D5, state->cursor0);
-    VGA_WR08(chip->PCIO, 0x03D4, 0x31);
-    VGA_WR08(chip->PCIO, 0x03D5, state->cursor1);
-    VGA_WR08(chip->PCIO, 0x03D4, 0x2F);
-    VGA_WR08(chip->PCIO, 0x03D5, state->cursor2);
     VGA_WR08(chip->PCIO, 0x03D4, 0x39);
     VGA_WR08(chip->PCIO, 0x03D5, state->interlace);
 
@@ -1732,12 +1740,6 @@ static void UnloadStateExt
     state->arbitration0 = VGA_RD08(chip->PCIO, 0x03D5);
     VGA_WR08(chip->PCIO, 0x03D4, 0x20);
     state->arbitration1 = VGA_RD08(chip->PCIO, 0x03D5);
-    VGA_WR08(chip->PCIO, 0x03D4, 0x30);
-    state->cursor0      = VGA_RD08(chip->PCIO, 0x03D5);
-    VGA_WR08(chip->PCIO, 0x03D4, 0x31);
-    state->cursor1      = VGA_RD08(chip->PCIO, 0x03D5);
-    VGA_WR08(chip->PCIO, 0x03D4, 0x2F);
-    state->cursor2      = VGA_RD08(chip->PCIO, 0x03D5);
     VGA_WR08(chip->PCIO, 0x03D4, 0x39);
     state->interlace    = VGA_RD08(chip->PCIO, 0x03D5);
     state->vpll         = chip->PRAMDAC0[0x00000508/4];
@@ -1757,6 +1759,12 @@ static void UnloadStateExt
             state->pitch1   = chip->PGRAPH[0x00000654/4];
             state->pitch2   = chip->PGRAPH[0x00000658/4];
             state->pitch3   = chip->PGRAPH[0x0000065C/4];
+            VGA_WR08(chip->PCIO, 0x03D4, 0x30);
+            state->cursor0      = VGA_RD08(chip->PCIO, 0x03D5);
+            VGA_WR08(chip->PCIO, 0x03D4, 0x31);
+            state->cursor1      = VGA_RD08(chip->PCIO, 0x03D5);
+            VGA_WR08(chip->PCIO, 0x03D4, 0x2F);
+            state->cursor2      = VGA_RD08(chip->PCIO, 0x03D5);
             break;
         case NV_ARCH_04:
             state->offset0  = chip->PGRAPH[0x00000640/4];
@@ -1767,6 +1775,12 @@ static void UnloadStateExt
             state->pitch1   = chip->PGRAPH[0x00000674/4];
             state->pitch2   = chip->PGRAPH[0x00000678/4];
             state->pitch3   = chip->PGRAPH[0x0000067C/4];
+            VGA_WR08(chip->PCIO, 0x03D4, 0x30);
+            state->cursor0      = VGA_RD08(chip->PCIO, 0x03D5);
+            VGA_WR08(chip->PCIO, 0x03D4, 0x31);
+            state->cursor1      = VGA_RD08(chip->PCIO, 0x03D5);
+            VGA_WR08(chip->PCIO, 0x03D4, 0x2F);
+            state->cursor2      = VGA_RD08(chip->PCIO, 0x03D5);
             break;
         case NV_ARCH_10:
         case NV_ARCH_20:
@@ -1795,6 +1809,7 @@ static void UnloadStateExt
                 state->dither = chip->PRAMDAC[0x083C/4];
             }
             state->fb_start    = chip->PCRTC[0x00000800/4];
+            state->cursor0     = chip->PCRTC[0x0000080c/4];
             state->vend        = chip->PRAMDAC[0x00000800/4];
             state->vtotal      = chip->PRAMDAC[0x00000804/4];
             state->vcrtc       = chip->PRAMDAC[0x00000808/4];
@@ -2162,7 +2177,7 @@ static void nv10GetConfig
        break;
     }
 
-    chip->CursorStart      = (chip->RamAmountKBytes - 128) * 1024;
+    chip->CursorStart      = (chip->RamAmountKBytes - 2) * 1024;
     chip->CURSOR           = NULL;  /* can't set this here */
     chip->VBlankBit        = 0x00000001;
     chip->MaxVClockFreqKHz = 350000;
@@ -2170,7 +2185,7 @@ static void nv10GetConfig
      * Set chip functions.
      */
     chip->Busy            = nv10Busy;
-    chip->ShowHideCursor  = ShowHideCursor;
+    chip->ShowHideCursor  = nv10ShowHideCursor;
     chip->CalcStateExt    = CalcStateExt;
     chip->LoadStateExt    = LoadStateExt;
     chip->UnloadStateExt  = UnloadStateExt;
