@@ -1,8 +1,15 @@
 /*
  * arch/i386/mach-xbox/reboot.c 
- * Olivier Fauchon <olivier.fauchon@free.fr>
- * Anders Gustafsson <andersg@0x63.nu>
  *
+ * Power-off/reboot mach hooks.
+ * 
+ * Copyright (C) 2003  Olivier Fauchon <olivier.fauchon@free.fr>
+ * Copyright (C) 2003  Anders Gustafsson <andersg@0x63.nu>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  */
 
 #include <asm/io.h>
@@ -36,13 +43,11 @@ static void xbox_pic_cmd(u8 command)
 
 void machine_restart(char * __unused)
 {
-	printk(KERN_INFO "Sending POWER_CYCLE to XBOX-PIC.\n");
 	xbox_pic_cmd(SMC_SUBCMD_POWER_CYCLE);  
 }
 
 void machine_power_off(void)
 {
-	printk(KERN_INFO "Sending POWER_OFF to XBOX-PIC.\n");
 	xbox_pic_cmd(SMC_SUBCMD_POWER_OFF);  
 }
 
