@@ -86,11 +86,11 @@ int xbox_partition(struct parsed_partitions *state, struct block_device *bdev)
 	slot = 50;
 	printk(" [xbox]");
 
+	put_partition(state, slot++, XBOX_DATA_START, XBOX_DATA_SIZE);
+	put_partition(state, slot++, XBOX_SYSTEM_START, XBOX_SYSTEM_SIZE);
 	put_partition(state, slot++, XBOX_CACHE1_START, XBOX_CACHE1_SIZE);
 	put_partition(state, slot++, XBOX_CACHE2_START, XBOX_CACHE2_SIZE);
 	put_partition(state, slot++, XBOX_CACHE3_START, XBOX_CACHE3_SIZE);
-	put_partition(state, slot++, XBOX_SYSTEM_START, XBOX_SYSTEM_SIZE);
-	put_partition(state, slot++, XBOX_DATA_START, XBOX_DATA_SIZE);
 
 	/*
 	 * Xbox HDDs come in two sizes - 8GB and 10GB. The native Xbox kernel
