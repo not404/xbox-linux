@@ -2234,11 +2234,7 @@ int __devinit xboxfb_init(void)
 //		return -ENODEV;
 	xboxfb_setup(option);
 	
-	if (pci_register_driver(&xboxfb_driver) > 0) {
-		return 0;
-	}
-      	pci_unregister_driver(&xboxfb_driver);
-     	return -ENODEV;
+	return pci_register_driver(&xboxfb_driver);
 }
 
 module_init(xboxfb_init);
