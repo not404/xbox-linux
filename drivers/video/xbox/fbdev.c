@@ -602,7 +602,7 @@ static void riva_load_state(struct riva_par *par, struct riva_regs *regs)
 	* xbeboot
 	*/
 	par->riva.PRAMDAC[0x0000084c/4] = 0;
-	par->riva.PRAMDAC[0x000008c4/4] = 0x00801080;
+	par->riva.PRAMDAC[0x000008c4/4] = 0;
 	
 	/* for YCrCb:
 	par->riva.PRAMDAC[0x00000630/4] = 2; 
