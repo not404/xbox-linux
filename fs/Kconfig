@@ -664,6 +664,26 @@ config UMSDOS_FS
 	  (the one containing the directory /) cannot be a module, so saying M
 	  could be dangerous.  If unsure, say N.
 
+config FATX_FS
+	tristate "FATX filesystem support (EXPERIMENTAL)"
+	depends on EXPERIMENTAL
+	help
+	  This adds support for the FATX filesystem as found in Microsoft's Xbox.
+	  
+	  The FATX filesystem is a derivative of the FAT filesystem minus some
+	  legacy fields and redundant information. For lengthier discussions on
+	  the filesystem, see:
+	  
+	  http://xbox-linux.sourceforge.net/docs/fatxfat.html
+	  http://xbox-linux.sourceforge.net/docs/hdpartfs.html
+	  http://xbox-linux.sourceforge.net/docs/hackingfatx.html
+	  
+	  If you are running Linux on the Xbox, choose Y unless you know
+	  what you're doing. Otherwise, choose N.
+	  
+	  To compile this filesystem support as a module, choose M here: the
+	  module will be called fatx.
+
 config NTFS_FS
 	tristate "NTFS file system support"
 	select NLS
@@ -742,9 +762,6 @@ config NTFS_RW
 	  <http://topologi-linux.sourceforge.net/>
 
 	  It is perfectly safe to say N here.
-
-config FATX_FS
-	tristate "XBOX (tm) FATX Filesystem"
 
 endmenu
 
