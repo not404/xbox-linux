@@ -220,15 +220,6 @@ config USB_XPAD
 	  To compile this driver as a module, choose M here: the
 	  module will be called xpad.
 	  
-config USB_XPAD_MOUSE
- 	bool "Mouse emulation for Xbox controller"
- 	depends on USB_XPAD
- 	---help---
- 	  Say Y here if you want to enable mouse emulation for your Xbox
- 	  controller.
- 	  Make sure to say Y to "Mouse support" (CONFIG_INPUT_MOUSEDEV)
- 	  and/or "Event interface support" (CONFIG_INPUT_EVDEV) as well.
-
 config USB_ATI_REMOTE
 	tristate "ATI / X10 USB RF remote control"
 	depends on USB && INPUT
