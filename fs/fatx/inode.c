@@ -46,25 +46,23 @@ static int fatx_prepare_write(struct file *file, struct page *page, unsigned fro
 		&FATX_I(page->mapping->host)->mmu_private);
 }
 
-static int _fatx_bmap(struct address_space *mapping, sector_t block)
+static sector_t _fatx_bmap(struct address_space *mapping, sector_t block)
 {
 	return generic_block_bmap(mapping,block,fatx_get_block);
 }
 
-static int fat_commit_write(struct file *file, struct page *page, unsigned from, unsigned to)
+static int fatx_commit_write(struct file *file, struct page *page, unsigned from, unsigned to)
 {
 	kunmap(page);
 	return generic_commit_write(file, page, from, to);
 }
-
-
 
 struct address_space_operations fatx_aops = {
 	.readpage	= fatx_readpage,
 	.writepage	= fatx_writepage,
 	.sync_page	= block_sync_page,
 	.prepare_write	= fatx_prepare_write,
-	.commit_write	= fat_commit_write,
+	.commit_write	= fatx_commit_write,
 	.bmap		= _fatx_bmap
 };
 
@@ -478,61 +476,58 @@ static struct super_operations fatx_sops = {
 	.read_inode	= make_bad_inode,
 };
 
+enum {
+	Opt_uid, Opt_gid, Opt_umask, Opt_quiet, Opt_err,
+};
+
+static match_table_t fat_tokens = {
+	{Opt_uid, "uid=%u"},
+	{Opt_gid, "gid=%u"},
+        {Opt_umask, "umask=%o"},
+	{Opt_quiet, "quiet"},
+	{Opt_err, NULL}
+};
+
 static int parse_options(char *options,struct fatx_mount_options *opts)
 {
-	/*
-        char *this_char,*value,save,*savep;
-        int ret = 1;
+        char *p;
+        substring_t args[MAX_OPT_ARGS];
+        int option;
 
-        opts->fs_uid = current->uid;
+	opts->fs_uid = current->uid;
         opts->fs_gid = current->gid;
         opts->fs_umask = current->fs->umask;
-        opts->quiet = 0;
 
-        if (!options)
-                goto out;
-        save = 0;
-        savep = NULL;
-        for (this_char = strtok(options,","); this_char;
-             this_char = strtok(NULL,",")) {
-                if ((value = strchr(this_char,'=')) != NULL) {
-                        save = *value;
-                        savep = value;
-                        *value++ = 0;
-                }
-                if (!strcmp(this_char,"uid")) {
-                        if (!value || !*value) ret = 0;
-                        else {
-                                opts->fs_uid = simple_strtoul(value,&value,0);
-                                if (*value) ret = 0;
-                        }
-                }
-                else if (!strcmp(this_char,"gid")) {
-                        if (!value || !*value) ret= 0;
-                        else {
-                                opts->fs_gid = simple_strtoul(value,&value,0);
-                                if (*value) ret = 0;
-                        }
-                }
-                else if (!strcmp(this_char,"umask")) {
-                        if (!value || !*value) ret = 0;
-                        else {
-                                opts->fs_umask = simple_strtoul(value,&value,8);
-                                if (*value) ret = 0;
-                        }
-                }
-                else if (!strcmp(this_char,"quiet")) {
-                        if (value) ret = 0;
-                        else opts->quiet = 1;
-                }
-                if (this_char != options) *(this_char-1) = ',';
-                if (value) *savep = save;
-                if (ret == 0)
-                        break;
-        }
-out:
-        return ret;
-	*/
+	while ((p = strsep(&options, ",")) != NULL) {
+		int token;
+		if (!*p)
+			continue;
+		token = match_token(p, fat_tokens, args);
+		switch(token) {
+			case Opt_quiet:
+				opts->quiet = 1;
+				break;
+			case Opt_uid:
+				if (match_int(&args[0], &option))
+					return 0;
+				opts->fs_uid = option;
+				break;
+			case Opt_gid:
+				if (match_int(&args[0], &option))
+					return 0;
+				opts->fs_gid = option;
+				break;
+			case Opt_umask:
+				if (match_octal(&args[0], &option))
+					return 0;
+				opts->fs_umask = option;
+				break;
+			default:
+				printk(KERN_ERR "FATX: Unrecognized mount option \"%s\" "
+					"or missing value\n", p);
+				return 0;
+		}
+	}
 	return 1;
 }
 
