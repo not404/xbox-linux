@@ -69,7 +69,6 @@ static struct xpad_device xpad_device[] = {
 	{ 0x045e, 0x0285, 0, "Microsoft Xbox Controller S" },
 	{ 0x045e, 0x0289, 0, "Microsoft Xbox Controller S" }, /* microsoft is stupid */
 	{ 0x046d, 0xca84, 0, "Logitech Xbox Cordless Controller" },
-	{ 0x046d, 0xca87, 0, "Logitech Thunderpad Controller for Xbox" },
 	{ 0x046d, 0xca88, 0, "Logitech Compact Controller for Xbox" },
 	{ 0x05fd, 0x1007, 0, "???Mad Catz Controller???" }, /* CHECKME: this seems strange */
 	{ 0x05fd, 0x107a, 0, "InterAct PowerPad Pro" },
