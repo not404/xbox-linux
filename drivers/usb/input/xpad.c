@@ -140,7 +140,6 @@ static void xpad_process_packet(struct usb_xpad *xpad, u16 cmd, unsigned char *d
 {
 	struct input_dev *dev = &xpad->dev;
 	// These hold the values for the left and right joypad axes.
-	__s16 x, y, rx, ry;
 
 	input_regs(dev, regs);
 
@@ -166,55 +165,19 @@ static void xpad_process_packet(struct usb_xpad *xpad, u16 cmd, unsigned char *d
 
 	/* left stick */
 
-	// Get the X axis data.
-	x = (__s16)(((__s16)data[13] << 8) | (__s16)data[12]);
+	// X axis.
+	input_report_abs(dev, ABS_X, (__s16)(((__s16)data[13] << 8) | (__s16)data[12]));
 
-	//X axis deadzone
-	if((x > DEADZONE_X) || (x < -DEADZONE_X)) {
-		input_report_abs(dev, ABS_X, x);
-	} 
-	else {
-		input_report_abs(dev, ABS_X, 0);
-	}
-
-	// Get the Y axis data.
-	y = (__s16)(((__s16)data[15] << 8) | data[14]);;
-	
-	// Flip the Y axis
-	y=~y;
-
-	//Y axis deadzone
-	if ((y > DEADZONE_Y) || (y < -DEADZONE_Y)) {
-		input_report_abs(dev, ABS_Y, y);
-	} 
-	else {
-		input_report_abs(dev, ABS_Y, 0);
-	}
-
+	// Y axis (needs to be flipped: ~)
+	input_report_abs(dev, ABS_Y, ~(__s16)(((__s16)data[15] << 8) | data[14]));
 	
 	/* right stick */
 
 	// X axis.
-	rx = (__s16)(((__s16)data[17] << 8) | (__s16)data[16]);
-
-	// X axis deadzone
-	if((rx > DEADZONE_X) || (rx < -DEADZONE_X)) {
-		input_report_abs(dev, ABS_RX, rx);
-	}
-	else {
-		input_report_abs(dev, ABS_RX, 0);
-	}
+	input_report_abs(dev, ABS_RX, (__s16)(((__s16)data[17] << 8) | (__s16)data[16]));
 
 	// Y axis.
-	ry = (__s16)(((__s16)data[19] << 8) | (__s16)data[18]);
-
-	// Y axis deadzone
-	if((ry > DEADZONE_Y) || (ry < -DEADZONE_Y)) {
-		input_report_abs(dev, ABS_RY, ry);
-	} 
-	else {
-		input_report_abs(dev, ABS_RY, 0);
-	}
+	input_report_abs(dev, ABS_RY, (__s16)(((__s16)data[19] << 8) | (__s16)data[18]));
    	
    	/* triggers left/right */
 	input_report_abs(dev, ABS_Z, data[10]);
@@ -409,7 +372,7 @@ static void xpad_init_input_device(struct usb_interface *intf, struct xpad_devic
 			case ABS_RY:	/* the two sticks */
 				xpad->dev.absmax[t] =  32767;
 				xpad->dev.absmin[t] = -32768;
-				xpad->dev.absflat[t] = 128;
+				xpad->dev.absflat[t] = 12000;
 				xpad->dev.absfuzz[t] = 16;
 				break;
 			case ABS_Z:	/* left trigger */
@@ -582,7 +545,7 @@ MODULE_LICENSE("GPL");
  *  driver history
  * ----------------
  *
- * 2005-03-15 - 0.1.5 : Mouse emulation removed.  Deadzones added for joystick.
+ * 2005-03-15 - 0.1.5 : Mouse emulation removed.  Deadzones increased.
  *  - Flipped the Y axis of the left joystick (it was inverted, like on a 
  *    flight simulator).
  *

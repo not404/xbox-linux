@@ -37,11 +37,6 @@
 
 #define USB_XPAD_IOC_MAXNR 	6
 
-/************************** Deadzone stuff ****************************/
-#define DEADZONE_X 12000
-#define DEADZONE_Y 12000
-
-
 /************************* driver internals ***************************/
 #ifdef __KERNEL__
 
