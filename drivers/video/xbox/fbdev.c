@@ -92,7 +92,7 @@
 #define assert(expr)
 #endif
 
-#define PFX "rivafb: "
+#define PFX "xboxfb: "
 
 /* macro that allows you to set overflow bits */
 #define SetBitField(value,from,to) SetBF(to,GetBF(value,from))
@@ -848,7 +848,7 @@ static void riva_load_video_mode(struct fb_info *info)
 			newmode.ext.interlace = 0xff; /* interlace off */
 	
 		if (par->riva.Architecture >= NV_ARCH_10)
-			par->riva.CURSOR = (U032 *)(info->screen_base + info->fix.smem_len - 128 * 1024);
+			par->riva.CURSOR = (U032 *)(info->screen_base + info->fix.smem_len);
 	
 		if (info->var.sync & FB_SYNC_HOR_HIGH_ACT)
 			newmode.misc_output &= ~0x40;
@@ -1076,7 +1076,7 @@ static int xboxfb_open(struct fb_info *info, int user)
 		save_vga(&par->state);
 
 		RivaGetConfig(&par->riva, par->Chipset);
-		par->riva.CURSOR = (U032*)(info->screen_base + info->fix.smem_len - 128 * 1024);
+		par->riva.CURSOR = (U032*)(info->screen_base + info->fix.smem_len);
 		par->riva.PCRTC[0x00000800/4] = par->riva_fb_start;
 		par->riva.PGRAPH[0x00000820/4] = par->riva_fb_start;
 		par->riva.PGRAPH[0x00000824/4] = par->riva_fb_start;
@@ -1861,7 +1861,7 @@ static void riva_get_EDID(struct fb_info *info, struct pci_dev *pdev)
 {
 #ifdef CONFIG_PPC_OF
 	if (!riva_get_EDID_OF(info, pdev))
-		printk("rivafb: could not retrieve EDID from OF\n");
+		printk("xboxfb: could not retrieve EDID from OF\n");
 #else
 	/* XXX use other methods later */
 #endif
@@ -1926,7 +1926,6 @@ static int __devinit xboxfb_probe(struct pci_dev *pd,
 	default_par->forceCRTC = forceCRTC;
 	
 	xboxfb_fix.mmio_len = pci_resource_len(pd, 0);
-	xboxfb_fix.smem_len = pci_resource_len(pd, 1);
 
 	{
 		/* enable IO and mem if not already done */
@@ -1948,7 +1947,7 @@ static int __devinit xboxfb_probe(struct pci_dev *pd,
 	printk(KERN_INFO PFX "Using %dM framebuffer memory\n", (int)(fb_size/(1024*1024)));
 	default_par->riva_fb_start = fb_start;
 	xboxfb_fix.smem_start += fb_start;
-	xboxfb_fix.smem_len = fb_size;
+	xboxfb_fix.smem_len = fb_size - 2 * 1024; /* 2 KByte for Cursor */
 	tv_init();
 	if (tv_encoding == TV_ENC_INVALID) {
 		tv_encoding = get_tv_encoding();
@@ -1981,7 +1980,7 @@ static int __devinit xboxfb_probe(struct pci_dev *pd,
 	default_par->voc = voc / 100.0;
 	
 	if (!request_mem_region(xboxfb_fix.mmio_start,
-				xboxfb_fix.mmio_len, "rivafb")) {
+				xboxfb_fix.mmio_len, "xboxfb")) {
 		printk(KERN_ERR PFX "cannot reserve MMIO region\n");
 		goto err_out_kfree2;
 	}
@@ -2006,7 +2005,7 @@ static int __devinit xboxfb_probe(struct pci_dev *pd,
 		 * we can safely allocate this separately.
 		 */
 		if (!request_mem_region(xboxfb_fix.smem_start + 0x00C00000,
-					 0x00008000, "rivafb")) {
+					 0x00008000, "xboxfb")) {
 			printk(KERN_ERR PFX "cannot reserve PRAMIN region\n");
 			goto err_out_iounmap_ctrl;
 		}
@@ -2035,14 +2034,12 @@ static int __devinit xboxfb_probe(struct pci_dev *pd,
 	/* xboxfb_fix.smem_len = riva_get_memlen(default_par) * 1024; */
 	default_par->dclk_max = riva_get_maxdclk(default_par) * 1000;
 
-	if (!request_mem_region(xboxfb_fix.smem_start,
-				xboxfb_fix.smem_len, "rivafb")) {
+	if (!request_mem_region(xboxfb_fix.smem_start, xboxfb_fix.smem_len, "xboxfb")) {
 		printk(KERN_ERR PFX "cannot reserve FB region\n");
 		goto err_out_iounmap_nv3_pramin;
 	}
 	
-	info->screen_base = ioremap(xboxfb_fix.smem_start,
-				    xboxfb_fix.smem_len);
+	info->screen_base = ioremap(xboxfb_fix.smem_start, fb_size);
 	if (!info->screen_base) {
 		printk(KERN_ERR PFX "cannot ioremap FB base\n");
 		goto err_out_free_base1;
@@ -2050,9 +2047,8 @@ static int __devinit xboxfb_probe(struct pci_dev *pd,
 
 #ifdef CONFIG_MTRR
 	if (!nomtrr) {
-		default_par->mtrr.vram = mtrr_add(xboxfb_fix.smem_start,
-					   	  xboxfb_fix.smem_len,
-					    	  MTRR_TYPE_WRCOMB, 1);
+		default_par->mtrr.vram = mtrr_add(xboxfb_fix.smem_start, fb_size,
+			MTRR_TYPE_WRCOMB, 1);
 		if (default_par->mtrr.vram < 0) {
 			printk(KERN_ERR PFX "unable to setup MTRR\n");
 		} else {
@@ -2077,18 +2073,18 @@ static int __devinit xboxfb_probe(struct pci_dev *pd,
 	pci_set_drvdata(pd, info);
 
 	printk(KERN_INFO PFX
-		"PCI nVidia NV%x framebuffer ver %s (%s, %dMB @ 0x%lX)\n",
+		"PCI nVidia NV%x framebuffer ver %s (%s, %ldMB @ 0x%lX)\n",
 		default_par->riva.Architecture,
 		RIVAFB_VERSION,
 		info->fix.id,
-		info->fix.smem_len / (1024 * 1024),
+		fb_size / (1024 * 1024),
 		info->fix.smem_start);
 	return 0;
 
 err_out_iounmap_fb:
 	iounmap(info->screen_base);
 err_out_free_base1:
-	release_mem_region(xboxfb_fix.smem_start, xboxfb_fix.smem_len);
+	release_mem_region(xboxfb_fix.smem_start, fb_size);
 err_out_iounmap_nv3_pramin:
 	if (default_par->riva.Architecture == NV_ARCH_03) 
 		iounmap((caddr_t)default_par->riva.PRAMIN);
@@ -2120,8 +2116,7 @@ static void __exit xboxfb_remove(struct pci_dev *pd)
 	unregister_framebuffer(info);
 #ifdef CONFIG_MTRR
 	if (par->mtrr.vram_valid)
-		mtrr_del(par->mtrr.vram, info->fix.smem_start,
-			 info->fix.smem_len);
+		mtrr_del(par->mtrr.vram, info->fix.smem_start, info->fix.smem_len + 2 * 1024);
 #endif /* CONFIG_MTRR */
 
 	iounmap(par->ctrl_base);
@@ -2129,8 +2124,7 @@ static void __exit xboxfb_remove(struct pci_dev *pd)
 
 	release_mem_region(info->fix.mmio_start,
 			   info->fix.mmio_len);
-	release_mem_region(info->fix.smem_start,
-			   info->fix.smem_len);
+	release_mem_region(info->fix.smem_start, info->fix.smem_len + 2 * 1024);
 
 	if (par->riva.Architecture == NV_ARCH_03) {
 		iounmap((caddr_t)par->riva.PRAMIN);
@@ -2193,7 +2187,7 @@ int __init xboxfb_setup(char *options)
 #endif /* !MODULE */
 
 static struct pci_driver xboxfb_driver = {
-	.name		= "rivafb",
+	.name		= "xboxfb",
 	.id_table	= xboxfb_pci_tbl,
 	.probe		= xboxfb_probe,
 	.remove		= __exit_p(xboxfb_remove),
