@@ -1751,8 +1751,7 @@ static int __devinit riva_set_fbinfo(struct fb_info *info)
 		else if (!strncmp(mode_option, "720p", 4)) {
 			info->var = xboxfb_mode_720p;
 		}
-		else if ((par->av_type == AV_VGA) || (par->av_type == AV_VGA_SOG))
-		{
+		else {
 			fb_find_mode(&info->var, info, mode_option,
 				NULL, 0, NULL, 8);
 		}
