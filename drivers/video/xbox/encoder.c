@@ -116,7 +116,7 @@ void tv_load_mode(unsigned char * mode) {
 			b &= ~0x01;
 			focus_i2c_write_reg(0x0c,b);
 			b = focus_i2c_read_reg(0x0d);
-			ocus_i2c_write_reg(0x0d,b);
+			focus_i2c_write_reg(0x0d,b);
 			break;
 		case ENCODER_XLB:
 			//Nothing yet
