@@ -734,26 +734,36 @@ static void riva_load_video_mode(struct fb_info *info)
 			else if (info->var.yres > 600) {
 				hdtv_mode = HDTV_720p;
 			}
-			if (par->video_encoder == ENCODER_CONEXANT)
-				encoder_ok = conexant_calc_hdtv_mode(hdtv_mode, pll_int, newmode.encoder_mode);
-			else if (par->video_encoder == ENCODER_FOCUS)
-				encoder_ok = focus_calc_hdtv_mode(hdtv_mode, pll_int, newmode.encoder_mode);
-			else if (par->video_encoder == ENCODER_XLB)
-				encoder_ok = xlb_calc_hdtv_mode(hdtv_mode, pll_int, newmode.encoder_mode);
-			else printk("Error - unknown encoder type detected\n");
+			switch (par->video_encoder) {
+				case ENCODER_CONEXANT:
+					encoder_ok = conexant_calc_hdtv_mode(hdtv_mode, pll_int, newmode.encoder_mode);
+					break;
+				case ENCODER_FOCUS:
+					encoder_ok = focus_calc_hdtv_mode(hdtv_mode, pll_int, newmode.encoder_mode);
+					break;
+				case ENCODER_XLB:
+					encoder_ok = xlb_calc_hdtv_mode(hdtv_mode, pll_int, newmode.encoder_mode);
+					break;
+				default:
+					printk("Error - unknown encoder type detected\n");
+			}
 		}
 		else {
-			if (par->video_encoder == ENCODER_CONEXANT)
-				encoder_ok = conexant_calc_vga_mode(par->av_type, pll_int, newmode.encoder_mode);
-			else if (par->video_encoder == ENCODER_FOCUS) {
-				//No vga functions as yet - so set up for 480p otherwise we dont boot at all. 
-				encoder_ok = focus_calc_hdtv_mode(HDTV_480p, pll_int, newmode.encoder_mode);
+			switch (par->video_encoder) {
+				case ENCODER_CONEXANT:
+					encoder_ok = conexant_calc_vga_mode(par->av_type, pll_int, newmode.encoder_mode);
+					break;
+				case ENCODER_FOCUS:
+					//No vga functions as yet - so set up for 480p otherwise we dont boot at all. 
+					encoder_ok = focus_calc_hdtv_mode(HDTV_480p, pll_int, newmode.encoder_mode);
+					break;
+				case ENCODER_XLB:
+					//No vga functions as yet - so set up for 480p otherwise we dont boot at all. 
+					encoder_ok = xlb_calc_hdtv_mode(HDTV_480p, pll_int, newmode.encoder_mode);
+					break;
+				default:
+					printk("Error - unknown encoder type detected\n");
 			}
-			else if (par->video_encoder == ENCODER_XLB) {
-				//No vga functions as yet - so set up for 480p otherwise we dont boot at all. 
-				encoder_ok = xlb_calc_hdtv_mode(HDTV_480p, pll_int, newmode.encoder_mode);
-			}
-			else printk("Error - unknown encoder type detected\n");
 		}
 		newmode.ext.vend = info->var.yres - 1;
 		newmode.ext.vtotal = vTotal;
@@ -782,16 +792,19 @@ static void riva_load_video_mode(struct fb_info *info)
 		encoder_mode.voc = par->voc;
 		encoder_mode.av_type = par->av_type;
 
-		if (par->video_encoder == ENCODER_CONEXANT) {
-			encoder_ok = conexant_calc_mode(&encoder_mode, &newmode);
+		switch (par->video_encoder) {
+			case ENCODER_CONEXANT:
+				encoder_ok = conexant_calc_mode(&encoder_mode, &newmode);
+				break;
+			case ENCODER_FOCUS:
+				encoder_ok = focus_calc_mode(&encoder_mode, &newmode);
+				break;
+			case ENCODER_XLB:
+				encoder_ok = xlb_calc_mode(&encoder_mode, &newmode);
+				break;
+			default:
+				printk("Error - unknown encoder type detected\n");
 		}
-		else if (par->video_encoder == ENCODER_FOCUS) {
-			encoder_ok = focus_calc_mode(&encoder_mode, &newmode);
-		}
-		else if (par->video_encoder == ENCODER_XLB) {
-			encoder_ok = xlb_calc_mode(&encoder_mode, &newmode);
-		}
-		else printk("Error - unknown encoder type detected\n");
 
 		crtc_hDisplay = (newmode.ext.crtchdispend / 8) - 1;
 		crtc_hStart = (newmode.ext.htotal - 32) / 8;
@@ -1956,6 +1969,9 @@ static int __devinit xboxfb_probe(struct pci_dev *pd,
 			break;
 		case ENCODER_XLB:
 			printk(KERN INFO PFX "detected Xcalibur encoder\n");
+			break;
+		default: 
+			printk(KERN INFO PFX "detected unknown encoder\n");
 	}
 	
 	

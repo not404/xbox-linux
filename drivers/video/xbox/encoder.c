@@ -63,92 +63,88 @@ void tv_exit(void) {
 void tv_load_mode(unsigned char * mode) {
 	int n, n1;
 	unsigned char b;
-	int encoder = 0;
 	
-	encoder = tv_get_video_encoder();
+	switch (tv_get_video_encoder()) {
+		case ENCODER_CONEXANT:
+			conexant_i2c_write_reg(0xc4, 0x00); // EN_OUT = 1
 
-	if(encoder == ENCODER_CONEXANT) {
-		conexant_i2c_write_reg(0xc4, 0x00); // EN_OUT = 1
-
-		// Conexant init (starts at register 0x2e)
-		n1=0;
-		for(n=0x2e;n<0x100;n+=2) {
-			switch(n) {
-				case 0x6c: // reset
-					conexant_i2c_write_reg(n, mode[n1] & 0x7f);
-					break;
-				case 0xc4: // EN_OUT
-					conexant_i2c_write_reg(n, mode[n1] & 0xfe);
-					break;
-				case 0xb8: // autoconfig
-					break;
-
-				default:
-					conexant_i2c_write_reg(n, mode[n1]);
-					break;
+			// Conexant init (starts at register 0x2e)
+			n1=0;
+			for(n=0x2e;n<0x100;n+=2) {
+				switch(n) {
+					case 0x6c: // reset
+						conexant_i2c_write_reg(n, mode[n1] & 0x7f);
+						break;
+					case 0xc4: // EN_OUT
+						conexant_i2c_write_reg(n, mode[n1] & 0xfe);
+						break;
+					case 0xb8: // autoconfig
+						break;
+	
+					default:
+						conexant_i2c_write_reg(n, mode[n1]);
+						break;
+				}
+				n1++;
 			}
-			n1++;
-		}
-		// Timing Reset
-		b=conexant_i2c_read_reg(0x6c) & (0x7f);
-		conexant_i2c_write_reg(0x6c, 0x80|b);
-		b=conexant_i2c_read_reg(0xc4) & (0xfe);
-		conexant_i2c_write_reg(0xc4, 0x01|b); // EN_OUT = 1
+			// Timing Reset
+			b=conexant_i2c_read_reg(0x6c) & (0x7f);
+			conexant_i2c_write_reg(0x6c, 0x80|b);
+			b=conexant_i2c_read_reg(0xc4) & (0xfe);
+			conexant_i2c_write_reg(0xc4, 0x01|b); // EN_OUT = 1
+			
+			/*
+			conexant_i2c_write_reg(0xA8, (0xD9/1.3));
+			conexant_i2c_write_reg(0xAA, (0x9A/1.3));
+			conexant_i2c_write_reg(0xAC, (0xA4/1.3));
+			*/
 		
-		/*
-		conexant_i2c_write_reg(0xA8, (0xD9/1.3));
-		conexant_i2c_write_reg(0xAA, (0x9A/1.3));
-		conexant_i2c_write_reg(0xAC, (0xA4/1.3));
-		*/
-		
-		conexant_i2c_write_reg(0xA8, 0x81);
-		conexant_i2c_write_reg(0xAA, 0x49);
-		conexant_i2c_write_reg(0xAC, 0x8C);
-		
-	} 
-	else if(encoder == ENCODER_FOCUS) {
-		//Set the command register soft reset
-		focus_i2c_write_reg(0x0c,0x03);
-		focus_i2c_write_reg(0x0d,0x21);
-		
-		for (n = 0; n<0xc4; n++) {
-			focus_i2c_write_reg(n,mode[n]);
-		}
-		//Clear soft reset flag
-		b = focus_i2c_read_reg(0x0c);
-		b &= ~0x01;
-		focus_i2c_write_reg(0x0c,b);
-		b = focus_i2c_read_reg(0x0d);
-		focus_i2c_write_reg(0x0d,b);
+			conexant_i2c_write_reg(0xA8, 0x81);
+			conexant_i2c_write_reg(0xAA, 0x49);
+			conexant_i2c_write_reg(0xAC, 0x8C);
+			break;
+		case ENCODER_FOCUS:
+			//Set the command register soft reset
+			focus_i2c_write_reg(0x0c,0x03);
+			focus_i2c_write_reg(0x0d,0x21);
+			
+			for (n = 0; n<0xc4; n++) {
+				focus_i2c_write_reg(n,mode[n]);
+			}
+			//Clear soft reset flag
+			b = focus_i2c_read_reg(0x0c);
+			b &= ~0x01;
+			focus_i2c_write_reg(0x0c,b);
+			b = focus_i2c_read_reg(0x0d);
+			focus_i2c_write_reg(0x0d,b);
+			break;
+		case ENCODER_XLB:
+			//Nothing yet
+			break;		
+	
 	}
-	else if (encoder == ENCODER_XLB) {
-
-	}
-}
 
 void tv_save_mode(unsigned char * mode) {
 	int n, n1;
 	int encoder = 0;
 
-	encoder = tv_get_video_encoder();
-
-	if(encoder == ENCODER_CONEXANT) {
-		// Conexant init (starts at register 0x2e)
-		n1=0;
-		for(n=0x2e;n<0x100;n+=2) {
-			mode[n1] = conexant_i2c_read_reg(n);
-			n1++;
+	switch (tv_get_video_encoder()) {
+		case ENCODER_CONEXANT:
+			// Conexant init (starts at register 0x2e)
+			n1=0;		
+			for(n=0x2e;n<0x100;n+=2) {
+				mode[n1] = conexant_i2c_read_reg(n);
+				n1++;
+			}
+			break;
+		case ENCODER_FOCUS:
+			for (n=0;n<0xc4;n++) {
+				mode[n] = focus_i2c_read_reg(n);
 		}
-	} 
-	else if (encoder == ENCODER_FOCUS) {
-		for (n=0;n<0xc4;n++) {
-			mode[n] = focus_i2c_read_reg(n);
-		}
-
-	}
-	else if (encoder == ENCODER_XLB) {
-
-	}
+			break;
+		case ENCODER_XLB:
+			break;
+	}			
 }
 
 xbox_tv_encoding get_tv_encoding(void) {
