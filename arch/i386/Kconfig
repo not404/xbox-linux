@@ -52,22 +52,6 @@ config X86_ELAN
 
 	  If unsure, choose "PC-compatible" instead.
 
-config X86_XBOX
-	bool "Microsoft Xbox"
-	help
-	  This option is needed to make Linux boot on XBox Gaming Systems.
-	
-	  The XBox can be considered as a standard PC with a Coppermine-based Celeron 733 MHz,
-	  IDE harddrive, DVD, Ethernet, USB and graphics.
-	
-	  To boot the kernel you need "_romwell", either used as a replacement BIOS (cromwell)
-	  or as a bootloader.
-	
-	  For more information see http://xbox-linux.sourceforge.net/
-	
-	  If you do not specifically need a kernel for XBOX machine,
-	  say N here otherwise the kernel you build will not be bootable.
-
 config X86_VOYAGER
 	bool "Voyager (NCR)"
 	help
@@ -118,6 +102,15 @@ config X86_VISWS
 
 	  A kernel compiled for the Visual Workstation will not run on PCs
 	  and vice versa. See <file:Documentation/sgi-visws.txt> for details.
+
+config X86_XBOX
+	bool "Xbox (Microsoft)"
+	help
+	  Xbox is a standard PC from Microsoft minus some legacy hardware.
+	  More info may be gleaned from http://xbox-linux.sourceforge.net/
+	  
+	  Only choose this option if you are building a kernel for such a
+	  machine, otherwise choose "PC-compatible".
 
 config X86_GENERICARCH
        bool "Generic architecture (Summit, bigsmp, ES7000, default)"

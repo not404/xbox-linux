@@ -66,10 +66,6 @@ CFLAGS += $(cflags-y)
 # Default subarch .c files
 mcore-y  := mach-default
 
-# Xbox subarch support
-mflags-$(CONFIG_X86_XBOX)	:= -Iinclude/asm-i386/mach-xbox
-mcore-$(CONFIG_X86_XBOX)	:= mach-xbox
-
 # Voyager subarch support
 mflags-$(CONFIG_X86_VOYAGER)	:= -Iinclude/asm-i386/mach-voyager
 mcore-$(CONFIG_X86_VOYAGER)	:= mach-voyager
@@ -77,6 +73,10 @@ mcore-$(CONFIG_X86_VOYAGER)	:= mach-voyager
 # VISWS subarch support
 mflags-$(CONFIG_X86_VISWS)	:= -Iinclude/asm-i386/mach-visws
 mcore-$(CONFIG_X86_VISWS)	:= mach-visws
+
+# Xbox subarch support
+mflags-$(CONFIG_X86_XBOX)	:= -Iinclude/asm-i386/mach-xbox
+mcore-$(CONFIG_X86_XBOX)	:= mach-xbox
 
 # NUMAQ subarch support
 mflags-$(CONFIG_X86_NUMAQ)	:= -Iinclude/asm-i386/mach-numaq
