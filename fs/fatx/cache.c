@@ -249,9 +249,11 @@ static __s64 __fatx_access(struct super_block *sb, int nr, __s64 new_value)
 			b, (int)nr, (int)first, (int)next, (int)new_value);
 	if (new_value != -1) {
 		if (sbi->fatx_bits == 32) {
+			if (new_value == 0xfffffff8) new_value = 0xffffffff;
 			((__u32 *)bh->b_data)[(first & (sb->s_blocksize - 1)) >> 2]
 				= cpu_to_le32(new_value);
 		} else if (sbi->fatx_bits == 16) {
+			if (new_value == 0xfff8) new_value = 0xffff;
 			((__le16 *)bh->b_data)[(first & (sb->s_blocksize - 1)) >> 1]
 				= cpu_to_le16(new_value);
 		}
