@@ -452,7 +452,6 @@ config HPET_EMULATE_RTC
 	def_bool HPET_TIMER && RTC=y
 
 config SMP
-	depends on !X86_XBOX
 	bool "Symmetric multi-processing support"
 	---help---
 	  This enables support for systems with more than one CPU. If you have
