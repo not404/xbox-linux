@@ -743,6 +743,20 @@ static void riva_load_video_mode(struct fb_info *info)
 				default:
 					printk("Error - unknown encoder type detected\n");
 			}
+			newmode.ext.vend = info->var.yres - 1;
+			newmode.ext.vtotal = vTotal;
+			newmode.ext.vcrtc = info->var.yres - 1;
+			newmode.ext.vsyncstart = vStart;
+			newmode.ext.vsyncend = vStart + 3;
+			newmode.ext.vvalidstart = 0;
+			newmode.ext.vvalidend = info->var.yres - 1;
+			newmode.ext.hend = info->var.xres - 1;
+			newmode.ext.htotal = hTotal;
+			newmode.ext.hcrtc = info->var.xres - 1;
+			newmode.ext.hsyncstart = hStart;
+			newmode.ext.hsyncend = hStart + 32;
+			newmode.ext.hvalidstart = 0;
+			newmode.ext.hvalidend = info->var.xres - 1;
 			break;
 	
 		case AV_VGA:
