@@ -418,7 +418,7 @@ static inline void reverse_order(u32 *l)
  * xboxfb_cursor()
  */
 static void xboxfb_load_cursor_image(struct riva_par *par, u8 *data, 
-				     u8 *mask, u16 bg, u16 fg, u32 w, u32 h)
+				     u8* mask, u16 bg, u16 fg, u32 w, u32 h)
 {
 	int i, j, k = 0;
 	u32 b, m, tmp;
@@ -1555,10 +1555,8 @@ static void xboxfb_imageblit(struct fb_info *info,
 static int xboxfb_cursor(struct fb_info *info, struct fb_cursor *cursor)
 {
 	struct riva_par *par = (struct riva_par *) info->par;
-	u8 data[MAX_CURS * MAX_CURS/8];
 	u8 mask[MAX_CURS * MAX_CURS/8];
 	u16 fg, bg;
-	int i;
 
 	par->riva.ShowHideCursor(&par->riva, 0);
 
@@ -1590,24 +1588,9 @@ static int xboxfb_cursor(struct fb_info *info, struct fb_cursor *cursor)
 		u32 bg_idx = info->cursor.image.bg_color;
 		u32 fg_idx = info->cursor.image.fg_color;
 		u32 s_pitch = (info->cursor.image.width+7) >> 3;
-		u32 dsize = s_pitch * info->cursor.image.height;
 		u32 d_pitch = MAX_CURS/8;
-		u8 *dat = (u8 *) cursor->image.data;
 		u8 *msk = (u8 *) info->cursor.mask;
-		u8 src[64];	
-		switch (info->cursor.rop) {
-		case ROP_XOR:
-			for (i = 0; i < dsize; i++)
-					src[i] = dat[i] ^ msk[i];
-			break;
-		case ROP_COPY:
-		default:
-			for (i = 0; i < dsize; i++)
-					src[i] = dat[i] & msk[i];
-			break;
-		}
-		move_buf_aligned(info, data, src, d_pitch, s_pitch, info->cursor.image.height);
-
+		
 		move_buf_aligned(info, mask, msk, d_pitch, s_pitch, info->cursor.image.height);
 
 		bg = ((info->cmap.red[bg_idx] & 0xf8) << 7) |
@@ -1620,7 +1603,7 @@ static int xboxfb_cursor(struct fb_info *info, struct fb_cursor *cursor)
 
 		par->riva.LockUnlock(&par->riva, 0);
 
-		xboxfb_load_cursor_image(par, data, mask, bg, fg,
+		xboxfb_load_cursor_image(par, mask, mask, bg, fg,
 					 info->cursor.image.width, 
 					 info->cursor.image.height);
 	}
