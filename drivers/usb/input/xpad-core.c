@@ -61,27 +61,43 @@
 
 #include "xpad.h"
 
-
 static struct xpad_device xpad_device[] = {
 	/* please keep those ordered wrt. vendor/product ids
-	  vendor, product, name                  	     */
-	{ 0x045e, 0x0202, "Microsoft Xbox Controller" },
-	{ 0x045e, 0x0285, "Microsoft Xbox Controller S" },
-	{ 0x045e, 0x0289, "Microsoft Xbox Controller S" }, /* microsoft is stupid */
-	{ 0x05fd, 0x1007, "Mad Catz Controller" }, /* CHECKME: this seems strange */
-	{ 0x05fd, 0x107a, "InterAct PowerPad Pro" },
-	{ 0x0738, 0x4536, "Jess Technologies (Mad Catz) MicroCON" },
-	{ 0x0c12, 0x9902, "HAMA VibraX - lucky boy" }, /* these are broken */
-	{ 0x0e6f, 0x0003, "Logic3 Freebird wireless Controller" },
-	{ 0x0f30, 0x0202, "Joytech Advanced Controller" },
-	{ 0xffff, 0xffff, "Chinese crap Xbox Controller" }, /* WTF are device IDs for? */
-	{ 0x0000, 0x0000, "nothing detected - FAIL" }
+	  vendor, product, isMat, name                              */
+	{ 0x045e, 0x0202, 0, "Microsoft Xbox Controller" },
+	{ 0x045e, 0x0285, 0, "Microsoft Xbox Controller S" },
+	{ 0x045e, 0x0289, 0, "Microsoft Xbox Controller S" }, /* microsoft is stupid */
+	{ 0x046d, 0xca88, 0, "Logitech Compact Controller for Xbox" },
+	{ 0x05fd, 0x1007, 0, "???Mad Catz Controller???" }, /* CHECKME: this seems strange */
+	{ 0x05fd, 0x107a, 0, "InterAct PowerPad Pro" },
+	{ 0x0738, 0x4516, 0, "Mad Catz Control Pad" },
+	{ 0x0738, 0x4522, 0, "Mad Catz LumiCON" },
+	{ 0x0738, 0x4526, 0, "Mad Catz Control Pad Pro" },
+	{ 0x0738, 0x4536, 0, "Mad Catz MicroCON" },
+	{ 0x0738, 0x4540, 1, "Mad Catz Beat Pad" },
+	{ 0x0738, 0x4556, 0, "Mad Catz Lynx Wireless Controller" },
+	{ 0x0738, 0x6040, 1, "Mad Catz Beat Pad Pro" },
+	{ 0x0c12, 0x9902, 0, "HAMA VibraX - lucky boy" }, /* these are broken */
+	{ 0x0e6f, 0x0003, 0, "Logic3 Freebird wireless Controller" },
+	{ 0x0f30, 0x0202, 0, "Joytech Advanced Controller" },
+	{ 0x12ab, 0x8809, 1, "Xbox DDR dancepad" },
+	{ 0xffff, 0xffff, 0, "Chinese crap Xbox Controller" }, /* WTF are device IDs for? */
+	{ 0x0000, 0x0000, 0, "nothing detected - FAIL" }
 };
 
 static signed short xpad_btn[] = {
-	BTN_A, BTN_B, BTN_C, BTN_X, BTN_Y, BTN_Z,	/* analog buttons */
+	BTN_A, BTN_B, BTN_C, BTN_X, BTN_Y, BTN_Z,	/* analogue buttons */
 	BTN_START, BTN_BACK, BTN_THUMBL, BTN_THUMBR,	/* start/back/sticks */
+	BTN_0, BTN_1, BTN_2, BTN_3,			/* d-pad as buttons */
 	-1						/* terminating entry */
+};
+
+static signed short xpad_mat_btn[] = {
+	BTN_A, BTN_B, BTN_X, BTN_Y, 	/* A, B, X, Y */
+	BTN_START, BTN_BACK, 		/* start/back */
+	BTN_0, BTN_1, BTN_2, BTN_3,	/* directions, LEFT/RIGHT is mouse
+					 * so we cannot use those! */
+	-1				/* terminating entry */
 };
 
 static signed short xpad_abs[] = {
@@ -89,9 +105,9 @@ static signed short xpad_abs[] = {
 	ABS_RX, ABS_RY,		/* right stick */
 	ABS_Z, ABS_RZ,		/* triggers left/right */
 	ABS_HAT0X, ABS_HAT0Y,	/* digital pad */
-	ABS_HAT1X, ABS_HAT1Y,	/* analog buttons A + B */
-	ABS_HAT2X, ABS_HAT2Y,	/* analog buttons C + X */
-	ABS_HAT3X, ABS_HAT3Y,	/* analog buttons Y + Z */
+	ABS_HAT1X, ABS_HAT1Y,	/* analogue buttons A + B */
+	ABS_HAT2X, ABS_HAT2Y,	/* analogue buttons C + X */
+	ABS_HAT3X, ABS_HAT3Y,	/* analogue buttons Y + Z */
 	-1			/* terminating entry */
 };
 
@@ -117,6 +133,25 @@ static void xpad_process_packet(struct usb_xpad *xpad, u16 cmd, unsigned char *d
 	struct input_dev *dev = &xpad->dev;
 	
 	input_regs(dev, regs);
+
+	/* digital pad (button mode) bits (3 2 1 0) (right left down up) */
+	input_report_key(dev, BTN_0, (data[2] & 0x01));
+	input_report_key(dev, BTN_1, (data[2] & 0x08) >> 3);
+	input_report_key(dev, BTN_2, (data[2] & 0x02) >> 1);
+	input_report_key(dev, BTN_3, (data[2] & 0x04) >> 2);	
+	
+	/* start and back buttons */
+	input_report_key(dev, BTN_START, (data[2] & 0x10) >> 4);
+	input_report_key(dev, BTN_BACK, (data[2] & 0x20) >> 5);
+	
+	/* buttons A, B, X, Y digital mode */
+	input_report_key(dev, BTN_A, data[4]);
+	input_report_key(dev, BTN_B, data[5]);
+	input_report_key(dev, BTN_X, data[6]);
+	input_report_key(dev, BTN_Y, data[7]);
+	
+	if (xpad->isMat)
+		return;
 	
 	/* left stick */
 	input_report_abs(dev, ABS_X, ((__s16) (((__s16)data[13] << 8) | data[12])));
@@ -130,37 +165,25 @@ static void xpad_process_packet(struct usb_xpad *xpad, u16 cmd, unsigned char *d
 	input_report_abs(dev, ABS_Z, data[10]);
 	input_report_abs(dev, ABS_RZ, data[11]);
 	
-	/* digital pad: bits (3 2 1 0) (right left down up) */
+	/* digital pad (analogue mode): bits (3 2 1 0) (right left down up) */
 	input_report_abs(dev, ABS_HAT0X, !!(data[2] & 0x08) - !!(data[2] & 0x04));
 	input_report_abs(dev, ABS_HAT0Y, !!(data[2] & 0x01) - !!(data[2] & 0x02));
 
-	/* start/back buttons and stick press left/right */
-	input_report_key(dev, BTN_START, (data[2] & 0x10) >> 4);
-	input_report_key(dev, BTN_BACK, (data[2] & 0x20) >> 5);
+	/* stick press left/right */
 	input_report_key(dev, BTN_THUMBL, (data[2] & 0x40) >> 6);
 	input_report_key(dev, BTN_THUMBR, data[2] >> 7);
 	
-	/* button A digital/analog mode */
-	input_report_key(dev, BTN_A, data[4]);
+	/* button A, B, X, Y analogue mode */
 	input_report_abs(dev, ABS_HAT1X, data[4]);
-	
-	/* button B digital/analog mode */
-	input_report_key(dev, BTN_B, data[5]);
 	input_report_abs(dev, ABS_HAT1Y, data[5]);
+	input_report_abs(dev, ABS_HAT2Y, data[6]);
+	input_report_abs(dev, ABS_HAT3X, data[7]);
 	
-	/* button C (black) digital/analog mode */
+	/* button C (black) digital/analogue mode */
 	input_report_key(dev, BTN_C, data[8]);
 	input_report_abs(dev, ABS_HAT2X, data[8]);
 	
-	/* button X digital/analog mode */
-	input_report_key(dev, BTN_X, data[6]);
-	input_report_abs(dev, ABS_HAT2Y, data[6]);
-	
-	/* button Y digital/analog mode */
-	input_report_key(dev, BTN_Y, data[7]);
-	input_report_abs(dev, ABS_HAT3X, data[7]);
-
-	/* button Z (white) digital/analog mode */
+	/* button Z (white) digital/analogue mode */
 	input_report_key(dev, BTN_Z, data[9]);
 	input_report_abs(dev, ABS_HAT3Y, data[9]);
 	
@@ -311,18 +334,23 @@ static void xpad_init_input_device(struct usb_interface *intf, struct xpad_devic
 	   plus, it needs a patch to the input subsystem */
 //	xpad->dev.ioctl = xpad_ioctl;
 
-	xpad->dev.evbit[0] = BIT(EV_KEY) | BIT(EV_ABS);
-	
-	for (i = 0; xpad_btn[i] >= 0; ++i)
+	if (xpad->isMat) {
+		xpad->dev.evbit[0] = BIT(EV_KEY);
+		for (i = 0; xpad_mat_btn[i] >= 0; ++i)
+			set_bit(xpad_mat_btn[i], xpad->dev.keybit);
+	} else {
+		xpad->dev.evbit[0] = BIT(EV_KEY) | BIT(EV_ABS);
+		
+		for (i = 0; xpad_btn[i] >= 0; ++i)
 		set_bit(xpad_btn[i], xpad->dev.keybit);
-	
-	for (i = 0; xpad_abs[i] >= 0; ++i) {
 		
-		signed short t = xpad_abs[i];
-		
-		set_bit(t, xpad->dev.absbit);
-		
-		switch (t) {
+		for (i = 0; xpad_abs[i] >= 0; ++i) {
+			
+			signed short t = xpad_abs[i];
+			
+			set_bit(t, xpad->dev.absbit);
+			
+			switch (t) {
 			case ABS_X:
 			case ABS_Y:
 			case ABS_RX:
@@ -334,12 +362,12 @@ static void xpad_init_input_device(struct usb_interface *intf, struct xpad_devic
 				break;
 			case ABS_Z:	/* left trigger */
 			case ABS_RZ:	/* right trigger */
-			case ABS_HAT1X:	/* analog button A */
-			case ABS_HAT1Y:	/* analog button B */
-			case ABS_HAT2X:	/* analog button C */
-			case ABS_HAT2Y:	/* analog button X */
-			case ABS_HAT3X:	/* analog button Y */
-			case ABS_HAT3Y:	/* analog button Z */
+			case ABS_HAT1X:	/* analogue button A */
+			case ABS_HAT1Y:	/* analogue button B */
+			case ABS_HAT2X:	/* analogue button C */
+			case ABS_HAT2Y:	/* analogue button X */
+			case ABS_HAT3X:	/* analogue button Y */
+			case ABS_HAT3Y:	/* analogue button Z */
 				xpad->dev.absmax[t] = 255;
 				xpad->dev.absmin[t] = 0;
 				break;
@@ -348,11 +376,12 @@ static void xpad_init_input_device(struct usb_interface *intf, struct xpad_devic
 				xpad->dev.absmax[t] =  1;
 				xpad->dev.absmin[t] = -1;
 				break;
+			}
 		}
+		
+		if (xpad_rumble_probe(udev, xpad, ifnum) != 0)
+			err("could not init rumble");
 	}
-	
-	if (xpad_rumble_probe(udev, xpad, ifnum) != 0)
-		err("could not init rumble");
 
 	input_register_device(&xpad->dev);
 	printk(KERN_INFO "input: %s on %s\n", xpad->dev.name, path);
@@ -412,7 +441,7 @@ static int xpad_probe(struct usb_interface *intf, const struct usb_device_id *id
 	ep_irq_in = &intf->altsetting[0].endpoint[0].desc;
 	
 	xpad->udev = udev;
-	
+	xpad->isMat = xpad_device[probedDevNum].isMat;
 	
 	/* init input URB for USB INT transfer from device */
 	usb_fill_int_urb(xpad->irq_in, udev,

@@ -83,6 +83,8 @@ struct usb_xpad {
 	int right_offset_x;
 	int right_offset_y;
 	
+	int isMat;				/* is this a dancepad/mat? */
+	
 #ifdef CONFIG_USB_XPAD_RUMBLE
 	int rumble_enabled;			/* ioctl can toggle rumble */
 	
@@ -116,6 +118,7 @@ struct usb_xpad {
 struct xpad_device {
 	u16 idVendor;
 	u16 idProduct;
+	u8  isMat;
 	char *name;
 };
 
