@@ -30,7 +30,11 @@
 #define CONFIG_FAT_DEFAULT_IOCHARSET    ""
 #endif
 
-unsigned int debug = 0;
+// Breaks compilation - ed, fix?
+// fs/built-in.o(.bss+0x1a90): multiple definition of `debug'
+// arch/i386/kernel/built-in.o(.text+0x2130): first defined here
+// make: *** [vmlinux] Error 1
+//unsigned int debug = 0;
 
 #define PRINTK(format, args...) do { if (debug) printk( format, ##args ); } while(0)
 
