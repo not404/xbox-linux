@@ -693,22 +693,27 @@ config UMSDOS_FS
 	  could be dangerous.  If unsure, say N.
 
 config FATX_FS
-	tristate "FATX filesystem support (EXPERIMENTAL)"
-	depends on EXPERIMENTAL && !LBD
+	tristate "FATX fs support (DANGEROUS)"
+	depends on EXPERIMENTAL && BROKEN && !LBD
 	help
 	  This adds support for the FATX filesystem as found in Microsoft's Xbox.
-	  
+
 	  The FATX filesystem is a derivative of the FAT filesystem minus some
 	  legacy fields and redundant information. For lengthier discussions on
 	  the filesystem, see:
-	  
+
 	  http://xbox-linux.sourceforge.net/docs/fatxfat.html
 	  http://xbox-linux.sourceforge.net/docs/hdpartfs.html
 	  http://xbox-linux.sourceforge.net/docs/hackingfatx.html
-	  
-	  If you are running Linux on the Xbox, choose Y unless you know
-	  what you're doing. Otherwise, choose N.
-	  
+
+# Uncomment this once things actually stabilize.
+#	  If you are running Linux on the Xbox, choose Y unless you know
+#	  what you're doing. Otherwise, choose N.
+
+	  NOTE: Support for this filesystem is currently in a fragile state.
+	  Expect filesystem corruption and other such nastiness. Only choose
+	  this option if you know what to expect (or not, thereof).
+
 	  To compile this filesystem support as a module, choose M here: the
 	  module will be called fatx.
 
