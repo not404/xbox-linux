@@ -26,7 +26,7 @@ obj-$(CONFIG_FB_MATROX)		  += matrox/ cfbfillrect.o cfbcopyarea.o cfbimgblt.o
 obj-$(CONFIG_FB_RIVA)		  += riva/ cfbimgblt.o cfbfillrect.o \
 				     cfbcopyarea.o vgastate.o
 obj-$(CONFIG_FB_XBOX)		  += xbox/ cfbimgblt.o cfbfillrect.o \
-				     cfbimgblt.o vgastate.o 
+				     cfbcopyarea.o vgastate.o 
 obj-$(CONFIG_FB_ATY)		  += aty/ cfbcopyarea.o cfbfillrect.o cfbimgblt.o
 obj-$(CONFIG_FB_ATY128)		  += aty/ cfbcopyarea.o cfbfillrect.o cfbimgblt.o
 obj-$(CONFIG_FB_RADEON)		  += aty/ cfbcopyarea.o cfbfillrect.o cfbimgblt.o

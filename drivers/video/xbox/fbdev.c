@@ -67,22 +67,23 @@
 #endif
 
 /* version number of this driver */
-#define RIVAFB_VERSION "0.9.5b"
+#define XBOXFB_VERSION "0.9.5b-xbox"
 
 /* ------------------------------------------------------------------------- *
  *
  * various helpful macros and constants
  *
  * ------------------------------------------------------------------------- */
-
-#undef RIVAFBDEBUG
-#ifdef RIVAFBDEBUG
-#define DPRINTK(fmt, args...) printk(KERN_DEBUG "%s: " fmt, __FUNCTION__ , ## args)
+#ifdef CONFIG_FB_RIVA_DEBUG
+#define NVTRACE          printk
 #else
-#define DPRINTK(fmt, args...)
+#define NVTRACE          if(0) printk
 #endif
 
-#ifndef RIVA_NDEBUG
+#define NVTRACE_ENTER(...)  NVTRACE("%s START\n", __FUNCTION__)
+#define NVTRACE_LEAVE(...)  NVTRACE("%s END\n", __FUNCTION__)
+
+#ifdef CONFIG_FB_RIVA_DEBUG
 #define assert(expr) \
 	if(!(expr)) { \
 	printk( "Assertion failed! %s,%s,%s,line=%d\n",\
@@ -146,11 +147,13 @@ MODULE_DEVICE_TABLE(pci, xboxfb_pci_tbl);
 static u32 pseudo_palette[17];
 static int flatpanel __initdata = -1; /* Autodetect later */
 static int forceCRTC __initdata = -1;
+static int noaccel   __initdata = 0;
 #ifdef CONFIG_MTRR
 static int nomtrr __initdata = 0;
 #endif
 
 static char *mode_option __initdata = NULL;
+static int  strictmode __initdata = 0;
 
 static xbox_tv_encoding tv_encoding  __initdata = TV_ENC_INVALID;
 static xbox_av_type av_type __initdata = AV_INVALID;
@@ -275,6 +278,38 @@ static const struct riva_regs reg_template = {
 	{0x03, 0x01, 0x0F, 0x00, 0x0E},				/* SEQ  */
 	0xEB							/* MISC */
 };
+
+/*
+ * Backlight control
+ */
+#ifdef CONFIG_PMAC_BACKLIGHT
+
+static int riva_backlight_levels[] = {
+    0x158,
+    0x192,
+    0x1c6,
+    0x200,
+    0x234,
+    0x268,
+    0x2a2,
+    0x2d6,
+    0x310,
+    0x344,
+    0x378,
+    0x3b2,
+    0x3e6,
+    0x41a,
+    0x454,
+    0x534,
+};
+
+static int riva_set_backlight_enable(int on, int level, void *data);
+static int riva_set_backlight_level(int level, void *data);
+static struct backlight_controller riva_backlight_controller = {
+	riva_set_backlight_enable,
+	riva_set_backlight_level
+};
+#endif /* CONFIG_PMAC_BACKLIGHT */
 
 /* ------------------------------------------------------------------------- *
  *
@@ -414,7 +449,7 @@ static inline void reverse_order(u32 *l)
  * parameters) will be updated.
  *
  * CALLED FROM:
- * rivafb_cursor()
+ * xboxfb_cursor()
  */
 static void xboxfb_load_cursor_image(struct riva_par *par, u8 *data8,
 				     u16 bg, u16 fg, u32 w, u32 h)
@@ -929,6 +964,26 @@ static void riva_load_video_mode(struct fb_info *info)
 	xboxfb_blank(0, info);
 }
 
+static void riva_update_var(struct fb_var_screeninfo *var, struct fb_videomode *modedb)
+{
+	NVTRACE_ENTER();
+	var->xres = var->xres_virtual = modedb->xres;
+	var->yres = modedb->yres;
+        if (var->yres_virtual < var->yres)
+	    var->yres_virtual = var->yres;
+        var->xoffset = var->yoffset = 0;
+        var->pixclock = modedb->pixclock;
+        var->left_margin = modedb->left_margin;
+        var->right_margin = modedb->right_margin;
+        var->upper_margin = modedb->upper_margin;
+        var->lower_margin = modedb->lower_margin;
+        var->hsync_len = modedb->hsync_len;
+        var->vsync_len = modedb->vsync_len;
+        var->sync = modedb->sync;
+        var->vmode = modedb->vmode;
+	NVTRACE_LEAVE();
+}
+
 /**
  * xboxfb_do_maximize - 
  * @info: pointer to fb_info object containing info for current riva board
@@ -962,19 +1017,20 @@ static int xboxfb_do_maximize(struct fb_info *info,
 	};
 	int i;
 
+	NVTRACE_ENTER();
 	/* use highest possible virtual resolution */
 	if (var->xres_virtual == -1 && var->yres_virtual == -1) {
 		printk(KERN_WARNING PFX
 		       "using maximum available virtual resolution\n");
 		for (i = 0; modes[i].xres != -1; i++) {
 			if (modes[i].xres * nom / den * modes[i].yres <
-			    info->fix.smem_len / 2)
+			    info->fix.smem_len)
 				break;
 		}
 		if (modes[i].xres == -1) {
 			printk(KERN_ERR PFX
 			       "could not find a virtual resolution that fits into video memory!!\n");
-			DPRINTK("EXIT - EINVAL error\n");
+			NVTRACE("EXIT - EINVAL error\n");
 			return -EINVAL;
 		}
 		var->xres_virtual = modes[i].xres;
@@ -985,13 +1041,13 @@ static int xboxfb_do_maximize(struct fb_info *info,
 		       var->xres_virtual, var->yres_virtual);
 	} else if (var->xres_virtual == -1) {
 		var->xres_virtual = (info->fix.smem_len * den /
-			(nom * var->yres_virtual * 2)) & ~15;
+			(nom * var->yres_virtual)) & ~15;
 		printk(KERN_WARNING PFX
 		       "setting virtual X resolution to %d\n", var->xres_virtual);
 	} else if (var->yres_virtual == -1) {
 		var->xres_virtual = (var->xres_virtual + 15) & ~15;
 		var->yres_virtual = info->fix.smem_len * den /
-			(nom * var->xres_virtual * 2);
+			(nom * var->xres_virtual);
 		printk(KERN_WARNING PFX
 		       "setting virtual Y resolution to %d\n", var->yres_virtual);
 	} else {
@@ -1000,7 +1056,7 @@ static int xboxfb_do_maximize(struct fb_info *info,
 			printk(KERN_ERR PFX
 			       "mode %dx%dx%d rejected...resolution too high to fit into video memory!\n",
 			       var->xres, var->yres, var->bits_per_pixel);
-			DPRINTK("EXIT - EINVAL error\n");
+			NVTRACE("EXIT - EINVAL error\n");
 			return -EINVAL;
 		}
 	}
@@ -1023,7 +1079,22 @@ static int xboxfb_do_maximize(struct fb_info *info,
 		       "virtual Y resolution (%d) is smaller than real\n", var->yres_virtual);
 		return -EINVAL;
 	}
+	if (var->yres_virtual > 0x7fff/nom)
+		var->yres_virtual = 0x7fff/nom;
+	if (var->xres_virtual > 0x7fff/nom)
+		var->xres_virtual = 0x7fff/nom;
+	NVTRACE_LEAVE();
 	return 0;
+}
+
+static void
+riva_set_pattern(struct riva_par *par, int clr0, int clr1, int pat0, int pat1)
+{
+	RIVA_FIFO_FREE(par->riva, Patt, 4);
+	NV_WR32(&par->riva.Patt->Color0, 0, clr0);
+	NV_WR32(&par->riva.Patt->Color1, 0, clr1);
+	NV_WR32(par->riva.Patt->Monochrome, 0, pat0);
+	NV_WR32(par->riva.Patt->Monochrome, 4, pat1);
 }
 
 /* acceleration routines */
@@ -1032,26 +1103,28 @@ inline void wait_for_idle(struct riva_par *par)
 	while (par->riva.Busy(&par->riva));
 }
 
-/* set copy ROP, no mask */
-static void riva_setup_ROP(struct riva_par *par)
+/*
+ * Set ROP.  Translate X rop into ROP3.  Internal routine.
+ */
+static void
+riva_set_rop_solid(struct riva_par *par, int rop)
 {
-	RIVA_FIFO_FREE(par->riva, Patt, 5);
-	par->riva.Patt->Shape = 0;
-	par->riva.Patt->Color0 = 0xffffffff;
-	par->riva.Patt->Color1 = 0xffffffff;
-	par->riva.Patt->Monochrome[0] = 0xffffffff;
-	par->riva.Patt->Monochrome[1] = 0xffffffff;
+	riva_set_pattern(par, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
+        RIVA_FIFO_FREE(par->riva, Rop, 1);
+        NV_WR32(&par->riva.Rop->Rop3, 0, rop);
 
-	RIVA_FIFO_FREE(par->riva, Rop, 1);
-	par->riva.Rop->Rop3 = 0xCC;
 }
 
-void riva_setup_accel(struct riva_par *par)
+void riva_setup_accel(struct fb_info *info)
 {
+	struct riva_par *par = (struct riva_par *) info->par;
+
 	RIVA_FIFO_FREE(par->riva, Clip, 2);
-	par->riva.Clip->TopLeft     = 0x0;
-	par->riva.Clip->WidthHeight = 0x80008000;
-	riva_setup_ROP(par);
+	NV_WR32(&par->riva.Clip->TopLeft, 0, 0x0);
+	NV_WR32(&par->riva.Clip->WidthHeight, 0,
+		(info->var.xres_virtual & 0xffff) |
+		(info->var.yres_virtual << 16));
+	riva_set_rop_solid(par, 0xcc);
 	wait_for_idle(par);
 }
 
@@ -1088,6 +1161,36 @@ static int riva_get_cmap_len(const struct fb_var_screeninfo *var)
 	}
 	return rc;
 }
+
+/* ------------------------------------------------------------------------- *
+ *
+ * Backlight operations
+ *
+ * ------------------------------------------------------------------------- */
+
+#ifdef CONFIG_PMAC_BACKLIGHT
+static int riva_set_backlight_enable(int on, int level, void *data)
+{
+	struct riva_par *par = (struct riva_par *)data;
+	U032 tmp_pcrt, tmp_pmc;
+
+	tmp_pmc = par->riva.PMC[0x10F0/4] & 0x0000FFFF;
+	tmp_pcrt = par->riva.PCRTC0[0x081C/4] & 0xFFFFFFFC;
+	if(on && (level > BACKLIGHT_OFF)) {
+		tmp_pcrt |= 0x1;
+		tmp_pmc |= (1 << 31); // backlight bit
+		tmp_pmc |= riva_backlight_levels[level-1] << 16; // level
+	}
+	par->riva.PCRTC0[0x081C/4] = tmp_pcrt;
+	par->riva.PMC[0x10F0/4] = tmp_pmc;
+	return 0;
+}
+
+static int riva_set_backlight_level(int level, void *data)
+{
+	return riva_set_backlight_enable(1, level, data);
+}
+#endif /* CONFIG_PMAC_BACKLIGHT */
 
 /* ------------------------------------------------------------------------- *
  *
@@ -1144,7 +1247,9 @@ static int xboxfb_release(struct fb_info *info, int user)
 		par->riva.LockUnlock(&par->riva, 0);
 		par->riva.LoadStateExt(&par->riva, &par->initial_state.ext);
 		riva_load_state(par, &par->initial_state);
+#ifdef CONFIG_X86
 		restore_vga(&par->state);
+#endif
 		par->riva.LockUnlock(&par->riva, 1);
 	}
 	atomic_dec(&par->ref_count);
@@ -1153,8 +1258,12 @@ static int xboxfb_release(struct fb_info *info, int user)
 
 static int xboxfb_check_var(struct fb_var_screeninfo *var, struct fb_info *info)
 {
+	struct fb_videomode *mode;
+	struct riva_par *par = (struct riva_par *) info->par;
 	int nom, den;		/* translating from pixels->bytes */
+	int mode_valid = 0;
 	
+	NVTRACE_ENTER();
 	switch (var->bits_per_pixel) {
 	case 1 ... 8:
 		var->red.offset = var->green.offset = var->blue.offset = 0;
@@ -1167,6 +1276,9 @@ static int xboxfb_check_var(struct fb_var_screeninfo *var, struct fb_info *info)
 		/* fall through */
 	case 16:
 		var->bits_per_pixel = 16;
+		/* The Riva128 supports RGB555 only */
+		if (par->riva.Architecture == NV_ARCH_03)
+			var->green.length = 5;
 		if (var->green.length == 5) {
 			/* 0rrrrrgg gggbbbbb */
 			var->red.offset = 10;
@@ -1200,10 +1312,37 @@ static int xboxfb_check_var(struct fb_var_screeninfo *var, struct fb_info *info)
 		printk(KERN_ERR PFX
 		       "mode %dx%dx%d rejected...color depth not supported.\n",
 		       var->xres, var->yres, var->bits_per_pixel);
-		DPRINTK("EXIT, returning -EINVAL\n");
+		NVTRACE("EXIT, returning -EINVAL\n");
 		return -EINVAL;
 	}
 
+	if (!strictmode) {
+		if (!info->monspecs.vfmax || !info->monspecs.hfmax ||
+		    !info->monspecs.dclkmax || !fb_validate_mode(var, info))
+			mode_valid = 1;
+	}
+
+	/* calculate modeline if supported by monitor */
+	if (!mode_valid && info->monspecs.gtf) {
+		if (!fb_get_mode(FB_MAXTIMINGS, 0, var, info))
+			mode_valid = 1;
+	}
+
+	if (!mode_valid) {
+		mode = fb_find_best_mode(var, &info->modelist);
+		if (mode) {
+			riva_update_var(var, mode);
+			mode_valid = 1;
+		}
+	}
+
+	if (!mode_valid && info->monspecs.modedb_len)
+		return -EINVAL;
+
+	if (var->xres_virtual < var->xres)
+		var->xres_virtual = var->xres;
+	if (var->yres_virtual <= var->yres)
+		var->yres_virtual = -1;
 	if (xboxfb_do_maximize(info, var, nom, den) < 0)
 		return -EINVAL;
 
@@ -1223,6 +1362,7 @@ static int xboxfb_check_var(struct fb_var_screeninfo *var, struct fb_info *info)
 	    var->green.msb_right =
 	    var->blue.msb_right =
 	    var->transp.offset = var->transp.length = var->transp.msb_right = 0;
+	NVTRACE_LEAVE();
 	return 0;
 }
 
@@ -1230,12 +1370,24 @@ static int xboxfb_set_par(struct fb_info *info)
 {
 	struct riva_par *par = (struct riva_par *) info->par;
 
+	NVTRACE_ENTER();
+	/* vgaHWunlock() + riva unlock (0x7F) */
+	CRTCout(par, 0x11, 0xFF);
+	par->riva.LockUnlock(&par->riva, 0);
 	riva_load_video_mode(info);
-	riva_setup_accel(par);
+	if(!(info->flags & FBINFO_HWACCEL_DISABLED))
+		riva_setup_accel(info);
 	
+	par->cursor_reset = 1;
 	info->fix.line_length = (info->var.xres_virtual * (info->var.bits_per_pixel >> 3));
 	info->fix.visual = (info->var.bits_per_pixel == 8) ?
 				FB_VISUAL_PSEUDOCOLOR : FB_VISUAL_DIRECTCOLOR;
+
+	if (info->flags & FBINFO_HWACCEL_DISABLED)
+		info->pixmap.scan_align = 1;
+	else
+		info->pixmap.scan_align = 4;
+	NVTRACE_LEAVE();
 	return 0;
 }
 
@@ -1258,6 +1410,7 @@ static int xboxfb_pan_display(struct fb_var_screeninfo *var,
 	struct riva_par *par = (struct riva_par *)info->par;
 	unsigned int base;
 
+	NVTRACE_ENTER();
 	if (var->xoffset > (var->xres_virtual - var->xres))
 		return -EINVAL;
 	if (var->yoffset > (var->yres_virtual - var->yres))
@@ -1275,7 +1428,7 @@ static int xboxfb_pan_display(struct fb_var_screeninfo *var,
 
 	base = var->yoffset * info->fix.line_length + var->xoffset;
 	base += par->riva_fb_start;
-	
+
 	par->riva.SetStartAddress(&par->riva, base);
 
 	info->var.xoffset = var->xoffset;
@@ -1285,6 +1438,7 @@ static int xboxfb_pan_display(struct fb_var_screeninfo *var,
 		info->var.vmode |= FB_VMODE_YWRAP;
 	else
 		info->var.vmode &= ~FB_VMODE_YWRAP;
+	NVTRACE_LEAVE();
 	return 0;
 }
 
@@ -1296,24 +1450,37 @@ static int xboxfb_blank(int blank, struct fb_info *info)
 	tmp = SEQin(par, 0x01) & ~0x20;	/* screen on/off */
 	vesa = CRTCin(par, 0x1a) & ~0xc0;	/* sync on/off */
 
-	if (blank) {
+	NVTRACE_ENTER();
+
+	if (blank)
 		tmp |= 0x20;
-		switch (blank - 1) {
-		case VESA_NO_BLANKING:
-			break;
-		case VESA_VSYNC_SUSPEND:
-			vesa |= 0x80;
-			break;
-		case VESA_HSYNC_SUSPEND:
-			vesa |= 0x40;
-			break;
-		case VESA_POWERDOWN:
-			vesa |= 0xc0;
-			break;
-		}
+
+	switch (blank) {
+	case FB_BLANK_UNBLANK:
+	case FB_BLANK_NORMAL:
+		break;
+	case FB_BLANK_VSYNC_SUSPEND:
+		vesa |= 0x80;
+		break;
+	case FB_BLANK_HSYNC_SUSPEND:
+		vesa |= 0x40;
+		break;
+	case FB_BLANK_POWERDOWN:
+		vesa |= 0xc0;
+		break;
 	}
+
 	SEQout(par, 0x01, tmp);
 	CRTCout(par, 0x1a, vesa);
+
+#ifdef CONFIG_PMAC_BACKLIGHT
+	if ( par->FlatPanel && _machine == _MACH_Pmac) {
+		set_backlight_enable(!blank);
+	}
+#endif
+
+	NVTRACE_LEAVE();
+
 	return 0;
 }
 
@@ -1345,12 +1512,37 @@ static int xboxfb_setcolreg(unsigned regno, unsigned red, unsigned green,
 	int i;
 
 	if (regno >= riva_get_cmap_len(&info->var))
-		return -EINVAL;
+			return -EINVAL;
 
 	if (info->var.grayscale) {
 		/* gray = 0.30*R + 0.59*G + 0.11*B */
 		red = green = blue =
 		    (red * 77 + green * 151 + blue * 28) >> 8;
+	}
+
+	if (regno < 16 && info->fix.visual == FB_VISUAL_DIRECTCOLOR) {
+		((u32 *) info->pseudo_palette)[regno] =
+			(regno << info->var.red.offset) |
+			(regno << info->var.green.offset) |
+			(regno << info->var.blue.offset);
+		/*
+		 * The Riva128 2D engine requires color information in
+		 * TrueColor format even if framebuffer is in DirectColor
+		 */
+		if (par->riva.Architecture == NV_ARCH_03) {
+			switch (info->var.bits_per_pixel) {
+			case 16:
+				par->palette[regno] = ((red & 0xf800) >> 1) |
+					((green & 0xf800) >> 6) |
+					((blue & 0xf800) >> 11);
+				break;
+			case 32:
+				par->palette[regno] = ((red & 0xff00) << 8) |
+					((green & 0xff00)) |
+					((blue & 0xff00) >> 8);
+				break;
+			}
+		}
 	}
 
 	switch (info->var.bits_per_pixel) {
@@ -1360,45 +1552,27 @@ static int xboxfb_setcolreg(unsigned regno, unsigned red, unsigned green,
 		break;
 	case 16:
 		if (info->var.green.length == 5) {
-			if (regno < 16) {
-				/* 0rrrrrgg gggbbbbb */
-				((u32 *)info->pseudo_palette)[regno] =
-					((red & 0xf800) >> 1) |
-					((green & 0xf800) >> 6) |
-					((blue & 0xf800) >> 11);
-			}
-			for (i = 0; i < 8; i++) 
+			for (i = 0; i < 8; i++) {
 				riva_wclut(chip, regno*8+i, red >> 8,
 					   green >> 8, blue >> 8);
+			}
 		} else {
 			u8 r, g, b;
 
-			if (regno < 16) {
-				/* rrrrrggg gggbbbbb */
-				((u32 *)info->pseudo_palette)[regno] =
-					((red & 0xf800) >> 0) |
-					((green & 0xf800) >> 5) |
-					((blue & 0xf800) >> 11);
-			}
 			if (regno < 32) {
 				for (i = 0; i < 8; i++) {
-					riva_wclut(chip, regno*8+i, red >> 8, 
-						   green >> 8, blue >> 8);
+					riva_wclut(chip, regno*8+i,
+						   red >> 8, green >> 8,
+						   blue >> 8);
 				}
 			}
-			for (i = 0; i < 4; i++) {
-				riva_rclut(chip, regno*2+i, &r, &g, &b);
-				riva_wclut(chip, regno*4+i, r, green >> 8, b);
-			}
+			riva_rclut(chip, regno*4, &r, &g, &b);
+			for (i = 0; i < 4; i++)
+				riva_wclut(chip, regno*4+i, r,
+					   green >> 8, b);
 		}
 		break;
 	case 32:
-		if (regno < 16) {
-			((u32 *)info->pseudo_palette)[regno] =
-				((red & 0xff00) << 8) |
-				((green & 0xff00)) | ((blue & 0xff00) >> 8);
-			
-		}
 		riva_wclut(chip, regno, red >> 8, green >> 8, blue >> 8);
 		break;
 	default:
@@ -1425,10 +1599,19 @@ static void xboxfb_fillrect(struct fb_info *info, const struct fb_fillrect *rect
 	struct riva_par *par = (struct riva_par *) info->par;
 	u_int color, rop = 0;
 
+	if ((info->flags & FBINFO_HWACCEL_DISABLED)) {
+		cfb_fillrect(info, rect);
+		return;
+	}
+
 	if (info->var.bits_per_pixel == 8)
 		color = rect->color;
-	else
-		color = ((u32 *)info->pseudo_palette)[rect->color];
+	else {
+		if (par->riva.Architecture != NV_ARCH_03)
+			color = ((u32 *)info->pseudo_palette)[rect->color];
+		else
+			color = par->palette[rect->color];
+	}
 
 	switch (rect->rop) {
 	case ROP_XOR:
@@ -1440,19 +1623,20 @@ static void xboxfb_fillrect(struct fb_info *info, const struct fb_fillrect *rect
 		break;
 	}
 
-	RIVA_FIFO_FREE(par->riva, Rop, 1);
-	par->riva.Rop->Rop3 = rop;
+	riva_set_rop_solid(par, rop);
 
 	RIVA_FIFO_FREE(par->riva, Bitmap, 1);
-	par->riva.Bitmap->Color1A = color;
+	NV_WR32(&par->riva.Bitmap->Color1A, 0, color);
 
 	RIVA_FIFO_FREE(par->riva, Bitmap, 2);
-	par->riva.Bitmap->UnclippedRectangle[0].TopLeft =
-			(rect->dx << 16) | rect->dy;
-	par->riva.Bitmap->UnclippedRectangle[0].WidthHeight =
-			(rect->width << 16) | rect->height;
-	RIVA_FIFO_FREE(par->riva, Rop, 1);
-	par->riva.Rop->Rop3 = 0xCC;	/* back to COPY */
+	NV_WR32(&par->riva.Bitmap->UnclippedRectangle[0].TopLeft, 0,
+		(rect->dx << 16) | rect->dy);
+	mb();
+	NV_WR32(&par->riva.Bitmap->UnclippedRectangle[0].WidthHeight, 0,
+		(rect->width << 16) | rect->height);
+	mb();
+	riva_set_rop_solid(par, 0xcc);
+
 }
 
 /**
@@ -1470,19 +1654,29 @@ static void xboxfb_copyarea(struct fb_info *info, const struct fb_copyarea *regi
 {
 	struct riva_par *par = (struct riva_par *) info->par;
 
+	if ((info->flags & FBINFO_HWACCEL_DISABLED)) {
+		cfb_copyarea(info, region);
+		return;
+	}
+
 	RIVA_FIFO_FREE(par->riva, Blt, 3);
-	par->riva.Blt->TopLeftSrc  = (region->sy << 16) | region->sx;
-	par->riva.Blt->TopLeftDst  = (region->dy << 16) | region->dx;
-	par->riva.Blt->WidthHeight = (region->height << 16) | region->width;
-	wait_for_idle(par);
+	NV_WR32(&par->riva.Blt->TopLeftSrc, 0,
+		(region->sy << 16) | region->sx);
+	NV_WR32(&par->riva.Blt->TopLeftDst, 0,
+		(region->dy << 16) | region->dx);
+	mb();
+	NV_WR32(&par->riva.Blt->WidthHeight, 0,
+		(region->height << 16) | region->width);
+	mb();
 }
 
 static inline void convert_bgcolor_16(u32 *col)
 {
-	*col = ((*col & 0x00007C00) << 9)
-		| ((*col & 0x000003E0) << 6)
+	*col = ((*col & 0x0000F800) << 8)
+		| ((*col & 0x00007E0) << 5)
 		| ((*col & 0x0000001F) << 3)
 		|	   0xFF000000;
+	mb();
 }
 
 /**
@@ -1507,10 +1701,10 @@ static void xboxfb_imageblit(struct fb_info *info,
 	struct riva_par *par = (struct riva_par *) info->par;
 	u32 fgx = 0, bgx = 0, width, tmp;
 	u8 *cdat = (u8 *) image->data;
-	volatile u32 *d;
+	volatile u32 __iomem *d;
 	int i, size;
 
-	if (image->depth != 1) {
+	if ((info->flags & FBINFO_HWACCEL_DISABLED) || image->depth != 1) {
 		cfb_imageblit(info, image);
 		return;
 	}
@@ -1521,31 +1715,33 @@ static void xboxfb_imageblit(struct fb_info *info,
 		bgx = image->bg_color;
 		break;
 	case 16:
-		fgx = ((u32 *)info->pseudo_palette)[image->fg_color];
-		bgx = ((u32 *)info->pseudo_palette)[image->bg_color];
+	case 32:
+		if (par->riva.Architecture != NV_ARCH_03) {
+			fgx = ((u32 *)info->pseudo_palette)[image->fg_color];
+			bgx = ((u32 *)info->pseudo_palette)[image->bg_color];
+		} else {
+			fgx = par->palette[image->fg_color];
+			bgx = par->palette[image->bg_color];
+		}
 		if (info->var.green.length == 6)
 			convert_bgcolor_16(&bgx);	
-		break;
-	case 32:
-		fgx = ((u32 *)info->pseudo_palette)[image->fg_color];
-		bgx = ((u32 *)info->pseudo_palette)[image->bg_color];
 		break;
 	}
 
 	RIVA_FIFO_FREE(par->riva, Bitmap, 7);
-	par->riva.Bitmap->ClipE.TopLeft     = 
-		(image->dy << 16) | (image->dx & 0xFFFF);
-	par->riva.Bitmap->ClipE.BottomRight = 
+	NV_WR32(&par->riva.Bitmap->ClipE.TopLeft, 0,
+		(image->dy << 16) | (image->dx & 0xFFFF));
+	NV_WR32(&par->riva.Bitmap->ClipE.BottomRight, 0,
 		(((image->dy + image->height) << 16) |
-		 ((image->dx + image->width) & 0xffff));
-	par->riva.Bitmap->Color0E           = bgx;
-	par->riva.Bitmap->Color1E           = fgx;
-	par->riva.Bitmap->WidthHeightInE    = 
-		(image->height << 16) | ((image->width + 31) & ~31);
-	par->riva.Bitmap->WidthHeightOutE   = 
-		(image->height << 16) | ((image->width + 31) & ~31);
-	par->riva.Bitmap->PointE            = 
-		(image->dy << 16) | (image->dx & 0xFFFF);
+		 ((image->dx + image->width) & 0xffff)));
+	NV_WR32(&par->riva.Bitmap->Color0E, 0, bgx);
+	NV_WR32(&par->riva.Bitmap->Color1E, 0, fgx);
+	NV_WR32(&par->riva.Bitmap->WidthHeightInE, 0,
+		(image->height << 16) | ((image->width + 31) & ~31));
+	NV_WR32(&par->riva.Bitmap->WidthHeightOutE, 0,
+		(image->height << 16) | ((image->width + 31) & ~31));
+	NV_WR32(&par->riva.Bitmap->PointE, 0,
+		(image->dy << 16) | (image->dx & 0xFFFF));
 
 	d = &par->riva.Bitmap->MonochromeData01E;
 
@@ -1557,7 +1753,7 @@ static void xboxfb_imageblit(struct fb_info *info,
 			tmp = *((u32 *)cdat);
 			cdat = (u8 *)((u32 *)cdat + 1);
 			reverse_order(&tmp);
-			d[i] = tmp;
+			NV_WR32(d, i*4, tmp);
 		}
 		size -= 16;
 	}
@@ -1567,7 +1763,7 @@ static void xboxfb_imageblit(struct fb_info *info,
 			tmp = *((u32 *) cdat);
 			cdat = (u8 *)((u32 *)cdat + 1);
 			reverse_order(&tmp);
-			d[i] = tmp;
+			NV_WR32(d, i*4, tmp);
 		}
 	}
 }
@@ -1697,10 +1893,9 @@ static int xboxfb_ioctl(struct inode *inode, struct file *file, unsigned int cmd
 			par->hoc = overscan.hoc;
 			par->voc = overscan.voc;
 			riva_load_video_mode (info);
-			if (info->var.accel_flags & FB_ACCELF_TEXT) {
-				riva_setup_accel(par);
+			if(!(info->flags & FBINFO_HWACCEL_DISABLED)) {
+				riva_setup_accel(info);
 			}
-
 		}
 		else {
 			ret = -EFAULT;
@@ -1730,8 +1925,8 @@ static int xboxfb_ioctl(struct inode *inode, struct file *file, unsigned int cmd
 		if(!copy_from_user(&encoding, (xbox_tv_encoding*)arg, sizeof(encoding))) {
 			par->tv_encoding = encoding;
 			riva_load_video_mode (info);
-			if (info->var.accel_flags & FB_ACCELF_TEXT) {
-				riva_setup_accel(par);
+			if(!(info->flags & FBINFO_HWACCEL_DISABLED)) {
+				riva_setup_accel(info);
 			}
 		}
 		else {
@@ -2124,7 +2319,7 @@ static int __devinit xboxfb_probe(struct pci_dev *pd,
 	printk(KERN_INFO PFX
 		"PCI nVidia NV%x framebuffer ver %s (%s, %ldMB @ 0x%lX)\n",
 		default_par->riva.Architecture,
-		RIVAFB_VERSION,
+		XBOXFB_VERSION,
 		info->fix.id,
 		fb_size / (1024 * 1024),
 		info->fix.smem_start);
@@ -2213,6 +2408,10 @@ int __init xboxfb_setup(char *options)
 		} else if (!strncmp(this_opt, "nomtrr", 6)) {
 			nomtrr = 1;
 #endif
+		} else if (!strncmp(this_opt, "strictmode", 10)) {
+			strictmode = 1;
+		} else if (!strncmp(this_opt, "noaccel", 7)) {
+			noaccel = 1;
 		} else if (!strncmp(this_opt, "tv=", 3)) {
 				if(!strncmp(this_opt + 3, "PAL", 3)) {
 						tv_encoding = TV_ENC_PALBDGHI;
@@ -2271,6 +2470,8 @@ static void __exit xboxfb_exit(void)
 
 module_exit(xboxfb_exit);
 
+module_param(noaccel, bool, 0);
+MODULE_PARM_DESC(noaccel, "bool: disable acceleration");
 MODULE_PARM(flatpanel, "i");
 MODULE_PARM_DESC(flatpanel, "Enables experimental flat panel support for some chipsets. (0 or 1=enabled) (default=0)");
 MODULE_PARM(forceCRTC, "i");
@@ -2280,6 +2481,8 @@ MODULE_PARM_DESC(forceCRTC, "Forces usage of a particular CRTC in case autodetec
 MODULE_PARM(nomtrr, "i");
 MODULE_PARM_DESC(nomtrr, "Disables MTRR support (0 or 1=disabled) (default=0)");
 #endif
+module_param(strictmode, bool, 0);
+MODULE_PARM_DESC(strictmode, "Only use video modes from EDID");
 
 MODULE_PARM(tv, "s");
 MODULE_PARM_DESC(tv, "Specifies the TV encoding (\"PAL\", \"NTSC\" or \"VGA\").");
