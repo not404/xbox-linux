@@ -60,6 +60,7 @@
 #include "encoder-i2c.h"
 #include "conexant.h"
 #include "focus.h"
+#include "xlb.h"
 
 #ifndef CONFIG_PCI		/* sanity check */
 #error This driver requires PCI support.
@@ -1968,10 +1969,10 @@ static int __devinit xboxfb_probe(struct pci_dev *pd,
 			printk(KERN_INFO PFX "detected focus encoder\n");
 			break;
 		case ENCODER_XLB:
-			printk(KERN INFO PFX "detected Xcalibur encoder\n");
+			printk(KERN_INFO PFX "detected Xcalibur encoder\n");
 			break;
 		default: 
-			printk(KERN INFO PFX "detected unknown encoder\n");
+			printk(KERN_INFO PFX "detected unknown encoder\n");
 	}
 	
 	

@@ -116,18 +116,16 @@ void tv_load_mode(unsigned char * mode) {
 			b &= ~0x01;
 			focus_i2c_write_reg(0x0c,b);
 			b = focus_i2c_read_reg(0x0d);
-			focus_i2c_write_reg(0x0d,b);
+			ocus_i2c_write_reg(0x0d,b);
 			break;
 		case ENCODER_XLB:
 			//Nothing yet
 			break;		
-	
-	}
+		}	
+
 
 void tv_save_mode(unsigned char * mode) {
 	int n, n1;
-	int encoder = 0;
-
 	switch (tv_get_video_encoder()) {
 		case ENCODER_CONEXANT:
 			// Conexant init (starts at register 0x2e)
@@ -140,7 +138,7 @@ void tv_save_mode(unsigned char * mode) {
 		case ENCODER_FOCUS:
 			for (n=0;n<0xc4;n++) {
 				mode[n] = focus_i2c_read_reg(n);
-		}
+			}
 			break;
 		case ENCODER_XLB:
 			break;
