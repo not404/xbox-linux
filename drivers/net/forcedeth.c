@@ -68,7 +68,7 @@
  * interrupt (1/2 second on nForce2, 1/100 second on nForce3), or if an
  * rx packet arrives by chance.
  */
-#define FORCEDETH_VERSION		"0.19"
+#define FORCEDETH_VERSION		"0.20"
 
 #include <linux/module.h>
 #include <linux/types.h>
