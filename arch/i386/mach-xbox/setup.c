@@ -23,6 +23,11 @@ void __init pre_intr_init_hook(void)
 	init_ISA_irqs();
 }
 
+/*
+ * IRQ2 is cascade interrupt to second interrupt controller
+ */
+static struct irqaction irq2 = { no_action, 0, 0, "cascade", NULL, NULL };
+
 /**
  * intr_init_hook - post gate setup interrupt initialisation
  *
@@ -37,6 +42,8 @@ void __init intr_init_hook(void)
 #ifdef CONFIG_X86_LOCAL_APIC
 	apic_intr_init();
 #endif
+
+	setup_irq(2, &irq2);
 }
 
 /**
