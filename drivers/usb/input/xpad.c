@@ -169,37 +169,25 @@ static void xpad_process_packet(struct usb_xpad *xpad, u16 cmd, unsigned char *d
 	// Get the X axis data.
 	x = (__s16)(((__s16)data[13] << 8) | (__s16)data[12]);
 
-	// Check it against the deadzone.
+	//X axis deadzone
 	if((x > DEADZONE_X) || (x < -DEADZONE_X)) {
-		// If its out of the deadzone, send the value.
 		input_report_abs(dev, ABS_X, x);
-	} else {
-		// If its within the deadzone, send zero.
+	} 
+	else {
 		input_report_abs(dev, ABS_X, 0);
 	}
 
 	// Get the Y axis data.
 	y = (__s16)(((__s16)data[15] << 8) | data[14]);;
 	
-	// Flip the Y axis.
-	if(y == -32768) {
-		// Since this is a signed 16bit integer, this needs to
-		// be changed to 32767 otherwise we will overflow by
-		// just flipping the sign.
-		y = 32767;
-	} else if(y == 32767) {
-		// 32767 can go down to -32768.
-		y = -32768;
-	} else {
-		// Anywhere between these two values, and we can just
-		// flip the sign without problems.
-		y = -y;
-	}
+	// Flip the Y axis
+	y=~y;
 
-	// Deadzone.
-	if((y > DEADZONE_Y) || (y < -DEADZONE_Y)) {
+	//Y axis deadzone
+	if ((y > DEADZONE_Y) || (y < -DEADZONE_Y)) {
 		input_report_abs(dev, ABS_Y, y);
-	} else {
+	} 
+	else {
 		input_report_abs(dev, ABS_Y, 0);
 	}
 
@@ -209,20 +197,22 @@ static void xpad_process_packet(struct usb_xpad *xpad, u16 cmd, unsigned char *d
 	// X axis.
 	rx = (__s16)(((__s16)data[17] << 8) | (__s16)data[16]);
 
-	// Deadzone.
+	// X axis deadzone
 	if((rx > DEADZONE_X) || (rx < -DEADZONE_X)) {
 		input_report_abs(dev, ABS_RX, rx);
-	} else {
+	}
+	else {
 		input_report_abs(dev, ABS_RX, 0);
 	}
 
 	// Y axis.
 	ry = (__s16)(((__s16)data[19] << 8) | (__s16)data[18]);
 
-	// Deadzone.
+	// Y axis deadzone
 	if((ry > DEADZONE_Y) || (ry < -DEADZONE_Y)) {
 		input_report_abs(dev, ABS_RY, ry);
-	} else {
+	} 
+	else {
 		input_report_abs(dev, ABS_RY, 0);
 	}
    	
