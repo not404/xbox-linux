@@ -3321,6 +3321,7 @@ int ide_cdrom_setup (ide_drive_t *drive)
                  /* uses CD in slot 0 when value is set to 3 */
                  cdi->sanyo_slot = 3;
         }
+#ifdef CONFIG_X86_XBOX
 	/* THOMSON DVD drives in the Xbox report incorrect capabilities
 	   and do not understand the ATAPI eject command, but the SMC
 	   can do the eject. */
@@ -3352,9 +3353,12 @@ int ide_cdrom_setup (ide_drive_t *drive)
 		CDROM_CONFIG_FLAGS(drive)->xbox_drive = 1;
 		CDROM_CONFIG_FLAGS(drive)->xbox_eject = 0;
 	}
+#endif
 
 	/* Is an Xbox drive detected? */
+#ifdef CONFIG_X86_XBOX
 	if (CDROM_CONFIG_FLAGS(drive)->xbox_drive) {
+#endif
 		/* If an Xbox drive is present in a regular PC, we can't eject.
 		   Act like the drive cannot eject, unless the ATAPI eject command
 		   is supported by the drive.  If the drive doesn't support ATAPI
@@ -3375,7 +3379,7 @@ int ide_cdrom_setup (ide_drive_t *drive)
 			CDROM_CONFIG_FLAGS(drive)->no_eject = 0;
 			Xbox_simulate_drive_locked = 0;
 		}
-#endif /* CONFIG_X86_XBOX */
+#endif
 	}
 
 #endif /* not STANDARD_ATAPI */
