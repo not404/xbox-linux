@@ -69,7 +69,7 @@ struct address_space_operations fatx_aops = {
 void fatx_put_super(struct super_block *sb)
 {
 	fatx_cache_inval_dev(sb->s_dev);
-//	set_blocksize(sb->s_dev,BLOCK_SIZE);
+	set_blocksize(sb->s_bdev,BLOCK_SIZE);
         if (FATX_SB(sb)->nls_io) {
 		unload_nls(FATX_SB(sb)->nls_io);
 		FATX_SB(sb)->nls_io = NULL;
@@ -210,6 +210,7 @@ struct inode *fatx_build_inode(	struct super_block *sb,	struct fatx_dir_entry *d
 		goto out;
 	*res = 0;
 	inode->i_ino = iunique(sb, FATX_ROOT_INO);
+	inode->i_version = 1;
 	fatx_fill_inode(inode, de);
 	fatx_attach(inode, i_pos);
 	insert_inode_hash(inode);
@@ -565,8 +566,8 @@ int fatx_fill_super(struct super_block *sb,void *data, int silent)
 
 	error = -EIO;
 
-	sb->s_blocksize = hard_blksize;
-	sb_set_blocksize(sb, hard_blksize);
+	sb_min_blocksize(sb, 512);
+//	sb_set_blocksize(sb, hard_blksize);
 	bh = sb_bread(sb, 0);
 	if (bh == NULL) {
 		PRINTK("FATX: unable to read boot sector\n");

@@ -21,22 +21,19 @@
 
 struct file_operations fatx_file_operations = {
 	.llseek		= generic_file_llseek,
-	.read		= fatx_file_read,
+	.read		= generic_file_read,
 	.write		= fatx_file_write,
 	.mmap		= generic_file_mmap,
 	.fsync		= file_fsync,
+	.readv          = generic_file_readv,
+	.writev         = generic_file_writev,
+	.sendfile       = generic_file_sendfile,			
 };
 
 struct inode_operations fatx_file_inode_operations = {
 	.truncate	= fatx_truncate,
 	.setattr	= fatx_notify_change,
 };
-
-ssize_t fatx_file_read(	struct file *filp, char *buf, size_t count, loff_t *ppos)
-{
-	return generic_file_read(filp,buf,count,ppos);
-}
-
 
 int fatx_get_block(struct inode *inode, sector_t iblock, struct buffer_head *bh_result, int create)
 {
