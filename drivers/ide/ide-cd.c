@@ -3328,19 +3328,15 @@ int ide_cdrom_setup (ide_drive_t *drive)
 	/* Is an Xbox drive detected? */
 #ifdef CONFIG_X86_XBOX
 	if (CDROM_CONFIG_FLAGS(drive)->xbox_drive) {
-#endif
 		/* If an Xbox drive is present in a regular PC, we can't eject.
 		   Act like the drive cannot eject, unless the ATAPI eject command
 		   is supported by the drive.  If the drive doesn't support ATAPI
 		   ejecting, act like door locking is impossible as well. */
-#ifdef CONFIG_X86_XBOX
 		if (!machine_is_xbox) {
-#endif /* CONFIG_X86_XBOX */
 			CDROM_CONFIG_FLAGS(drive)->no_doorlock = CDROM_CONFIG_FLAGS
 				(drive)->xbox_eject;
 			CDROM_CONFIG_FLAGS(drive)->no_eject = CDROM_CONFIG_FLAGS(drive)
 				->xbox_eject;
-#ifdef CONFIG_X86_XBOX
 		} else {
 			/* An Xbox drive in an Xbox.  We can support ejecting through
 			   the SMC and support drive locking in software by ignoring
@@ -3349,9 +3345,8 @@ int ide_cdrom_setup (ide_drive_t *drive)
 			CDROM_CONFIG_FLAGS(drive)->no_eject = 0;
 			Xbox_simulate_drive_locked = 0;
 		}
-#endif
 	}
-
+#endif
 #endif /* not STANDARD_ATAPI */
 
 	info->toc		= NULL;
