@@ -666,7 +666,7 @@ config UMSDOS_FS
 
 config FATX_FS
 	tristate "FATX filesystem support (EXPERIMENTAL)"
-	depends on EXPERIMENTAL
+	depends on EXPERIMENTAL && !LBD
 	help
 	  This adds support for the FATX filesystem as found in Microsoft's Xbox.
 	  

@@ -22,7 +22,9 @@
 #include <asm/unaligned.h>
 
 
+#ifndef CONFIG_NLS_DEFAULT
 #define CONFIG_NLS_DEFAULT "iso8859-15"
+#endif
 
 #define FAT_HASH_BITS   8
 #define FAT_HASH_SIZE    (1UL << FAT_HASH_BITS)

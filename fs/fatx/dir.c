@@ -58,7 +58,6 @@ static int fatx_raw_scan_sector(struct super_block *sb,	int sector,
 		loff_t *i_pos, struct buffer_head **res_bh,
 		struct fatx_dir_entry **res_de )
 {
-	struct nls_table *t = FATX_SB(sb)->nls_io;
 	struct buffer_head *bh;
 	struct fatx_dir_entry *data;
 	int entry,start,done = 0;
