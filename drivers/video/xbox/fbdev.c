@@ -596,9 +596,15 @@ static void riva_load_state(struct riva_par *par, struct riva_regs *regs)
 	par->riva.PRAMDAC[0x000008a0/4] = 0;
 	par->riva.PMC[0x00008908/4] = par->riva.RamAmountKBytes * 1024 - 1;
 	par->riva.PMC[0x0000890c/4] = par->riva.RamAmountKBytes * 1024 - 1;
-	/* use RGB output */
-	par->riva.PRAMDAC[0x00000630/4] = 0; /* switch GPU to RGB */
-	par->riva.PRAMDAC[0x0000084c/4] =0;
+	/* Switch GPU to RGB output */
+	par->riva.PRAMDAC[0x00000630/4] = 0; 
+	/* These fix the maroon borders seen when booting from Xromwell or 
+	* xbeboot - note - this needs a rethink. The val of 8c4 fixes the 
+	* problem - but looking at the YCrCb line below, I suspect the old
+	* 84c 'fix' might've been a typo - dimetos, could you check please?*/
+	par->riva.PRAMDAC[0x0000084c/4] = 0;
+	par->riva.PRAMDAC[0x000008c4/4] = 0x00801080;
+	
 	/* for YCrCb:
 	par->riva.PRAMDAC[0x00000630/4] = 2; 
 	par->riva.PRAMDAC[0x0000084c/4] =0x801080;
@@ -737,8 +743,11 @@ static void riva_load_video_mode(struct fb_info *info)
 		else {
 			if (par->video_encoder == ENCODER_CONEXANT)
 				encoder_ok = conexant_calc_vga_mode(par->av_type, pll_int, newmode.encoder_mode);
-			else if (par->video_encoder == ENCODER_FOCUS);
-				/* No focus VGA functions yet */
+			else if (par->video_encoder == ENCODER_FOCUS) {
+				//No vga functions as yet - so set up for 480p otherwise we dont boot at all. 
+				encoder_ok = focus_calc_hdtv_mode(HDTV_480p, pll_int, newmode.encoder_mode);
+			}
+			
 			else printk("Error - unknown encoder type detected\n");
 		}
 		newmode.ext.vend = info->var.yres - 1;
