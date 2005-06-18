@@ -4,6 +4,9 @@
  *  Written 1992,1993 by Werner Almesberger
  *  22/11/2000 - Fixed fatx_date_unix2dos for dates earlier than 01/01/1980
  *		 and date_dos2unix for date==0 by Igor Zhbanov(bsg@uniyar.ac.ru)
+ *
+ *  FATX port 2005 by Edgar Hucek
+ *
  */
 
 #include <linux/module.h>
@@ -35,107 +38,72 @@ void fatx_fs_panic(struct super_block *s, const char *fmt, ...)
 	}
 }
 
-void lock_fatx(struct super_block *sb)
-{
-	down(&(FATX_SB(sb)->fatx_lock));
-}
-
-void unlock_fatx(struct super_block *sb)
-{
-	up(&(FATX_SB(sb)->fatx_lock));
-}
+EXPORT_SYMBOL(fatx_fs_panic);
 
 /*
- * fatx_add_cluster tries to allocate a new cluster and adds it to the
- * file represented by inode.
+ * fatx_chain_add() adds a new cluster to the chain of clusters represented
+ * by inode.
  */
-__s64 fatx_add_cluster(struct inode *inode)
+__s64 fatx_chain_add(struct inode *inode, int new_dclus, int nr_cluster)
 {
 	struct super_block *sb = inode->i_sb;
 	struct fatx_sb_info *sbi = FATX_SB(sb);
-	__s64 ret;
-	int count, limit, new_dclus, new_fclus, last;
-	int cluster_bits = sbi->cluster_bits;
+	__s64 ret; 
+	int new_fclus, last;
 
-	PRINTK("FATX: %s \n", __FUNCTION__);
 	/*
 	 * We must locate the last cluster of the file to add this new
-	 * one (new_dclus) to the end of the link list (the FAT).
-	 *
-	 * In order to confirm that the cluster chain is valid, we
-	 * find out EOF first.
+	 * one (new_dclus) to the end of the link list (the FATX).
 	 */
 	last = new_fclus = 0;
 	if (FATX_I(inode)->i_start) {
-		__s64 ret; 
 		int fclus, dclus;
 
+		PRINTK("FATX: %s new_fclus %d  inode->i_blocks %ld sbi->cluster_bits %d\n",
+			__FUNCTION__, new_fclus,  inode->i_blocks, sbi->cluster_bits);
 		ret = fatx_get_cluster(inode, FAT_ENT_EOF, &fclus, &dclus);
-		if (ret < 0) {
+		if (ret < 0)
 			return ret;
-		}
 		new_fclus = fclus + 1;
 		last = dclus;
 	}
 
-	/* find free FAT entry */
-	lock_fatx(sb);
-
-	if (sbi->free_clusters == 0) {
-		unlock_fatx(sb);
-		return -ENOSPC;
-	}
-
-	limit = sbi->max_cluster;
-	new_dclus = sbi->prev_free + 1;
-	for (count = FAT_START_ENT; count < limit; count++, new_dclus++) {
-		new_dclus = new_dclus % limit;
-		if (new_dclus < FAT_START_ENT)
-			new_dclus = FAT_START_ENT;
-
-		ret = fatx_access(sb, new_dclus, -1);
-		if (ret < 0) {
-			unlock_fatx(sb);
-			return ret;
-		} else if (ret == FAT_ENT_FREE)
-			break;
-	}
-	if (count >= limit) {
-		sbi->free_clusters = 0;
-		unlock_fatx(sb);
-		return -ENOSPC;
-	}
-
-	ret = fatx_access(sb, new_dclus, FAT_ENT_EOF);
-	if (ret < 0) {
-		unlock_fatx(sb);
-		return ret;
-	}
-
-	sbi->prev_free = new_dclus;
-	if (sbi->free_clusters != -1)
-		sbi->free_clusters--;
-
-	unlock_fatx(sb);
-
 	/* add new one to the last of the cluster chain */
 	if (last) {
-		ret = fatx_access(sb, last, new_dclus);
+		struct fatx_entry fatxent;
+
+		fatxent_init(&fatxent);
+		ret = fatx_ent_read(inode, &fatxent, last);
+		if (ret >= 0) {
+			int wait = inode_needs_sync(inode);
+			ret = fatx_ent_write(inode, &fatxent, new_dclus, wait);
+			fatxent_brelse(&fatxent);
+		}
 		if (ret < 0)
 			return ret;
+//		fatx_cache_add(inode, new_fclus, new_dclus);
 	} else {
 		FATX_I(inode)->i_start = new_dclus;
 		FATX_I(inode)->i_logstart = new_dclus;
-		mark_inode_dirty(inode);
+		/*
+		 * Since generic_osync_inode() synchronize later if
+		 * this is not directory, we don't here.
+		 */
+		if (S_ISDIR(inode->i_mode) && IS_DIRSYNC(inode)) {
+			ret = fatx_sync_inode(inode);
+			if (ret)
+				return ret;
+		} else
+			mark_inode_dirty(inode);
 	}
-	if (new_fclus != (inode->i_blocks >> (cluster_bits - 9))) {
+	if (new_fclus != (inode->i_blocks >> (sbi->cluster_bits - 9))) {
 		fatx_fs_panic(sb, "clusters badly computed (%d != %lu)",
-			new_fclus, inode->i_blocks >> (cluster_bits - 9));
+			new_fclus, inode->i_blocks >> (sbi->cluster_bits - 9));
 		fatx_cache_inval_inode(inode);
 	}
-	inode->i_blocks += sbi->cluster_size >> 9;
+	inode->i_blocks += nr_cluster << (sbi->cluster_bits - 9);
 
-	return new_dclus;
+	return 0;
 }
 
 extern struct timezone sys_tz;
@@ -167,6 +135,7 @@ int fatx_date_dos2unix(unsigned short time,unsigned short date)
 	return secs;
 }
 
+/* Convert linear UNIX date to a MS-DOS time/date pair. */
 void fatx_date_unix2dos(int unix_date,unsigned short *time,
     unsigned short *date)
 {
@@ -199,89 +168,32 @@ void fatx_date_unix2dos(int unix_date,unsigned short *time,
 	*date = nl_day-day_n[month-1]+1+(month << 5)+(year << 9);
 }
 
-
-/* Convert linear UNIX date to a MS-DOS time/date pair. */
-/*
-void fatx_date_unix2dos(int unix_date, __le16 *time, __le16 *date)
-{
-	int day, year, nl_day, month;
-
-	unix_date -= sys_tz.tz_minuteswest*60;
-
-	if (unix_date < 315532800)
-		unix_date = 315532800;
-
-	*time = cpu_to_le16((unix_date % 60)/2+(((unix_date/60) % 60) << 5)+
-	    (((unix_date/3600) % 24) << 11));
-	day = unix_date/86400-3652;
-	year = day/365;
-	if ((year+3)/4+365*year > day)
-		year--;
-	day -= (year+3)/4+365*year;
-	if (day == 59 && !(year & 3)) {
-		nl_day = day;
-		month = 2;
-	} else {
-		nl_day = (year & 3) || day <= 59 ? day : day-1;
-		for (month = 0; month < 12; month++) {
-			if (day_n[month] > nl_day)
-				break;
-		}
-	}
-	*date = cpu_to_le16(nl_day-day_n[month-1]+1+(month << 5)+(year << 9));
-}
-*/
-
 EXPORT_SYMBOL(fatx_date_unix2dos);
 
-/* Returns the inode number of the directory entry at offset pos. If bh is
-   non-NULL, it is brelse'd before. Pos is incremented. The buffer header is
-   returned in bh.
-   AV. Most often we do it item-by-item. Makes sense to optimize.
-   AV. OK, there we go: if both bh and de are non-NULL we assume that we just
-   AV. want the next entry (took one explicit de=NULL in vfatx/namei.c).
-   AV. It's done in fatx_get_entry() (inlined), here the slow case lives.
-   AV. Additionally, when we return -1 (i.e. reached the end of directory)
-   AV. we make bh NULL.
- */
-
-int fatx__get_entry(struct inode *dir, loff_t *pos, struct buffer_head **bh,
-		   struct fatx_dir_entry **de, loff_t *i_pos)
+int fatx_sync_bhs(struct buffer_head **bhs, int nr_bhs)
 {
-	struct super_block *sb = dir->i_sb;
-	struct fatx_sb_info *sbi = FATX_SB(sb);
-	sector_t phys, iblock;
-	loff_t offset;
-	int err;
+	int i, e, err = 0;
 
-	PRINTK("FATX: %s \n", __FUNCTION__);
-next:
-	offset = *pos;
-	if (*bh)
-		brelse(*bh);
-
-	*bh = NULL;
-	iblock = *pos >> sb->s_blocksize_bits;
-//	PRINTK("FATX: fatx__get_entry iblock %ld pos %lld sb->s_blocksize_bits %d\n", iblock, *pos, sb->s_blocksize_bits);
-	err = fatx_bmap(dir, iblock, &phys);
-	if (err || !phys)
-		return -1;
-
-	*bh = sb_bread(sb, phys);
-	if (*bh == NULL) {
-		printk(KERN_ERR "FATX: Directory bread(block %llu) failed\n",
-		       (unsigned long long)phys);
-		*pos = (iblock + 1) << sb->s_blocksize_bits;
-		goto next;
+	for (i = 0; i < nr_bhs; i++) {
+		lock_buffer(bhs[i]);
+		if (test_clear_buffer_dirty(bhs[i])) {
+			get_bh(bhs[i]);
+			bhs[i]->b_end_io = end_buffer_write_sync;
+			e = submit_bh(WRITE, bhs[i]);
+			if (!err && e)
+				err = e;
+		} else
+			unlock_buffer(bhs[i]);
 	}
-
-	offset &= sb->s_blocksize - 1;
-	*pos += sizeof(struct fatx_dir_entry);
-	*de = (struct fatx_dir_entry *)((*bh)->b_data + offset);
-	*i_pos = ((loff_t)phys << sbi->dir_per_block_bits) + (offset >> FATX_DIR_BITS);
-//	PRINTK("FATX: fatx__get_entry iblock %ld pos %lld sb->s_blocksize_bits %d sbi->dir_per_block_bits %d offset %lld\n", iblock, *pos, sb->s_blocksize_bits, sbi->dir_per_block_bits, offset);
-
-	return 0;
+	for (i = 0; i < nr_bhs; i++) {
+		wait_on_buffer(bhs[i]);
+		if (buffer_eopnotsupp(bhs[i])) {
+			clear_buffer_eopnotsupp(bhs[i]);
+			err = -EOPNOTSUPP;
+		} else if (!err && !buffer_uptodate(bhs[i]))
+			err = -EIO;
+	}
+	return err;
 }
 
-EXPORT_SYMBOL(fatx_get_entry);
+EXPORT_SYMBOL(fatx_sync_bhs);

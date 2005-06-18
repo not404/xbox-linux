@@ -2,6 +2,7 @@
  *  linux/fs/fatx/cache.c
  *
  *  Written 1992,1993 by Werner Almesberger
+ *
  *  FATX port 2005 by Edgar Hucek
  *
  *  Mar 1999. AV. Changed cache, so that it uses the starting cluster instead
@@ -13,10 +14,10 @@
 #include <linux/fatx_fs.h>
 #include <linux/buffer_head.h>
 
+#define PRINTK(format, args...) do { if (fatx_debug) printk( format, ##args ); } while(0)
+
 /* this must be > 0. */
 #define FAT_MAX_CACHE	8
-
-#define PRINTK(format, args...) do { if (fatx_debug) printk( format, ##args ); } while(0)
 
 struct fatx_cache {
 	struct list_head cache_list;
@@ -206,111 +207,6 @@ void fatx_cache_inval_inode(struct inode *inode)
 	spin_unlock(&FATX_I(inode)->cache_lru_lock);
 }
 
-static __s64 __fatx_access(struct super_block *sb, int nr, __s64 new_value)
-{
-	struct fatx_sb_info *sbi = FATX_SB(sb);
-	struct buffer_head *bh, *bh2, *c_bh, *c_bh2;
-	unsigned char *p_first, *p_last;
-	unsigned long first = 0, last = 0, next = 0;
-	int b, copy;
-
-	if (sbi->fatx_bits == 32) {
-		first = last = nr*4;
-	} else if (sbi->fatx_bits == 16) {
-		first = last = nr*2;
-	}
-	b = sbi->fatx_start + (first >> sb->s_blocksize_bits);
-	if (!(bh = sb_bread(sb, b))) {
-		printk(KERN_ERR "FATX: bread(block %d) in"
-		       " fatx_access failed\n", b);
-		return -EIO;
-	}
-	if ((first >> sb->s_blocksize_bits) == (last >> sb->s_blocksize_bits)) {
-		bh2 = bh;
-	} else {
-		if (!(bh2 = sb_bread(sb, b + 1))) {
-			brelse(bh);
-			printk(KERN_ERR "FATX: bread(block %d) in"
-			       " fatx_access failed\n", b + 1);
-			return -EIO;
-		}
-	}
-	if (sbi->fatx_bits == 32) {
-		p_first = p_last = NULL; /* GCC needs that stuff */
-		next = le32_to_cpu(((__u32 *) bh->b_data)[(first &
-		    (sb->s_blocksize - 1)) >> 2]);
-//		next &= 0xffffffff;
-	} else if (sbi->fatx_bits == 16) {
-		p_first = p_last = NULL; /* GCC needs that stuff */
-		next = le16_to_cpu(((__le16 *) bh->b_data)[(first &
-		    (sb->s_blocksize - 1)) >> 1]);
-	}
-	PRINTK("FATX: fatx_access: 0x%x, nr=0x%x, first=0x%x, next=0x%x new_value=0x%x\n", 
-			b, (int)nr, (int)first, (int)next, (int)new_value);
-	if (new_value != -1) {
-		if (sbi->fatx_bits == 32) {
-			if (new_value == 0xfffffff8) new_value = 0xffffffff;
-			((__u32 *)bh->b_data)[(first & (sb->s_blocksize - 1)) >> 2]
-				= cpu_to_le32(new_value);
-		} else if (sbi->fatx_bits == 16) {
-			if (new_value == 0xfff8) new_value = 0xffff;
-			((__le16 *)bh->b_data)[(first & (sb->s_blocksize - 1)) >> 1]
-				= cpu_to_le16(new_value);
-		}
-		mark_buffer_dirty(bh);
-		for (copy = 1; copy < sbi->fatxs; copy++) {
-			b = sbi->fatx_start + (first >> sb->s_blocksize_bits)
-				+ sbi->fatx_length * copy;
-			if (!(c_bh = sb_bread(sb, b)))
-				break;
-			if (bh != bh2) {
-				if (!(c_bh2 = sb_bread(sb, b+1))) {
-					brelse(c_bh);
-					break;
-				}
-				memcpy(c_bh2->b_data, bh2->b_data, sb->s_blocksize);
-				mark_buffer_dirty(c_bh2);
-				brelse(c_bh2);
-			}
-			memcpy(c_bh->b_data, bh->b_data, sb->s_blocksize);
-			mark_buffer_dirty(c_bh);
-			brelse(c_bh);
-		}
-	}
-	brelse(bh);
-	if (bh != bh2)
-		brelse(bh2);
-	return next;
-}
-
-/*
- * Returns the this'th FAT entry, -1 if it is an end-of-file entry. If
- * new_value is != -1, that FAT entry is replaced by it.
- */
-__s64 fatx_access(struct super_block *sb, int nr, __s64 new_value)
-{
-	__s64 next;
-
-	next = -EIO;
-	if (nr < FAT_START_ENT || FATX_SB(sb)->max_cluster <= nr) {
-		fatx_fs_panic(sb, "invalid access to FAT (entry 0x%08x)", nr);
-		goto out;
-	}
-
-	if (new_value == FAT_ENT_EOF)
-		new_value = EOF_FAT(sb);
-	
-	next = __fatx_access(sb, nr, new_value);
-	if (next < 0)
-		goto out;
-
-	if (next >= BAD_FAT(sb))
-		next = FAT_ENT_EOF;
-
-out:
-	return next;
-}
-
 static inline int cache_contiguous(struct fatx_cache_id *cid, int dclus)
 {
 	cid->nr_contig++;
@@ -330,10 +226,10 @@ __s64 fatx_get_cluster(struct inode *inode, __s64 cluster, int *fclus, int *dclu
 	struct super_block *sb = inode->i_sb;
 	//const int limit = sb->s_maxbytes >> FATX_SB(sb)->cluster_bits;
 	const int limit = FATX_SB(sb)->max_cluster;
+	struct fatx_entry fatxent;
 	struct fatx_cache_id cid;
 	__s64 nr;
 
-	PRINTK("FATX: %s \n", __FUNCTION__);
 	BUG_ON(FATX_I(inode)->i_start == 0);
 
 	*fclus = 0;
@@ -349,34 +245,41 @@ __s64 fatx_get_cluster(struct inode *inode, __s64 cluster, int *fclus, int *dclu
 		cache_init(&cid, -1, -1);
 	}
 
+	fatxent_init(&fatxent);
+	PRINTK("FATX: %s fclus 0x%08x cluster 0x%08llx\n", __FUNCTION__, *fclus, cluster);
 	while (*fclus < cluster) {
 		/* prevent the infinite loop of cluster chain */
 		if (*fclus > limit) {
 			fatx_fs_panic(sb, "%s: detected the cluster chain loop"
 				     " (i_pos %lld)", __FUNCTION__,
 				     FATX_I(inode)->i_pos);
-			return -EIO;
+			nr = -EIO;
+			goto out;
 		}
 
-		nr = fatx_access(sb, *dclus, -1);
+		nr = fatx_ent_read(inode, &fatxent, *dclus);
 		if (nr < 0)
-			return nr;
+			goto out;
 		else if (nr == FAT_ENT_FREE) {
 			fatx_fs_panic(sb, "%s: invalid cluster chain"
 				     " (i_pos %lld)", __FUNCTION__,
 				     FATX_I(inode)->i_pos);
-			return -EIO;
+			nr = -EIO;
+			goto out;
 		} else if (nr == FAT_ENT_EOF) {
 			fatx_cache_add(inode, &cid);
-			return FAT_ENT_EOF;
+			goto out;
 		}
 		(*fclus)++;
 		*dclus = nr;
 		if (!cache_contiguous(&cid, *dclus))
 			cache_init(&cid, *fclus, *dclus);
 	}
+	nr = 0;
 	fatx_cache_add(inode, &cid);
-	return 0;
+out:
+	fatxent_brelse(&fatxent);
+	return nr;
 }
 
 static __s64 fatx_bmap_cluster(struct inode *inode, __s64 cluster)
@@ -385,49 +288,41 @@ static __s64 fatx_bmap_cluster(struct inode *inode, __s64 cluster)
 	__s64 ret;
 	int fclus, dclus;
 
-	PRINTK("FATX: %s \n", __FUNCTION__);
 	if (FATX_I(inode)->i_start == 0)
 		return 0;
 
 	ret = fatx_get_cluster(inode, cluster, &fclus, &dclus);
-	if (ret < 0) {
+	if (ret < 0)
 		return ret;
-	}
 	else if (ret == FAT_ENT_EOF) {
-		fatx_fs_panic(sb, "%s: request beyond EOF (i_pos %lld)",
-			     __FUNCTION__, FATX_I(inode)->i_pos);
+		fatx_fs_panic(sb, "%s: request beyond EOF (i_pos %lld ret 0x%08llx fclus 0x%08x dclus 0x%08x)",
+			     __FUNCTION__, FATX_I(inode)->i_pos, ret, fclus, dclus);
 		return -EIO;
 	}
 	return dclus;
 }
 
-unsigned long fatx_bmap(struct inode *inode, sector_t sector, sector_t *phys)
+int fatx_bmap(struct inode *inode, sector_t sector, sector_t *phys)
 {
 	struct super_block *sb = inode->i_sb;
 	struct fatx_sb_info *sbi = FATX_SB(sb);
 	sector_t last_block;
 	__s64 cluster, offset;
 
-	PRINTK("FATX: %s \n", __FUNCTION__);
 	*phys = 0;
-	if ((inode->i_ino == FATX_ROOT_INO || (S_ISDIR(inode->i_mode) &&
-	     !FATX_I(inode)->i_start))) {
+	if (inode->i_ino == FATX_ROOT_INO) {
 		if (sector < (sbi->dir_entries >> sbi->dir_per_block_bits))
 			*phys = sector + sbi->dir_start;
-		PRINTK("FATX: %s phys %ld sector %ld\n",__FUNCTION__, *phys, sector);
 		return 0;
 	}
 	last_block = (FATX_I(inode)->mmu_private + (sb->s_blocksize - 1))
 		>> sb->s_blocksize_bits;
-	if (sector >= last_block) {
-		PRINTK("FATX: %s sector %ld last_block %ld\n", __FUNCTION__, sector, last_block);
+	if (sector >= last_block)
 		return 0;
-	}
 
 	cluster = sector >> (sbi->cluster_bits - sb->s_blocksize_bits);
 	offset  = sector & (sbi->sec_per_clus - 1);
 	cluster = fatx_bmap_cluster(inode, cluster);
-	PRINTK("FATX: %s cluster %lld  offset %lld sector %ld\n",__FUNCTION__,cluster, offset, sector);
 	if (cluster < 0)
 		return cluster;
 	else if (cluster)
