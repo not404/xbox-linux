@@ -45,7 +45,6 @@ static struct i2c_driver tv_driver = {
 
 static struct i2c_client pic_client = {
 	.name		= "I2C xbox pic client",
-	.id		= 2,
 	.flags		= 0,
 	.addr		= PIC_ADDRESS,
 	.adapter	= NULL,
@@ -54,7 +53,6 @@ static struct i2c_client pic_client = {
 
 static struct i2c_client conexant_client = {
 	.name		= "I2C xbox conexant client",
-	.id		= 1,
 	.flags		= 0,
 	.addr		= CONEXANT_ADDRESS,
 	.adapter	= NULL,
@@ -63,7 +61,6 @@ static struct i2c_client conexant_client = {
 
 static struct i2c_client focus_client = {
 	.name		= "I2C xbox focus client",
-	.id		= 1,
 	.flags		= 0,
 	.addr		= FOCUS_ADDRESS,
 	.adapter	= NULL,
@@ -72,7 +69,6 @@ static struct i2c_client focus_client = {
 
 static struct i2c_client xcalibur_client = {
 	.name		= "I2C xbox Xcalibur client",
-	.id		= 1,
 	.flags		= 0,
 	.addr		= XLB_ADDRESS,
 	.adapter	= NULL,
@@ -81,7 +77,6 @@ static struct i2c_client xcalibur_client = {
 
 static struct i2c_client eeprom_client = {
 	.name		= "I2C xbox eeprom client",
-	.id		= 3,
 	.flags		= 0,
 	.addr		= EEPROM_ADDRESS,
 	.adapter	= NULL,

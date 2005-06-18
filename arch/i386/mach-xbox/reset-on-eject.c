@@ -87,7 +87,6 @@ static void extsmi_process(void){
 
 static int extsmi_thread(void *data){
 	daemonize("extsmi");
-	reparent_to_init();
 	strcpy(current->comm, "xbox_extsmi");
 
 	do {
