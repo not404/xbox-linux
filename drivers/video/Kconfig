@@ -699,6 +699,9 @@ config FB_XBOX
 	tristate "nVidia Xbox support"
 	depends on FB && PCI && I2C_XBOX && EXPERIMENTAL
 	select FB_MODE_HELPERS
+	select FB_CFB_FILLRECT
+	select FB_CFB_COPYAREA
+	select FB_CFB_IMAGEBLIT
 	select FB_SOFT_CURSOR
 	help
 	  This driver supports the graphics chip of the Microsoft Xbox. 
