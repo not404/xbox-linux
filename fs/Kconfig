@@ -611,9 +611,9 @@ config FATX_FS
 	  legacy fields and redundant information. For lengthier discussions on
 	  the filesystem, see:
 
-	  http://xbox-linux.sourceforge.net/docs/fatxfat.html
-	  http://xbox-linux.sourceforge.net/docs/hdpartfs.html
-	  http://xbox-linux.sourceforge.net/docs/hackingfatx.html
+	  <http://xbox-linux.sourceforge.net/docs/fatxfat.html>
+	  <http://xbox-linux.sourceforge.net/docs/hdpartfs.html>
+	  <http://xbox-linux.sourceforge.net/docs/hackingfatx.html>
 
 	  # Uncomment this once things actually stabilize:
 	  #

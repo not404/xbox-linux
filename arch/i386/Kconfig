@@ -110,7 +110,7 @@ config X86_XBOX
 	bool "Xbox (Microsoft)"
 	help
 	  Xbox is a standard PC from Microsoft minus some legacy hardware.
-	  More info may be gleaned from http://xbox-linux.sourceforge.net/
+	  More info may be gleaned from <http://xbox-linux.sourceforge.net/>.
 
 	  Only choose this option if you are building a kernel for such a
 	  machine, otherwise choose "PC-compatible".
