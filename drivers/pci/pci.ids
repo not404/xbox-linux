@@ -3686,8 +3686,8 @@
 	0286  NV28 [GeForce4 Ti 4200 Go AGP 8x]
 	0288  NV28GL [Quadro4 980 XGL]
 	0289  NV28GL [Quadro4 780 XGL]
-	02a0  NV2A [GeForce3 MX nForce GPU]
 	028c  NV28GLM [Quadro4 700 GoGL]
+	02a0  NV2A [GeForce3 MX - nForce GPU]
 	02f0  C51 Host Bridge
 	02f1  C51 Host Bridge
 	02f2  C51 Host Bridge
