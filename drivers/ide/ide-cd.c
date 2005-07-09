@@ -2152,7 +2152,7 @@ static int cdrom_eject(ide_drive_t *drive, int ejectflag,
 #ifdef CONFIG_X86_XBOX
         /* Older Xbox DVD drives don't understand the ATAPI command, but the SMC
 	   can do the eject.  Note that some Xbox drives support the eject
- 	   command, namely the Samsung, so for that drive we do a regular eject
+	   command, namely the Samsung, so for that drive we do a regular eject
 	   sequence. */
 	if (machine_is_xbox && CDROM_CONFIG_FLAGS(drive)->xbox_drive &&
 		CDROM_CONFIG_FLAGS(drive)->xbox_eject) {
@@ -2165,7 +2165,6 @@ static int cdrom_eject(ide_drive_t *drive, int ejectflag,
 		return 0;
 	}
 #endif
-
 	cdrom_prepare_request(drive, &req);
 
 	/* only tell drive to close tray if open, if it can do that */
@@ -2176,7 +2175,6 @@ static int cdrom_eject(ide_drive_t *drive, int ejectflag,
 	req.cmd[0] = GPCMD_START_STOP_UNIT;
 	req.cmd[4] = loej | (ejectflag != 0);
 	return cdrom_queue_packet_command(drive, &req);
-
 }
 
 static int cdrom_read_capacity(ide_drive_t *drive, unsigned long *capacity,
