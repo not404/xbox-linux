@@ -1,11 +1,12 @@
 /*
- * Xbox input device driver for Linux - v0.1.4
+ * Xbox input device driver for Linux - v0.1.5
  *
  * Copyright (c)  2002 - 2004  Marko Friedemann <mfr@bmx-chemnitz.de>
  *
  *	Contributors:
  *		Vojtech Pavlik <vojtech@suse.sz>,
  *		Oliver Schwartz <Oliver.Schwartz@gmx.de>,
+ *		Thomas Pedley <gentoox@shallax.com>,
  *		Steven Toth <steve@toth.demon.co.uk>,
  *		Franz Lehner <franz@caos.at>,
  *		Ivan Hawkes <blackhawk@ivanhawkes.com>
@@ -38,7 +39,7 @@
  *
  * TODO:
  *  - fine tune axes
- *  - fine tune mouse behaviour (should not do linear acceleration)
+ *  - NEW: Test right thumb stick Y-axis to see if it needs flipping.
  *  - NEW: get rumble working correctly, fix all the bugs and support multiple
  *         simultaneous effects
  *  - NEW: split funtionality mouse/joustick into two source files
@@ -103,8 +104,7 @@ static signed short xpad_btn[] = {
 static signed short xpad_mat_btn[] = {
 	BTN_A, BTN_B, BTN_X, BTN_Y, 	/* A, B, X, Y */
 	BTN_START, BTN_BACK, 		/* start/back */
-	BTN_0, BTN_1, BTN_2, BTN_3,	/* directions, LEFT/RIGHT is mouse
-					 * so we cannot use those! */
+	BTN_0, BTN_1, BTN_2, BTN_3,	/* directions */
 	-1				/* terminating entry */
 };
 
@@ -139,7 +139,8 @@ MODULE_DEVICE_TABLE(usb, xpad_table);
 static void xpad_process_packet(struct usb_xpad *xpad, u16 cmd, unsigned char *data, struct pt_regs *regs)
 {
 	struct input_dev *dev = &xpad->dev;
-	
+	// These hold the values for the left and right joypad axes.
+
 	input_regs(dev, regs);
 
 	/* digital pad (button mode) bits (3 2 1 0) (right left down up) */
@@ -161,13 +162,22 @@ static void xpad_process_packet(struct usb_xpad *xpad, u16 cmd, unsigned char *d
 	if (xpad->isMat)
 		return;
 	
+
 	/* left stick */
-	input_report_abs(dev, ABS_X, ((__s16) (((__s16)data[13] << 8) | data[12])));
-	input_report_abs(dev, ABS_Y, ((__s16) (((__s16)data[15] << 8) | data[14])));
+
+	// X axis.
+	input_report_abs(dev, ABS_X, (__s16)(((__s16)data[13] << 8) | (__s16)data[12]));
+
+	// Y axis (needs to be flipped: ~)
+	input_report_abs(dev, ABS_Y, ~(__s16)(((__s16)data[15] << 8) | data[14]));
 	
 	/* right stick */
-	input_report_abs(dev, ABS_RX, ((__s16) (((__s16)data[17] << 8) | data[16])));
-	input_report_abs(dev, ABS_RY, ((__s16) (((__s16)data[19] << 8) | data[18])));
+
+	// X axis.
+	input_report_abs(dev, ABS_RX, (__s16)(((__s16)data[17] << 8) | (__s16)data[16]));
+
+	// Y axis.
+	input_report_abs(dev, ABS_RY, (__s16)(((__s16)data[19] << 8) | (__s16)data[18]));
    	
    	/* triggers left/right */
 	input_report_abs(dev, ABS_Z, data[10]);
@@ -196,9 +206,6 @@ static void xpad_process_packet(struct usb_xpad *xpad, u16 cmd, unsigned char *d
 	input_report_abs(dev, ABS_HAT3Y, data[9]);
 	
 	input_sync(dev);
-	
-	/* process input data for mouse event generation */
-	xpad_mouse_process_packet(xpad, cmd, data);
 }
 
 /**
@@ -241,14 +248,14 @@ exit:
 /*	xpad_init_urb
  *
  *	initialize the input urb
- *	this is to be called when joystick or mouse device are opened
+ *	this is to be called when joystick device is opened
  */
 int xpad_start_urb(struct usb_xpad *xpad)
 {
 	int status;
 	
-	// check if joystick or mouse device are opened
-	if (xpad->open_count + xpad->mouse_open_count > 0)
+	// check if joystick is opened
+	if (xpad->open_count > 0)
 		return 0;
 
 	xpad->irq_in->dev = xpad->udev;
@@ -287,7 +294,7 @@ static int xpad_open(struct input_dev *dev)
 
 void xpad_stop_urb(struct usb_xpad *xpad)
 {
-	if (xpad->open_count + xpad->mouse_open_count > 0)
+	if (xpad->open_count > 0)
 		return;
 	
 	usb_unlink_urb(xpad->irq_in);
@@ -337,7 +344,7 @@ static void xpad_init_input_device(struct usb_interface *intf, struct xpad_devic
 	snprintf(xpad->phys, 64, "%s/input0", path);
 	
 	/* this was meant to allow a user space tool on-the-fly configuration
-	   of driver options (mouse on, rumble on, etc)
+	   of driver options (rumble on, etc...)
 	   yet, Vojtech said this is better done using sysfs (linux 2.6)
 	   plus, it needs a patch to the input subsystem */
 //	xpad->dev.ioctl = xpad_ioctl;
@@ -365,7 +372,7 @@ static void xpad_init_input_device(struct usb_interface *intf, struct xpad_devic
 			case ABS_RY:	/* the two sticks */
 				xpad->dev.absmax[t] =  32767;
 				xpad->dev.absmin[t] = -32768;
-				xpad->dev.absflat[t] = 128;
+				xpad->dev.absflat[t] = 12000;
 				xpad->dev.absfuzz[t] = 16;
 				break;
 			case ABS_Z:	/* left trigger */
@@ -432,6 +439,8 @@ static int xpad_probe(struct usb_interface *intf, const struct usb_device_id *id
 	
 	xpad->idata = usb_buffer_alloc(udev, XPAD_PKT_LEN,
 				       SLAB_ATOMIC, &xpad->idata_dma);
+
+
 	if (!xpad->idata) {
 		kfree(xpad);
 		return -ENOMEM;
@@ -458,12 +467,12 @@ static int xpad_probe(struct usb_interface *intf, const struct usb_device_id *id
 			 xpad_irq_in, xpad, ep_irq_in->bInterval);
 	xpad->irq_in->transfer_dma = xpad->idata_dma;
 	xpad->irq_in->transfer_flags |= URB_NO_TRANSFER_DMA_MAP;
+
 	
 	// we set this here so we can extract it in the two functions below
 	usb_set_intfdata(intf, xpad);
 	
 	xpad_init_input_device(intf, xpad_device[probedDevNum]);
-	xpad_mouse_init_input_device(intf, xpad_device[probedDevNum]);
 	
 	return 0;
 }
@@ -486,7 +495,6 @@ static void xpad_disconnect(struct usb_interface *intf)
 		input_unregister_device(&xpad->dev);
 		
 		usb_free_urb(xpad->irq_in);
-		xpad_mouse_cleanup(xpad);
 		
 		usb_buffer_free(interface_to_usbdev(intf), XPAD_PKT_LEN,
 				xpad->idata, xpad->idata_dma);
@@ -536,6 +544,10 @@ MODULE_LICENSE("GPL");
 /*
  *  driver history
  * ----------------
+ *
+ * 2005-03-15 - 0.1.5 : Mouse emulation removed.  Deadzones increased.
+ *  - Flipped the Y axis of the left joystick (it was inverted, like on a 
+ *    flight simulator).
  *
  * 2003-05-15 - 0.1.2 : ioctls, dynamic mouse/rumble activation, /proc fs
  *  - added some /proc files for informational purposes (readonly right now)
