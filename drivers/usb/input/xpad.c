@@ -81,6 +81,7 @@ static struct xpad_device xpad_device[] = {
 	{ 0x0738, 0x4540, 1, "Mad Catz Beat Pad" },
 	{ 0x0738, 0x4556, 0, "Mad Catz Lynx Wireless Controller" },
 	{ 0x0738, 0x6040, 1, "Mad Catz Beat Pad Pro" },
+	{ 0x0c12, 0x8802, 0, "Zeroplus Xbox Controller" },
 	{ 0x0c12, 0x8809, 0, "Level Six Xbox DDR Dancepad" },
 	{ 0x0c12, 0x8810, 0, "Zeroplus Xbox Controller" },
 	{ 0x0c12, 0x9902, 0, "HAMA VibraX - *FAULTY HARDWARE*" }, /* these are broken */
@@ -90,6 +91,7 @@ static struct xpad_device xpad_device[] = {
 	{ 0x0e6f, 0x0005, 0, "Eclipse wireless Controller" },
 	{ 0x0e6f, 0x0006, 0, "Edge wireless Controller" },
 	{ 0x0f30, 0x0202, 0, "Joytech Advanced Controller" },
+	{ 0x102c, 0xff0c, 0, "Joytech Wireless Advanced Controller" },
 	{ 0x12ab, 0x8809, 1, "Xbox DDR dancepad" },
 	{ 0xffff, 0xffff, 0, "Chinese-made Xbox Controller" }, /* WTF are device IDs for? */
 	{ 0x0000, 0x0000, 0, "nothing detected - FAIL" }
