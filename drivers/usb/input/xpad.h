@@ -62,13 +62,13 @@
 struct usb_xpad {
 	struct input_dev dev;			/* input device interface */
 	struct usb_device *udev;		/* usb device */
-	
+
 	struct urb *irq_in;			/* urb for int. in report */
 	unsigned char *idata;			/* input data */
 	dma_addr_t idata_dma;
-	
+
 	char phys[65];				/* physical input dev path */
-	
+
 	int open_count;				/* reference count */
 
 	unsigned char offsetset_compensation;
@@ -76,25 +76,24 @@ struct usb_xpad {
 	int left_offset_y;
 	int right_offset_x;
 	int right_offset_y;
-	
+
 	int isMat;				/* is this a dancepad/mat? */
-	
+
 #ifdef CONFIG_USB_XPAD_RUMBLE
 	int rumble_enabled;			/* ioctl can toggle rumble */
-	
+
 	int ep_out_adr;				/* number of out endpoint */
 	unsigned char tx_data[XPAD_PKT_LEN_FF];	/* output data (rumble) */
 	int strong_rumble, play_strong;		/* strong rumbling */
 	int weak_rumble, play_weak;		/* weak rumbling */
 	struct timer_list rumble_timer;		/* timed urb out retry */
 	wait_queue_head_t wait;			/* wait for URBs on queue */
-	
+
 	spinlock_t tx_lock;
 	struct circ_buf tx;
 	unsigned char tx_buf[XPAD_TX_BUFSIZE];
 	long tx_flags[1];			/* transmit flags */
 #endif
-	
 };
 
 /* for the list of know devices */
