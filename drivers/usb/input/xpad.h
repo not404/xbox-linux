@@ -69,8 +69,6 @@ struct usb_xpad {
 
 	char phys[65];				/* physical input dev path */
 
-	int open_count;				/* reference count */
-
 	unsigned char offsetset_compensation;
 	int left_offset_x;
 	int left_offset_y;

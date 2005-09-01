@@ -256,10 +256,6 @@ int xpad_start_urb(struct usb_xpad *xpad)
 {
 	int status;
 
-	// check if joystick is opened
-	if (xpad->open_count > 0)
-		return 0;
-
 	xpad->irq_in->dev = xpad->udev;
 	if ((status = usb_submit_urb(xpad->irq_in, GFP_KERNEL))) {
 		err("open input urb failed: %d", status);
@@ -279,15 +275,10 @@ static int xpad_open(struct input_dev *dev)
 	struct usb_xpad *xpad = dev->private;
 	int status;
 
-	if (xpad->open_count)
-		return 0;
-
 	info("opening device");
 
 	if ((status = xpad_start_urb(xpad)))
 		return status;
-
-	++xpad->open_count;
 
 	xpad_rumble_open(xpad);
 
@@ -296,9 +287,6 @@ static int xpad_open(struct input_dev *dev)
 
 void xpad_stop_urb(struct usb_xpad *xpad)
 {
-	if (xpad->open_count > 0)
-		return;
-
 	usb_unlink_urb(xpad->irq_in);
 }
 
@@ -310,9 +298,6 @@ void xpad_stop_urb(struct usb_xpad *xpad)
 static void xpad_close(struct input_dev *dev)
 {
 	struct usb_xpad *xpad = dev->private;
-
-	if (--xpad->open_count)
-		return;
 
 	info("closing device");
 
