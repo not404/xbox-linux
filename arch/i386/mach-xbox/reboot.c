@@ -52,17 +52,11 @@ void machine_restart(char *cmd)
 	machine_emergency_restart();
 }
 
-EXPORT_SYMBOL(machine_restart);
-
 void machine_power_off(void)
 {
 	xbox_pic_cmd(SMC_SUBCMD_POWER_OFF);  
 }
 
-EXPORT_SYMBOL(machine_power_off);
-
 void machine_halt(void)
 {
 }
-
-EXPORT_SYMBOL(machine_halt);
