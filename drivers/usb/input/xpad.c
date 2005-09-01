@@ -56,6 +56,7 @@
 #include <linux/module.h>
 #include <linux/smp_lock.h>
 #include <linux/usb.h>
+#include <linux/usb_input.h>
 #include <linux/version.h>
 #include <linux/timer.h>
 #include <asm/uaccess.h>
@@ -316,10 +317,7 @@ static void xpad_init_input_device(struct usb_interface *intf, struct xpad_devic
 	char path[64];
 	int i;
 
-	xpad->dev.id.bustype = BUS_USB;
-	xpad->dev.id.vendor = udev->descriptor.idVendor;
-	xpad->dev.id.product = udev->descriptor.idProduct;
-	xpad->dev.id.version = udev->descriptor.bcdDevice;
+	usb_to_input_id(udev, &xpad->dev.id);
 	xpad->dev.dev = &intf->dev;
 	xpad->dev.private = xpad;
 	xpad->dev.name = device.name;
