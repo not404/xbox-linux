@@ -42,9 +42,14 @@ static void xbox_pic_cmd(u8 command)
 	outb_p(0x0a, XBOX_SMB_GLOBAL_ENABLE);
 }
 
-void machine_restart(char * __unused)
+void machine_emergency_restart(void)
 {
 	xbox_pic_cmd(SMC_SUBCMD_POWER_CYCLE);  
+}
+
+void machine_restart(char *cmd)
+{
+	machine_emergency_restart();
 }
 
 EXPORT_SYMBOL(machine_restart);
