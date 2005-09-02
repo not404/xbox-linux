@@ -288,7 +288,7 @@ static int xpad_open(struct input_dev *dev)
 
 void xpad_stop_urb(struct usb_xpad *xpad)
 {
-	usb_unlink_urb(xpad->irq_in);
+	usb_kill_urb(xpad->irq_in);
 }
 
 /**
@@ -472,7 +472,7 @@ static void xpad_disconnect(struct usb_interface *intf)
 	usb_set_intfdata(intf, NULL);
 	if (xpad) {
 		info( "disconnecting device" );
-		usb_unlink_urb(xpad->irq_in);
+		usb_kill_urb(xpad->irq_in);
 		xpad_rumble_close(xpad);
 		input_unregister_device(&xpad->dev);
 
