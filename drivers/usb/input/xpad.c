@@ -165,20 +165,12 @@ static void xpad_process_packet(struct usb_xpad *xpad, u16 cmd, unsigned char *d
 	if (xpad->isMat)
 		return;
 
-	/* left stick */
-
-	// X axis.
+	/* left stick (Y axis needs to be flipped) */
 	input_report_abs(dev, ABS_X, (__s16)(((__s16)data[13] << 8) | (__s16)data[12]));
-
-	// Y axis (needs to be flipped: ~)
 	input_report_abs(dev, ABS_Y, ~(__s16)(((__s16)data[15] << 8) | data[14]));
 
 	/* right stick */
-
-	// X axis.
 	input_report_abs(dev, ABS_RX, (__s16)(((__s16)data[17] << 8) | (__s16)data[16]));
-
-	// Y axis.
 	input_report_abs(dev, ABS_RY, (__s16)(((__s16)data[19] << 8) | (__s16)data[18]));
 
 	/* triggers left/right */
@@ -280,7 +272,6 @@ static void xpad_close(struct input_dev *dev)
 	struct usb_xpad *xpad = dev->private;
 
 	info("closing device");
-
 	usb_kill_urb(xpad->irq_in);
 	xpad_rumble_close(xpad);
 }
@@ -311,7 +302,7 @@ static void xpad_init_input_device(struct usb_interface *intf, struct xpad_devic
 	   of driver options (rumble on, etc...)
 	   yet, Vojtech said this is better done using sysfs (linux 2.6)
 	   plus, it needs a patch to the input subsystem */
-//	xpad->dev.ioctl = xpad_ioctl;
+/*	xpad->dev.ioctl = xpad_ioctl;*/
 
 	if (xpad->isMat) {
 		xpad->dev.evbit[0] = BIT(EV_KEY);
@@ -380,7 +371,7 @@ static int xpad_probe(struct usb_interface *intf, const struct usb_device_id *id
 	int probedDevNum = -1;	/* this takes the index into the known devices
 				   array for the recognized device */
 
-	// try to detect the device we are called for
+	/* try to detect the device we are called for */
 	for (i = 0; xpad_device[i].idVendor; ++i) {
 		if ((udev->descriptor.idVendor == xpad_device[i].idVendor) &&
 		    (udev->descriptor.idProduct == xpad_device[i].idProduct)) {
@@ -389,7 +380,7 @@ static int xpad_probe(struct usb_interface *intf, const struct usb_device_id *id
 		}
 	}
 
-	// sanity check, did we recognize this device? if not, fail
+	/* sanity check, did we recognize this device? if not, fail */
 	if ((probedDevNum == -1) || (!xpad_device[probedDevNum].idVendor &&
 				     !xpad_device[probedDevNum].idProduct))
 		return -ENODEV;
@@ -430,7 +421,7 @@ static int xpad_probe(struct usb_interface *intf, const struct usb_device_id *id
 	xpad->irq_in->transfer_dma = xpad->idata_dma;
 	xpad->irq_in->transfer_flags |= URB_NO_TRANSFER_DMA_MAP;
 
-	// we set this here so we can extract it in the two functions below
+	/* we set this here so we can extract it in the two functions below */
 	usb_set_intfdata(intf, xpad);
 
 	xpad_init_input_device(intf, xpad_device[probedDevNum]);
