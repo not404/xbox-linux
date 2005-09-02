@@ -143,7 +143,6 @@ MODULE_DEVICE_TABLE(usb, xpad_table);
 static void xpad_process_packet(struct usb_xpad *xpad, u16 cmd, unsigned char *data, struct pt_regs *regs)
 {
 	struct input_dev *dev = &xpad->dev;
-	// These hold the values for the left and right joypad axes.
 
 	input_regs(dev, regs);
 
