@@ -248,24 +248,6 @@ exit:
 		    __FUNCTION__, retval);
 }
 
-/*	xpad_init_urb
- *
- *	initialize the input urb
- *	this is to be called when joystick device is opened
- */
-int xpad_start_urb(struct usb_xpad *xpad)
-{
-	int status;
-
-	xpad->irq_in->dev = xpad->udev;
-	if ((status = usb_submit_urb(xpad->irq_in, GFP_KERNEL))) {
-		err("open input urb failed: %d", status);
-		return -EIO;
-	}
-
-	return 0;
-}
-
 /**
  *	xpad_open
  *
@@ -278,17 +260,15 @@ static int xpad_open(struct input_dev *dev)
 
 	info("opening device");
 
-	if ((status = xpad_start_urb(xpad)))
-		return status;
+	xpad->irq_in->dev = xpad->udev;
+	if ((status = usb_submit_urb(xpad->irq_in, GFP_KERNEL))) {
+		err("open input urb failed: %d", status);
+		return -EIO;
+	}
 
 	xpad_rumble_open(xpad);
 
 	return 0;
-}
-
-void xpad_stop_urb(struct usb_xpad *xpad)
-{
-	usb_kill_urb(xpad->irq_in);
 }
 
 /**
@@ -302,7 +282,7 @@ static void xpad_close(struct input_dev *dev)
 
 	info("closing device");
 
-	xpad_stop_urb(xpad);
+	usb_kill_urb(xpad->irq_in);
 	xpad_rumble_close(xpad);
 }
 
