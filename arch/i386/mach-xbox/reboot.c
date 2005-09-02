@@ -52,6 +52,11 @@ void machine_restart(char *cmd)
 	machine_emergency_restart();
 }
 
+void machine_shutdown(void)
+{
+	/* Subarch-specific shutdown prior to a kexec */
+}
+
 void machine_power_off(void)
 {
 	xbox_pic_cmd(SMC_SUBCMD_POWER_OFF);  
