@@ -12,10 +12,8 @@
  * (at your option) any later version.
  */
 
+#include <linux/module.h>
 #include <asm/io.h>
-
-/* we don't use this, but dmi_scan.c needs it */
-void (*pm_power_off)(void);
 
 #define XBOX_SMB_IO_BASE		0xC000
 #define XBOX_SMB_HOST_ADDRESS		(0x4 + XBOX_SMB_IO_BASE)
@@ -30,6 +28,9 @@ void (*pm_power_off)(void);
 #define SMC_SUBCMD_POWER_CYCLE		0x40
 #define SMC_SUBCMD_POWER_OFF		0x80
 
+
+void (*pm_power_off)(void);
+EXPORT_SYMBOL(pm_power_off);
 
 static void xbox_pic_cmd(u8 command)
 {
