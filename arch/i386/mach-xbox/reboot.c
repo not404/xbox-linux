@@ -12,7 +12,6 @@
  * (at your option) any later version.
  */
 
-#include <linux/module.h>
 #include <asm/io.h>
 
 /* we don't use any of those, but dmi_scan.c needs 'em */
