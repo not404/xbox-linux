@@ -14,9 +14,8 @@
 
 #include <asm/io.h>
 
-/* we don't use any of those, but dmi_scan.c needs 'em */
+/* we don't use this, but dmi_scan.c needs it */
 void (*pm_power_off)(void);
-int reboot_thru_bios;
 
 #define XBOX_SMB_IO_BASE		0xC000
 #define XBOX_SMB_HOST_ADDRESS		(0x4 + XBOX_SMB_IO_BASE)
