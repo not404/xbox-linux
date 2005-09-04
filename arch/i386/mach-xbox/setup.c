@@ -3,7 +3,6 @@
  */
 
 #include <linux/config.h>
-#include <linux/smp.h>
 #include <linux/init.h>
 #include <linux/irq.h>
 #include <linux/interrupt.h>
