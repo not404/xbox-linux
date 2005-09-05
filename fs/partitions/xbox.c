@@ -1,9 +1,13 @@
 /*
- *  fs/partitions/xbox.c
+ * fs/partitions/xbox.c
+ * Xbox disk partition support.
  *
- *  //TODO: find and insert GPL notice
+ * Copyright (C) 2002  John Scott Tillman <speedbump@users.sourceforge.net>
  *
- *  June 2002 by SpeedBump:	initial implementation
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  */
 
 #include <linux/errno.h>
