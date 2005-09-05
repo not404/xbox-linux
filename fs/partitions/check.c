@@ -35,9 +35,7 @@
 #include "ibm.h"
 #include "ultrix.h"
 #include "efi.h"
-#ifdef CONFIG_XBOX_PARTITION
 #include "xbox.h"
-#endif
 
 #ifdef CONFIG_BLK_DEV_MD
 extern void md_autodetect_dev(dev_t dev);
