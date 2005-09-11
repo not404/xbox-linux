@@ -408,7 +408,7 @@ static int xpad_probe(struct usb_interface *intf, const struct usb_device_id *id
                 return -ENOMEM;
 	}
 
-	ep_irq_in = &intf->altsetting[0].endpoint[0].desc;
+	ep_irq_in = &intf->cur_altsetting->endpoint[0].desc;
 
 	xpad->udev = udev;
 	xpad->isMat = xpad_device[probedDevNum].isMat;
