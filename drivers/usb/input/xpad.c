@@ -1,5 +1,5 @@
 /*
- * Xbox input device driver for Linux - v0.1.5
+ * Xbox input device driver for Linux - v0.1.6
  *
  * Copyright (c)  2002 - 2004  Marko Friedemann <mfr@bmx-chemnitz.de>
  *
@@ -10,6 +10,7 @@
  *		Steven Toth <steve@toth.demon.co.uk>,
  *		Franz Lehner <franz@caos.at>,
  *		Ivan Hawkes <blackhawk@ivanhawkes.com>
+ *		Edgar Hucek <hostmaster@ed-soft.at>
  *
  *
  * This program is free software; you can redistribute it and/or
@@ -56,47 +57,54 @@
 #include <linux/module.h>
 #include <linux/smp_lock.h>
 #include <linux/usb.h>
-#include <linux/usb_input.h>
 #include <linux/version.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 13)
+#include <linux/usb_input.h>
+#endif
 #include <linux/timer.h>
 #include <asm/uaccess.h>
 
 #include "xpad.h"
 
+static unsigned long debug = 0;
+module_param(debug, ulong, 0444);
+MODULE_PARM_DESC(debug, "Debugging");
+
 static struct xpad_device xpad_device[] = {
 	/* please keep those ordered wrt. vendor/product ids
 	  vendor, product, isMat, name                              */
-	{ 0x044f, 0x0f07, 0, "Thrustmaster, Inc. Controller" },
-	{ 0x045e, 0x0202, 0, "Microsoft Xbox Controller" },
-	{ 0x045e, 0x0285, 0, "Microsoft Xbox Controller S" },
-	{ 0x045e, 0x0287, 0, "Microsoft Xbox Controller S" },
-	{ 0x045e, 0x0289, 0, "Microsoft Xbox Controller S" }, /* microsoft is stupid */
-	{ 0x046d, 0xca84, 0, "Logitech Xbox Cordless Controller" },
-	{ 0x046d, 0xca88, 0, "Logitech Compact Controller for Xbox" },
-	{ 0x05fd, 0x1007, 0, "???Mad Catz Controller???" }, /* CHECKME: this seems strange */
-	{ 0x05fd, 0x107a, 0, "InterAct PowerPad Pro" },
-	{ 0x0738, 0x4516, 0, "Mad Catz Control Pad" },
-	{ 0x0738, 0x4522, 0, "Mad Catz LumiCON" },
-	{ 0x0738, 0x4526, 0, "Mad Catz Control Pad Pro" },
-	{ 0x0738, 0x4536, 0, "Mad Catz MicroCON" },
-	{ 0x0738, 0x4540, 1, "Mad Catz Beat Pad" },
-	{ 0x0738, 0x4556, 0, "Mad Catz Lynx Wireless Controller" },
-	{ 0x0738, 0x6040, 1, "Mad Catz Beat Pad Pro" },
-	{ 0x0c12, 0x8802, 0, "Zeroplus Xbox Controller" },
-	{ 0x0c12, 0x8809, 0, "Level Six Xbox DDR Dancepad" },
-	{ 0x0c12, 0x8810, 0, "Zeroplus Xbox Controller" },
-	{ 0x0c12, 0x9902, 0, "HAMA VibraX - *FAULTY HARDWARE*" }, /* these are broken */
-	{ 0x0e4c, 0x1097, 0, "Radica Gamester Controller" },	
-	{ 0x0e4c, 0x2390, 0, "Radica Games Jtech Controller" },	
-	{ 0x0e6f, 0x0003, 0, "Logic3 Freebird wireless Controller" },
-	{ 0x0e6f, 0x0005, 0, "Eclipse wireless Controller" },
-	{ 0x0e6f, 0x0006, 0, "Edge wireless Controller" },
-	{ 0x0e8f, 0x0201, 0, "SmartJoy Frag Xpad/PS2 adaptor" },
-	{ 0x0f30, 0x0202, 0, "Joytech Advanced Controller" },
-	{ 0x102c, 0xff0c, 0, "Joytech Wireless Advanced Controller" },
-	{ 0x12ab, 0x8809, 1, "Xbox DDR dancepad" },
-	{ 0xffff, 0xffff, 0, "Chinese-made Xbox Controller" }, /* WTF are device IDs for? */
-	{ 0x0000, 0x0000, 0, "nothing detected - FAIL" }
+	{ 0x044f, 0x0f07, 0, "Thrustmaster, Inc. Controller", 0},
+	{ 0x045e, 0x0202, 0, "Microsoft Xbox Controller", 0},
+	{ 0x045e, 0x0285, 0, "Microsoft Xbox Controller S", 0},
+	{ 0x045e, 0x0287, 0, "Microsoft Xbox Controller S", 0},
+	{ 0x045e, 0x0289, 0, "Microsoft Xbox Controller S", 0}, /* microsoft is stupid */
+	{ 0x045e, 0x028e, 0, "Microsoft Xbox360 Controller", 1},
+	{ 0x046d, 0xca84, 0, "Logitech Xbox Cordless Controller", 0},
+	{ 0x046d, 0xca88, 0, "Logitech Compact Controller for Xbox", 0},
+	{ 0x05fd, 0x1007, 0, "???Mad Catz Controller???", 0}, /* CHECKME: this seems strange */
+	{ 0x05fd, 0x107a, 0, "InterAct PowerPad Pro", 0},
+	{ 0x0738, 0x4516, 0, "Mad Catz Control Pad", 0},
+	{ 0x0738, 0x4522, 0, "Mad Catz LumiCON", 0},
+	{ 0x0738, 0x4526, 0, "Mad Catz Control Pad Pro", 0},
+	{ 0x0738, 0x4536, 0, "Mad Catz MicroCON", 0},
+	{ 0x0738, 0x4540, 1, "Mad Catz Beat Pad", 0},
+	{ 0x0738, 0x4556, 0, "Mad Catz Lynx Wireless Controller", 0},
+	{ 0x0738, 0x6040, 1, "Mad Catz Beat Pad Pro", 0},
+	{ 0x0c12, 0x8802, 0, "Zeroplus Xbox Controller", 0},
+	{ 0x0c12, 0x8809, 0, "Level Six Xbox DDR Dancepad", 0},
+	{ 0x0c12, 0x8810, 0, "Zeroplus Xbox Controller", 0},
+	{ 0x0c12, 0x9902, 0, "HAMA VibraX - *FAULTY HARDWARE*", 0}, /* these are broken */
+	{ 0x0e4c, 0x1097, 0, "Radica Gamester Controller", 0},	
+	{ 0x0e4c, 0x2390, 0, "Radica Games Jtech Controller", 0},	
+	{ 0x0e6f, 0x0003, 0, "Logic3 Freebird wireless Controller", 0},
+	{ 0x0e6f, 0x0005, 0, "Eclipse wireless Controller", 0},
+	{ 0x0e6f, 0x0006, 0, "Edge wireless Controller", 0},
+	{ 0x0e8f, 0x0201, 0, "SmartJoy Frag Xpad/PS2 adaptor", 0},
+	{ 0x0f30, 0x0202, 0, "Joytech Advanced Controller", 0},
+	{ 0x102c, 0xff0c, 0, "Joytech Wireless Advanced Controller", 0},
+	{ 0x12ab, 0x8809, 1, "Xbox DDR dancepad", 0},
+	{ 0xffff, 0xffff, 0, "Chinese-made Xbox Controller", 0}, /* WTF are device IDs for? */
+	{ 0x0000, 0x0000, 0, "nothing detected - FAIL", 0}
 };
 
 static signed short xpad_btn[] = {
@@ -127,6 +135,9 @@ static signed short xpad_abs[] = {
 static struct usb_device_id xpad_table [] = {
 	{ USB_INTERFACE_INFO('X', 'B', 0) },	/* Xbox USB-IF not approved class */
 	{ USB_INTERFACE_INFO( 3 ,  0 , 0) },	/* for Joytech Advanced Controller */
+	{ USB_INTERFACE_INFO( 255 ,  93 , 3) },	/* Xbox 360 */
+	{ USB_INTERFACE_INFO( 255 ,  93 , 2) }, /* Xbox 360 */
+	{ USB_INTERFACE_INFO( 255 ,  93 , 1) }, /* Xbox 360 */
 	{ }
 };
 
@@ -144,8 +155,17 @@ MODULE_DEVICE_TABLE(usb, xpad_table);
 static void xpad_process_packet(struct usb_xpad *xpad, u16 cmd, unsigned char *data, struct pt_regs *regs)
 {
 	struct input_dev *dev = &xpad->dev;
+	int i;
 
 	input_regs(dev, regs);
+
+	if(debug) {
+		printk(KERN_INFO "xpad_debug: data :");
+		for(i = 0; i < 20; i++) {
+			printk("0x%02x ", data[i]);
+		}
+		printk("\n");
+	}
 
 	/* digital pad (button mode) bits (3 2 1 0) (right left down up) */
 	input_report_key(dev, BTN_0, (data[2] & 0x01));
@@ -157,48 +177,72 @@ static void xpad_process_packet(struct usb_xpad *xpad, u16 cmd, unsigned char *d
 	input_report_key(dev, BTN_START, (data[2] & 0x10) >> 4);
 	input_report_key(dev, BTN_BACK, (data[2] & 0x20) >> 5);
 
+	/* stick press left/right */
+	input_report_key(dev, BTN_THUMBL, (data[2] & 0x40) >> 6);
+	input_report_key(dev, BTN_THUMBR, data[2] >> 7);
+
 	/* buttons A, B, X, Y digital mode */
-	input_report_key(dev, BTN_A, data[4]);
-	input_report_key(dev, BTN_B, data[5]);
-	input_report_key(dev, BTN_X, data[6]);
-	input_report_key(dev, BTN_Y, data[7]);
+	if(xpad->is360) {
+		input_report_key(dev, BTN_A, (data[3] & 0x10) >> 4);
+		input_report_key(dev, BTN_B, (data[3] & 0x20) >> 5);
+		input_report_key(dev, BTN_X, (data[3] & 0x80) >> 7);
+		input_report_key(dev, BTN_Y, (data[3] & 0x40) >> 6);
+	} else {
+		input_report_key(dev, BTN_A, data[4]);
+		input_report_key(dev, BTN_B, data[5]);
+		input_report_key(dev, BTN_X, data[6]);
+		input_report_key(dev, BTN_Y, data[7]);
+	}
 
 	if (xpad->isMat)
 		return;
 
 	/* left stick (Y axis needs to be flipped) */
-	input_report_abs(dev, ABS_X, (__s16)(((__s16)data[13] << 8) | (__s16)data[12]));
-	input_report_abs(dev, ABS_Y, ~(__s16)(((__s16)data[15] << 8) | data[14]));
+	if(xpad->is360) {
+		input_report_abs(dev, ABS_X, (__s16)(((__s16)data[7] << 8) | (__s16)data[6]));
+		input_report_abs(dev, ABS_Y, ~(__s16)(((__s16)data[9] << 8) | data[8]));
+	} else {
+		input_report_abs(dev, ABS_X, (__s16)(((__s16)data[13] << 8) | (__s16)data[12]));
+		input_report_abs(dev, ABS_Y, ~(__s16)(((__s16)data[15] << 8) | data[14]));
+	}
 
 	/* right stick */
-	input_report_abs(dev, ABS_RX, (__s16)(((__s16)data[17] << 8) | (__s16)data[16]));
-	input_report_abs(dev, ABS_RY, (__s16)(((__s16)data[19] << 8) | (__s16)data[18]));
+	if(xpad->is360) {
+		input_report_abs(dev, ABS_RX, (__s16)(((__s16)data[13] << 8) | (__s16)data[12]));
+		input_report_abs(dev, ABS_RY, (__s16)(((__s16)data[11] << 8) | (__s16)data[10]));
+	} else {
+		input_report_abs(dev, ABS_RX, (__s16)(((__s16)data[17] << 8) | (__s16)data[16]));
+		input_report_abs(dev, ABS_RY, (__s16)(((__s16)data[19] << 8) | (__s16)data[18]));
+	}
 
 	/* triggers left/right */
-	input_report_abs(dev, ABS_Z, data[10]);
-	input_report_abs(dev, ABS_RZ, data[11]);
+	if(xpad->is360) {
+		input_report_abs(dev, ABS_Z, data[4]);
+		input_report_abs(dev, ABS_RZ, data[5]);
+	} else {
+		input_report_abs(dev, ABS_Z, data[10]);
+		input_report_abs(dev, ABS_RZ, data[11]);
+	}
 
-	/* digital pad (analogue mode): bits (3 2 1 0) (right left down up) */
-	input_report_abs(dev, ABS_HAT0X, !!(data[2] & 0x08) - !!(data[2] & 0x04));
-	input_report_abs(dev, ABS_HAT0Y, !!(data[2] & 0x01) - !!(data[2] & 0x02));
+	if(!xpad->is360) {
+		/* digital pad (analogue mode): bits (3 2 1 0) (right left down up) */
+		input_report_abs(dev, ABS_HAT0X, !!(data[2] & 0x08) - !!(data[2] & 0x04));
+		input_report_abs(dev, ABS_HAT0Y, !!(data[2] & 0x01) - !!(data[2] & 0x02));
+		
+		/* button A, B, X, Y analogue mode */
+		input_report_abs(dev, ABS_HAT1X, data[4]);
+		input_report_abs(dev, ABS_HAT1Y, data[5]);
+		input_report_abs(dev, ABS_HAT2Y, data[6]);
+		input_report_abs(dev, ABS_HAT3X, data[7]);
 
-	/* stick press left/right */
-	input_report_key(dev, BTN_THUMBL, (data[2] & 0x40) >> 6);
-	input_report_key(dev, BTN_THUMBR, data[2] >> 7);
+		/* button C (black) digital/analogue mode */
+		input_report_key(dev, BTN_C, data[8]);
+		input_report_abs(dev, ABS_HAT2X, data[8]);
 
-	/* button A, B, X, Y analogue mode */
-	input_report_abs(dev, ABS_HAT1X, data[4]);
-	input_report_abs(dev, ABS_HAT1Y, data[5]);
-	input_report_abs(dev, ABS_HAT2Y, data[6]);
-	input_report_abs(dev, ABS_HAT3X, data[7]);
-
-	/* button C (black) digital/analogue mode */
-	input_report_key(dev, BTN_C, data[8]);
-	input_report_abs(dev, ABS_HAT2X, data[8]);
-
-	/* button Z (white) digital/analogue mode */
-	input_report_key(dev, BTN_Z, data[9]);
-	input_report_abs(dev, ABS_HAT3Y, data[9]);
+		/* button Z (white) digital/analogue mode */
+		input_report_key(dev, BTN_Z, data[9]);
+		input_report_abs(dev, ABS_HAT3Y, data[9]);
+	}
 
 	input_sync(dev);
 }
@@ -258,7 +302,9 @@ static int xpad_open(struct input_dev *dev)
 		return -EIO;
 	}
 
-	xpad_rumble_open(xpad);
+	if(!xpad->is360) {
+		xpad_rumble_open(xpad);
+	}
 
 	return 0;
 }
@@ -274,7 +320,9 @@ static void xpad_close(struct input_dev *dev)
 
 	info("closing device");
 	usb_kill_urb(xpad->irq_in);
-	xpad_rumble_close(xpad);
+	if(!xpad->is360) {
+		xpad_rumble_close(xpad);
+	}
 }
 
 /**	xpad_init_input_device
@@ -288,7 +336,14 @@ static void xpad_init_input_device(struct usb_interface *intf, struct xpad_devic
 	char path[64];
 	int i;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 13)
+	xpad->dev.id.bustype = BUS_USB;
+	xpad->dev.id.vendor = udev->descriptor.idVendor;
+	xpad->dev.id.product = udev->descriptor.idProduct;
+	xpad->dev.id.version = udev->descriptor.bcdDevice;
+#else
 	usb_to_input_id(udev, &xpad->dev.id);
+#endif
 	xpad->dev.dev = &intf->dev;
 	xpad->dev.private = xpad;
 	xpad->dev.name = device.name;
@@ -349,8 +404,10 @@ static void xpad_init_input_device(struct usb_interface *intf, struct xpad_devic
 			}
 		}
 
-		if (xpad_rumble_probe(udev, xpad, ifnum) != 0)
-			err("could not init rumble");
+		if(!xpad->is360) {
+			if (xpad_rumble_probe(udev, xpad, ifnum) != 0)
+				err("could not init rumble");
+		}
 	}
 
 	input_register_device(&xpad->dev);
@@ -413,6 +470,7 @@ static int xpad_probe(struct usb_interface *intf, const struct usb_device_id *id
 
 	xpad->udev = udev;
 	xpad->isMat = xpad_device[probedDevNum].isMat;
+	xpad->is360 = xpad_device[probedDevNum].is360;
 
 	/* init input URB for USB INT transfer from device */
 	usb_fill_int_urb(xpad->irq_in, udev,
@@ -443,7 +501,9 @@ static void xpad_disconnect(struct usb_interface *intf)
 	usb_set_intfdata(intf, NULL);
 	if (xpad) {
 		usb_kill_urb(xpad->irq_in);
-		xpad_rumble_close(xpad);
+		if(!xpad->is360) {
+			xpad_rumble_close(xpad);
+		}
 		input_unregister_device(&xpad->dev);
 
 		usb_free_urb(xpad->irq_in);
@@ -451,7 +511,9 @@ static void xpad_disconnect(struct usb_interface *intf)
 		usb_buffer_free(interface_to_usbdev(intf), XPAD_PKT_LEN,
 				xpad->idata, xpad->idata_dma);
 
-		xpad_rumble_disconnect(xpad);
+		if(!xpad->is360) {
+			xpad_rumble_disconnect(xpad);
+		}
 
 		kfree(xpad);
 	}
@@ -497,6 +559,8 @@ MODULE_LICENSE("GPL");
  *  driver history
  * ----------------
  *
+ * 2005-11-25 - 0.1.6 : Added Xbox360 Controller support
+ * 
  * 2005-03-15 - 0.1.5 : Mouse emulation removed.  Deadzones increased.
  *  - Flipped the Y axis of the left joystick (it was inverted, like on a 
  *    flight simulator).
