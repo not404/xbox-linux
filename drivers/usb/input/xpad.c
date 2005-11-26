@@ -101,6 +101,7 @@ static struct xpad_device xpad_device[] = {
 	{ 0x0e6f, 0x0006, 0, "Edge wireless Controller", 0},
 	{ 0x0e8f, 0x0201, 0, "SmartJoy Frag Xpad/PS2 adaptor", 0},
 	{ 0x0f30, 0x0202, 0, "Joytech Advanced Controller", 0},
+   { 0x0f30, 0x8888, 0, "BigBen XBMiniPad Controller", 0},
 	{ 0x102c, 0xff0c, 0, "Joytech Wireless Advanced Controller", 0},
 	{ 0x12ab, 0x8809, 1, "Xbox DDR dancepad", 0},
 	{ 0xffff, 0xffff, 0, "Chinese-made Xbox Controller", 0}, /* WTF are device IDs for? */
