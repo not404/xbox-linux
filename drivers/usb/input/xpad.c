@@ -112,6 +112,8 @@ static signed short xpad_btn[] = {
 	BTN_A, BTN_B, BTN_C, BTN_X, BTN_Y, BTN_Z,	/* analogue buttons */
 	BTN_START, BTN_BACK, BTN_THUMBL, BTN_THUMBR,	/* start/back/sticks */
 	BTN_0, BTN_1, BTN_2, BTN_3,			/* d-pad as buttons */
+	BTN_TL, BTN_TR,					/* Button LB/RB */
+	BTN_MODE,					/* The big X */
 	-1						/* terminating entry */
 };
 
@@ -188,6 +190,9 @@ static void xpad_process_packet(struct usb_xpad *xpad, u16 cmd, unsigned char *d
 		input_report_key(dev, BTN_B, (data[3] & 0x20) >> 5);
 		input_report_key(dev, BTN_X, (data[3] & 0x80) >> 7);
 		input_report_key(dev, BTN_Y, (data[3] & 0x40) >> 6);
+		input_report_key(dev, BTN_TL, data[3] & 0x01 );
+		input_report_key(dev, BTN_TR, (data[3] & 0x02) >> 1);
+		input_report_key(dev, BTN_MODE, (data[3] & 0x04) >> 2);
 	} else {
 		input_report_key(dev, BTN_A, data[4]);
 		input_report_key(dev, BTN_B, data[5]);
