@@ -57,7 +57,7 @@ static DECLARE_MUTEX(extsmi_sem);
 static DECLARE_COMPLETION(extsmi_exited);
 static int extsmi_pid=0;
 
-static irqreturn_t extsmi_interupt(int unused, void *dev_id, struct pt_regs *regs) {
+static irqreturn_t extsmi_interrupt(int unused, void *dev_id, struct pt_regs *regs) {
 	int reason;
 
 	reason=inw(0x8020);
@@ -118,13 +118,13 @@ static int extsmi_init(void){
 	outw(inw(0x80e2)&0xf8c7,0x80e2);
 	outw(0,0x80ac);
 	outb(0,0x8025);
-	outw(EXTSMI_EN_MASK,PM22); /* enable the EXTSMI# interupt! */
+	outw(EXTSMI_EN_MASK,PM22); /* enable the EXTSMI# interrupt! */
 	outw(0,PM02);
 	outb(1,PM04); /* enable sci interrupts! */
 	Xbox_SMC_write(SMC_CMD_RESET_ON_EJECT, SMC_SUBCMD_RESET_ON_EJECT_DISABLE);
 
 	/* FIXME! retval! */
-	request_irq(IRQ,extsmi_interupt,SA_INTERRUPT|SA_SHIRQ,"xboxejectfix",dev);
+	request_irq(IRQ,extsmi_interrupt,SA_INTERRUPT|SA_SHIRQ,"xboxejectfix",dev);
 	return 0;
 }
 
