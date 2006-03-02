@@ -58,9 +58,7 @@
 #include <linux/smp_lock.h>
 #include <linux/usb.h>
 #include <linux/version.h>
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 13)
 #include <linux/usb_input.h>
-#endif
 #include <linux/timer.h>
 #include <asm/uaccess.h>
 
@@ -342,14 +340,7 @@ static void xpad_init_input_device(struct usb_interface *intf, struct xpad_devic
 	char path[64];
 	int i;
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 13)
-	xpad->dev.id.bustype = BUS_USB;
-	xpad->dev.id.vendor = udev->descriptor.idVendor;
-	xpad->dev.id.product = udev->descriptor.idProduct;
-	xpad->dev.id.version = udev->descriptor.bcdDevice;
-#else
 	usb_to_input_id(udev, &xpad->dev.id);
-#endif
 	xpad->dev.dev = &intf->dev;
 	xpad->dev.private = xpad;
 	xpad->dev.name = device.name;
