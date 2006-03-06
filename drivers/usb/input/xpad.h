@@ -60,7 +60,7 @@
 
 /************************* the device struct **************************/
 struct usb_xpad {
-	struct input_dev dev;			/* input device interface */
+	struct input_dev *dev;			/* input device interface */
 	struct usb_device *udev;		/* usb device */
 
 	struct urb *irq_in;			/* urb for int. in report */
