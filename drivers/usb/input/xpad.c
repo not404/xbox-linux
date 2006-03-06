@@ -329,27 +329,82 @@ static void xpad_close(struct input_dev *dev)
 	}
 }
 
-/**	xpad_init_input_device
+/**
+ *	xpad_probe
  *
- *	setup the input device for the kernel
+ *	Called upon device detection to find a suitable driver.
+ *	Must return NULL when no xpad is found, else setup everything.
  */
-static void xpad_init_input_device(struct usb_interface *intf, struct xpad_device device)
+static int xpad_probe(struct usb_interface *intf, const struct usb_device_id *id)
 {
-	struct usb_xpad *xpad = usb_get_intfdata(intf);
 	struct usb_device *udev = interface_to_usbdev(intf);
+	struct usb_xpad *xpad = NULL;
+	struct usb_endpoint_descriptor *ep_irq_in;
 	char path[64];
 	int i;
+	int probedDevNum = -1;	/* this takes the index into the known devices
+				   array for the recognized device */
+
+	/* try to detect the device we are called for */
+	for (i = 0; xpad_device[i].idVendor; ++i) {
+		if ((le16_to_cpu(udev->descriptor.idVendor) == xpad_device[i].idVendor) &&
+		    (le16_to_cpu(udev->descriptor.idProduct) == xpad_device[i].idProduct)) {
+			probedDevNum = i;
+			break;
+		}
+	}
+
+	/* sanity check, did we recognize this device? if not, fail */
+	if ((probedDevNum == -1) || (!xpad_device[probedDevNum].idVendor &&
+				     !xpad_device[probedDevNum].idProduct))
+		return -ENODEV;
+
+	if ((xpad = kmalloc (sizeof(struct usb_xpad), GFP_KERNEL)) == NULL) {
+		err("cannot allocate memory for new pad");
+		return -ENOMEM;
+	}
+	memset(xpad, 0, sizeof(struct usb_xpad));
+
+	xpad->idata = usb_buffer_alloc(udev, XPAD_PKT_LEN,
+				       SLAB_ATOMIC, &xpad->idata_dma);
+	if (!xpad->idata) {
+		kfree(xpad);
+		return -ENOMEM;
+	}
+
+	/* setup input interrupt pipe (button and axis state) */
+	xpad->irq_in = usb_alloc_urb(0, GFP_KERNEL);
+        if (!xpad->irq_in) {
+		err("cannot allocate memory for new pad irq urb");
+		usb_buffer_free(udev, XPAD_PKT_LEN, xpad->idata, xpad->idata_dma);
+                kfree(xpad);
+                return -ENOMEM;
+	}
+
+	ep_irq_in = &intf->cur_altsetting->endpoint[0].desc;
+
+	/* init input URB for USB INT transfer from device */
+	usb_fill_int_urb(xpad->irq_in, udev,
+			 usb_rcvintpipe(udev, ep_irq_in->bEndpointAddress),
+			 xpad->idata, XPAD_PKT_LEN, xpad_irq_in,
+			 xpad, ep_irq_in->bInterval);
+	xpad->irq_in->transfer_dma = xpad->idata_dma;
+	xpad->irq_in->transfer_flags |= URB_NO_TRANSFER_DMA_MAP;
+
+	xpad->udev = udev;
+	xpad->isMat = xpad_device[probedDevNum].isMat;
+	xpad->is360 = xpad_device[probedDevNum].is360;
 
 	usb_to_input_id(udev, &xpad->dev.id);
 	xpad->dev.dev = &intf->dev;
 	xpad->dev.private = xpad;
-	xpad->dev.name = device.name;
+	xpad->dev.name = xpad_device[probedDevNum].name;
 	xpad->dev.phys = xpad->phys;
 	xpad->dev.open = xpad_open;
 	xpad->dev.close = xpad_close;
 
 	usb_make_path(udev, path, 64);
-	snprintf(xpad->phys, 64, "%s/input0", path);
+	snprintf(xpad->phys, 64,  "%s/input0", path);
 
 	/* this was meant to allow a user space tool on-the-fly configuration
 	   of driver options (rumble on, etc...)
@@ -365,9 +420,10 @@ static void xpad_init_input_device(struct usb_interface *intf, struct xpad_devic
 		xpad->dev.evbit[0] = BIT(EV_KEY) | BIT(EV_ABS);
 
 		for (i = 0; xpad_btn[i] >= 0; ++i)
-		set_bit(xpad_btn[i], xpad->dev.keybit);
+			set_bit(xpad_btn[i], xpad->dev.keybit);
 
 		for (i = 0; xpad_abs[i] >= 0; ++i) {
+
 			signed short t = xpad_abs[i];
 
 			set_bit(t, xpad->dev.absbit);
@@ -401,87 +457,16 @@ static void xpad_init_input_device(struct usb_interface *intf, struct xpad_devic
 			}
 		}
 
-		if(!xpad->is360) {
+		if (!xpad->is360)
 			if (xpad_rumble_probe(udev, xpad, ifnum) != 0)
 				err("could not init rumble");
-		}
 	}
 
 	input_register_device(&xpad->dev);
+
 	printk(KERN_INFO "input: %s on %s\n", xpad->dev.name, path);
-}
 
-/**
- *	xpad_probe
- *
- *	Called upon device detection to find a suitable driver.
- *	Must return NULL when no xpad is found, else setup everything.
- */
-static int xpad_probe(struct usb_interface *intf, const struct usb_device_id *id)
-{
-	struct usb_device *udev = interface_to_usbdev(intf);
-	struct usb_xpad *xpad = NULL;
-	struct usb_endpoint_descriptor *ep_irq_in;
-	int i;
-	int probedDevNum = -1;	/* this takes the index into the known devices
-				   array for the recognized device */
-
-	/* try to detect the device we are called for */
-	for (i = 0; xpad_device[i].idVendor; ++i) {
-		if ((le16_to_cpu(udev->descriptor.idVendor) == xpad_device[i].idVendor) &&
-		    (le16_to_cpu(udev->descriptor.idProduct) == xpad_device[i].idProduct)) {
-			probedDevNum = i;
-			break;
-		}
-	}
-
-	/* sanity check, did we recognize this device? if not, fail */
-	if ((probedDevNum == -1) || (!xpad_device[probedDevNum].idVendor &&
-				     !xpad_device[probedDevNum].idProduct))
-		return -ENODEV;
-
-	if ((xpad = kmalloc (sizeof(struct usb_xpad), GFP_KERNEL)) == NULL) {
-		err("cannot allocate memory for new pad");
-		return -ENOMEM;
-	}
-	memset(xpad, 0, sizeof(struct usb_xpad));
-
-	xpad->idata = usb_buffer_alloc(udev, XPAD_PKT_LEN,
-				       SLAB_ATOMIC, &xpad->idata_dma);
-
-	if (!xpad->idata) {
-		kfree(xpad);
-		return -ENOMEM;
-	}
-
-	/* setup input interrupt pipe (button and axis state) */
-	xpad->irq_in = usb_alloc_urb(0, GFP_KERNEL);
-        if (!xpad->irq_in) {
-		err("cannot allocate memory for new pad irq urb");
-		usb_buffer_free(udev, XPAD_PKT_LEN, xpad->idata, xpad->idata_dma);
-                kfree(xpad);
-                return -ENOMEM;
-	}
-
-	ep_irq_in = &intf->cur_altsetting->endpoint[0].desc;
-
-	xpad->udev = udev;
-	xpad->isMat = xpad_device[probedDevNum].isMat;
-	xpad->is360 = xpad_device[probedDevNum].is360;
-
-	/* init input URB for USB INT transfer from device */
-	usb_fill_int_urb(xpad->irq_in, udev,
-			 usb_rcvintpipe(udev, ep_irq_in->bEndpointAddress),
-			 xpad->idata, XPAD_PKT_LEN,
-			 xpad_irq_in, xpad, ep_irq_in->bInterval);
-	xpad->irq_in->transfer_dma = xpad->idata_dma;
-	xpad->irq_in->transfer_flags |= URB_NO_TRANSFER_DMA_MAP;
-
-	/* we set this here so we can extract it in the two functions below */
 	usb_set_intfdata(intf, xpad);
-
-	xpad_init_input_device(intf, xpad_device[probedDevNum]);
-
 	return 0;
 }
 
