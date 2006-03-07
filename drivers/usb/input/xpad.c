@@ -68,7 +68,7 @@ static unsigned long debug = 0;
 module_param(debug, ulong, 0444);
 MODULE_PARM_DESC(debug, "Debugging");
 
-static struct xpad_device xpad_device[] = {
+static const struct xpad_device xpad_device[] = {
 	/* please keep those ordered wrt. vendor/product ids
 	  vendor, product, isMat, name                              */
 	{ 0x044f, 0x0f07, 0, "Thrustmaster, Inc. Controller", 0},
@@ -106,7 +106,7 @@ static struct xpad_device xpad_device[] = {
 	{ 0x0000, 0x0000, 0, "nothing detected - FAIL", 0}
 };
 
-static signed short xpad_btn[] = {
+static const signed short xpad_btn[] = {
 	BTN_A, BTN_B, BTN_C, BTN_X, BTN_Y, BTN_Z,	/* analogue buttons */
 	BTN_START, BTN_BACK, BTN_THUMBL, BTN_THUMBR,	/* start/back/sticks */
 	BTN_0, BTN_1, BTN_2, BTN_3,			/* d-pad as buttons */
@@ -115,14 +115,14 @@ static signed short xpad_btn[] = {
 	-1						/* terminating entry */
 };
 
-static signed short xpad_mat_btn[] = {
+static const signed short xpad_mat_btn[] = {
 	BTN_A, BTN_B, BTN_X, BTN_Y, 	/* A, B, X, Y */
 	BTN_START, BTN_BACK, 		/* start/back */
 	BTN_0, BTN_1, BTN_2, BTN_3,	/* directions */
 	-1				/* terminating entry */
 };
 
-static signed short xpad_abs[] = {
+static const signed short xpad_abs[] = {
 	ABS_X, ABS_Y,		/* left stick */
 	ABS_RX, ABS_RY,		/* right stick */
 	ABS_Z, ABS_RZ,		/* triggers left/right */
