@@ -70,13 +70,13 @@ MODULE_PARM_DESC(debug, "Debugging");
 
 static const struct xpad_device xpad_device[] = {
 	/* please keep those ordered wrt. vendor/product ids
-	  vendor, product, isMat, name                              */
+	  vendor, product, isMat, name, is360                 */
 	{ 0x044f, 0x0f07, 0, "Thrustmaster, Inc. Controller", 0},
 	{ 0x045e, 0x0202, 0, "Microsoft Xbox Controller", 0},
 	{ 0x045e, 0x0285, 0, "Microsoft Xbox Controller S", 0},
 	{ 0x045e, 0x0287, 0, "Microsoft Xbox Controller S", 0},
 	{ 0x045e, 0x0289, 0, "Microsoft Xbox Controller S", 0}, /* microsoft is stupid */
-	{ 0x045e, 0x028e, 0, "Microsoft Xbox360 Controller", 1},
+	{ 0x045e, 0x028e, 0, "Microsoft Xbox 360 Controller", 1},
 	{ 0x046d, 0xca84, 0, "Logitech Xbox Cordless Controller", 0},
 	{ 0x046d, 0xca88, 0, "Logitech Compact Controller for Xbox", 0},
 	{ 0x05fd, 0x1007, 0, "???Mad Catz Controller???", 0}, /* CHECKME: this seems strange */
@@ -136,8 +136,6 @@ static const signed short xpad_abs[] = {
 static struct usb_device_id xpad_table [] = {
 	{ USB_INTERFACE_INFO('X', 'B', 0) },	/* Xbox USB-IF not approved class */
 	{ USB_INTERFACE_INFO( 3 ,  0 , 0) },	/* for Joytech Advanced Controller */
-	{ USB_INTERFACE_INFO( 255 ,  93 , 3) },	/* Xbox 360 */
-	{ USB_INTERFACE_INFO( 255 ,  93 , 2) }, /* Xbox 360 */
 	{ USB_INTERFACE_INFO( 255 ,  93 , 1) }, /* Xbox 360 */
 	{ }
 };
@@ -533,7 +531,7 @@ MODULE_LICENSE("GPL");
  *  driver history
  * ----------------
  *
- * 2005-11-25 - 0.1.6 : Added Xbox360 Controller support
+ * 2005-11-25 - 0.1.6 : Added Xbox 360 Controller support
  * 
  * 2005-03-15 - 0.1.5 : Mouse emulation removed.  Deadzones increased.
  *  - Flipped the Y axis of the left joystick (it was inverted, like on a 
