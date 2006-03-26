@@ -39,7 +39,6 @@ static int tv_attach_adapter(struct i2c_adapter *adap);
 static struct i2c_driver tv_driver = {
 	.name		= "i2c xbox conexant driver",
 	.id		= I2C_DRIVERID_I2CDEV,
-	.flags		= I2C_DF_NOTIFY,
 	.attach_adapter	= tv_attach_adapter,
 };
 
