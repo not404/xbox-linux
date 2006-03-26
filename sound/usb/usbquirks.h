@@ -1554,12 +1554,12 @@ YAMAHA_DEVICE(0x7010, "UB99"),
 	 * Marko Friedemann <mfr@bmx-chemnitz.de>
 	 */
 	USB_DEVICE(0x045e, 0x0283),
-	.driver_info = (unsigned long) & (const snd_usb_audio_quirk_t) {
+	.driver_info = (unsigned long) & (const struct snd_usb_audio_quirk) {
 		.vendor_name = "Microsoft",
 		.product_name = "Xbox Communicator",
 		.ifnum = QUIRK_ANY_INTERFACE,
 		.type = QUIRK_COMPOSITE,
-		.data = & (const snd_usb_audio_quirk_t[]) {
+		.data = & (const struct snd_usb_audio_quirk[]) {
 			{
 				.ifnum = 0,
 				.type = QUIRK_AUDIO_FIXED_ENDPOINT,
