@@ -1894,8 +1894,8 @@ static int xboxfb_sync(struct fb_info *info)
 	return 0;
 }
 
-static int xboxfb_ioctl(struct inode *inode, struct file *file, unsigned int cmd,
-                        unsigned long arg, struct fb_info *info)
+static int xboxfb_ioctl(struct fb_info *info, unsigned int cmd,
+		unsigned long arg)
 {
 	struct riva_par *par = (struct riva_par *) info->par;
 	
