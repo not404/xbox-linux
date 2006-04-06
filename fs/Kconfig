@@ -682,7 +682,7 @@ config FAT_DEFAULT_IOCHARSET
 
 config FATX_FS
 	tristate "FATX fs support (DANGEROUS)"
-	depends on EXPERIMENTAL && BROKEN && !LBD
+	depends on EXPERIMENTAL && !LBD
 	help
 	  This adds support for the FATX filesystem as found in Microsoft's Xbox.
 
