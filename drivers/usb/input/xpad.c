@@ -11,6 +11,7 @@
  *		Franz Lehner <franz@caos.at>,
  *		Ivan Hawkes <blackhawk@ivanhawkes.com>
  *		Edgar Hucek <hostmaster@ed-soft.at>
+ *      	Niklas Lundberg <niklas@jahej.com>
  *
  *
  * This program is free software; you can redistribute it and/or
@@ -454,6 +455,14 @@ static int xpad_probe(struct usb_interface *intf, const struct usb_device_id *id
 	input_register_device(xpad->dev);
 
 	usb_set_intfdata(intf, xpad);
+
+	/* Turn off the LEDs on xpad 360 controllers */
+	if (xpad->is360) {
+		char ledcmd[] = {1, 3, 0}; /* The LED-off command for Xbox-360 controllers */
+    		int j;
+		usb_bulk_msg(udev, usb_sndintpipe(udev,2), ledcmd, 3, &j, 0);
+	}
+
 	return 0;
 
 fail2:	usb_buffer_free(udev, XPAD_PKT_LEN, xpad->idata, xpad->idata_dma);
