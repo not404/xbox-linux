@@ -1,5 +1,5 @@
 /*
- * Xbox input device driver for Linux - v0.1.6
+ * Xbox input device driver for Linux - v0.1.7
  *
  * Copyright (c)  2002 - 2004  Marko Friedemann <mfr@bmx-chemnitz.de>
  *
@@ -9,9 +9,10 @@
  *		Thomas Pedley <gentoox@shallax.com>,
  *		Steven Toth <steve@toth.demon.co.uk>,
  *		Franz Lehner <franz@caos.at>,
- *		Ivan Hawkes <blackhawk@ivanhawkes.com>
- *		Edgar Hucek <hostmaster@ed-soft.at>
- *      	Niklas Lundberg <niklas@jahej.com>
+ *		Ivan Hawkes <blackhawk@ivanhawkes.com>,
+ *		Edgar Hucek <hostmaster@ed-soft.at>,
+ *      	Niklas Lundberg <niklas@jahej.com>,
+ *		Pyry Haulos <pyry.haulos@gmail.com>
  *
  *
  * This program is free software; you can redistribute it and/or
@@ -38,6 +39,7 @@
  *  - ITO Takayuki for providing essential xpad information on his website
  *  - Vojtech Pavlik     - iforce driver / input subsystem
  *  - Greg Kroah-Hartman - usb-skeleton driver
+ *  - Colin Munro	 - XBox 360 Wireless Gamepad information
  *
  * TODO:
  *  - fine tune axes
@@ -47,19 +49,26 @@
  *  - NEW: split funtionality mouse/joustick into two source files
  *  - NEW: implement /proc interface (toggle mouse/rumble enable/disable, etc.)
  *  - NEW: implement user space daemon application that handles that interface
+ *  - FIX: Xbox 360 Wireless Gamepad leds off
  *
  * History: moved to end of file
  */
- 
+
+#include <linux/version.h>
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,19)
 #include <linux/config.h>
+#endif
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/slab.h>
 #include <linux/module.h>
 #include <linux/smp_lock.h>
 #include <linux/usb.h>
-#include <linux/version.h>
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,17)
 #include <linux/usb_input.h>
+#else
+#include <linux/usb/input.h>
+#endif
 #include <linux/timer.h>
 #include <asm/uaccess.h>
 
@@ -71,41 +80,45 @@ MODULE_PARM_DESC(debug, "Debugging");
 
 static const struct xpad_device xpad_device[] = {
 	/* please keep those ordered wrt. vendor/product ids
-	  vendor, product, isMat, name, is360                 */
-	{ 0x044f, 0x0f07, 0, "Thrustmaster, Inc. Controller", 0},
-	{ 0x045e, 0x0202, 0, "Microsoft Xbox Controller", 0},
-	{ 0x045e, 0x0285, 0, "Microsoft Xbox Controller S", 0},
-	{ 0x045e, 0x0287, 0, "Microsoft Xbox Controller S", 0},
-	{ 0x045e, 0x0289, 0, "Microsoft Xbox Controller S", 0}, /* microsoft is stupid */
-	{ 0x045e, 0x028e, 0, "Microsoft Xbox 360 Controller", 1},
-	{ 0x046d, 0xca84, 0, "Logitech Xbox Cordless Controller", 0},
-	{ 0x046d, 0xca88, 0, "Logitech Compact Controller for Xbox", 0},
-	{ 0x05fd, 0x1007, 0, "???Mad Catz Controller???", 0}, /* CHECKME: this seems strange */
-	{ 0x05fd, 0x107a, 0, "InterAct PowerPad Pro", 0},
-	{ 0x0738, 0x4516, 0, "Mad Catz Control Pad", 0},
-	{ 0x0738, 0x4522, 0, "Mad Catz LumiCON", 0},
-	{ 0x0738, 0x4526, 0, "Mad Catz Control Pad Pro", 0},
-	{ 0x0738, 0x4536, 0, "Mad Catz MicroCON", 0},
-	{ 0x0738, 0x4540, 1, "Mad Catz Beat Pad", 0},
-	{ 0x0738, 0x4556, 0, "Mad Catz Lynx Wireless Controller", 0},
-	{ 0x0738, 0x6040, 1, "Mad Catz Beat Pad Pro", 0},
-	{ 0x0c12, 0x8802, 0, "Zeroplus Xbox Controller", 0},
-	{ 0x0c12, 0x8809, 0, "Level Six Xbox DDR Dancepad", 0},
-	{ 0x0c12, 0x8810, 0, "Zeroplus Xbox Controller", 0},
-	{ 0x0c12, 0x9902, 0, "HAMA VibraX - *FAULTY HARDWARE*", 0}, /* these are broken */
-	{ 0x0e4c, 0x1097, 0, "Radica Gamester Controller", 0},	
-	{ 0x0e4c, 0x2390, 0, "Radica Games Jtech Controller", 0},	
-	{ 0x0e6f, 0x0003, 0, "Logic3 Freebird wireless Controller", 0},
-	{ 0x0e6f, 0x0005, 0, "Eclipse wireless Controller", 0},
-	{ 0x0e6f, 0x0006, 0, "Edge wireless Controller", 0},
-	{ 0x0e6f, 0x000c, 0, "PELICAN PL-2047", 0},
-	{ 0x0e8f, 0x0201, 0, "SmartJoy Frag Xpad/PS2 adaptor", 0},
-	{ 0x0f30, 0x0202, 0, "Joytech Advanced Controller", 0},
-	{ 0x0f30, 0x8888, 0, "BigBen XBMiniPad Controller", 0},
-	{ 0x102c, 0xff0c, 0, "Joytech Wireless Advanced Controller", 0},
-	{ 0x12ab, 0x8809, 1, "Xbox DDR dancepad", 0},
-	{ 0xffff, 0xffff, 0, "Chinese-made Xbox Controller", 0}, /* WTF are device IDs for? */
-	{ 0x0000, 0x0000, 0, "nothing detected - FAIL", 0}
+	  vendor, product, name, type                 */
+	{ 0x045e, 0x0202, "Microsoft X-Box pad v1 (US)", GAMEPAD_XBOX },
+	{ 0x045e, 0x0289, "Microsoft X-Box pad v2 (US)", GAMEPAD_XBOX },
+	{ 0x045e, 0x0285, "Microsoft X-Box pad (Japan)", GAMEPAD_XBOX },
+	{ 0x045e, 0x0285, "Microsoft Xbox Controller S", GAMEPAD_XBOX },
+	{ 0x045e, 0x0287, "Microsoft Xbox Controller S", GAMEPAD_XBOX },
+	{ 0x045e, 0x0289, "Microsoft Xbox Controller S", GAMEPAD_XBOX },
+	{ 0x045e, 0x028e, "Microsoft Xbox 360 Controller", GAMEPAD_XBOX360 },
+	{ 0x045e, 0x0291, "Microsoft Xbox 360 Wireless Controller", GAMEPAD_XBOX360_WIRELESS },
+	{ 0x045e, 0x0719, "Microsoft Xbox 360 Wireless Controller (PC)", GAMEPAD_XBOX360_WIRELESS },
+	{ 0x0c12, 0x8809, "RedOctane Xbox Dance Pad", GAMEPAD_XBOX_MAT },
+	{ 0x044f, 0x0f07, "Thrustmaster, Inc. Controller", GAMEPAD_XBOX },
+	{ 0x046d, 0xca84, "Logitech Xbox Cordless Controller", GAMEPAD_XBOX },
+	{ 0x046d, 0xca88, "Logitech Compact Controller for Xbox", GAMEPAD_XBOX },
+	{ 0x05fd, 0x1007, "Mad Catz Controller (unverified)", GAMEPAD_XBOX },
+	{ 0x05fd, 0x107a, "InterAct 'PowerPad Pro' X-Box pad (Germany)", GAMEPAD_XBOX },
+	{ 0x0738, 0x4516, "Mad Catz Control Pad", GAMEPAD_XBOX },
+	{ 0x0738, 0x4522, "Mad Catz LumiCON", GAMEPAD_XBOX },
+	{ 0x0738, 0x4526, "Mad Catz Control Pad Pro", GAMEPAD_XBOX },
+	{ 0x0738, 0x4536, "Mad Catz MicroCON", GAMEPAD_XBOX },
+	{ 0x0738, 0x4540, "Mad Catz Beat Pad", GAMEPAD_XBOX_MAT },
+	{ 0x0738, 0x4556, "Mad Catz Lynx Wireless Controller", GAMEPAD_XBOX },
+	{ 0x0738, 0x6040, "Mad Catz Beat Pad Pro", GAMEPAD_XBOX_MAT },
+	{ 0x0c12, 0x8802, "Zeroplus Xbox Controller", GAMEPAD_XBOX },
+	{ 0x0c12, 0x8810, "Zeroplus Xbox Controller", GAMEPAD_XBOX },
+	{ 0x0c12, 0x9902, "HAMA VibraX - *FAULTY HARDWARE*", GAMEPAD_XBOX },
+	{ 0x0e4c, 0x1097, "Radica Gamester Controller", GAMEPAD_XBOX },
+	{ 0x0e4c, 0x2390, "Radica Games Jtech Controller", GAMEPAD_XBOX },
+	{ 0x0e6f, 0x0003, "Logic3 Freebird wireless Controller", GAMEPAD_XBOX },
+	{ 0x0e6f, 0x0005, "Eclipse wireless Controller", GAMEPAD_XBOX },
+	{ 0x0e6f, 0x0006, "Edge wireless Controller", GAMEPAD_XBOX },
+	{ 0x0e8f, 0x0201, "SmartJoy Frag Xpad/PS2 adaptor", GAMEPAD_XBOX },
+	{ 0x0f30, 0x0202, "Joytech Advanced Controller", GAMEPAD_XBOX },
+	{ 0x0f30, 0x8888, "BigBen XBMiniPad Controller", GAMEPAD_XBOX },
+	{ 0x102c, 0xff0c, "Joytech Wireless Advanced Controller", GAMEPAD_XBOX },
+	{ 0x12ab, 0x8809, "Xbox DDR dancepad", GAMEPAD_XBOX_MAT },
+	{ 0x1430, 0x8888, "TX6500+ Dance Pad (first generation)", GAMEPAD_XBOX_MAT },
+	{ 0xffff, 0xffff, "Chinese-made Xbox Controller", GAMEPAD_XBOX },
+	{ 0x0000, 0x0000, "Generic X-Box pad", GAMEPAD_XBOX }
 };
 
 static const signed short xpad_btn[] = {
@@ -136,9 +149,11 @@ static const signed short xpad_abs[] = {
 };
 
 static struct usb_device_id xpad_table [] = {
-	{ USB_INTERFACE_INFO('X', 'B', 0) },	/* Xbox USB-IF not approved class */
-	{ USB_INTERFACE_INFO( 3 ,  0 , 0) },	/* for Joytech Advanced Controller */
-	{ USB_INTERFACE_INFO( 255 ,  93 , 1) }, /* Xbox 360 */
+	{ USB_INTERFACE_INFO(  'X',  'B',   0 ) }, /* Xbox USB-IF not approved class */
+	{ USB_INTERFACE_INFO(   3 ,   0 ,   0 ) }, /* for Joytech Advanced Controller */
+	{ USB_INTERFACE_INFO( 255 ,  93 ,   1 ) }, /* Xbox 360 */
+	{ USB_INTERFACE_INFO( 255 ,  93 , 129 ) }, /* Xbox 360 Wireless */
+	{ USB_DEVICE(0x045e, 0x0719) }, /* Xbox 360 PC Receiver - why doesn't USB_INTERFACE_INFO work? */
 	{ }
 };
 
@@ -153,14 +168,20 @@ MODULE_DEVICE_TABLE(usb, xpad_table);
  *	The report descriptor was taken from ITO Takayukis website:
  *	 http://euc.jp/periphs/xbox-controller.en.html
  */
-static void xpad_process_packet(struct usb_xpad *xpad, u16 cmd, unsigned char *data, struct pt_regs *regs)
+static void xpad_process_packet(struct usb_xpad *xpad, u16 cmd, unsigned char *data
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,19)
+	, struct pt_regs *regs
+#endif
+	)
 {
 	struct input_dev *dev = xpad->dev;
 	int i;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,19)
 	input_regs(dev, regs);
+#endif
 
-	if(debug) {
+	if (debug) {
 		printk(KERN_INFO "xpad_debug: data :");
 		for(i = 0; i < 20; i++) {
 			printk("0x%02x ", data[i]);
@@ -252,12 +273,40 @@ static void xpad_process_packet(struct usb_xpad *xpad, u16 cmd, unsigned char *d
 }
 
 /**
+ *	xpad_wireless_connect
+ *
+ *	Called when a wireless gamepad is connected
+ */
+static void xpad_wireless_connect(struct usb_xpad *xpad)
+{
+	if (debug)
+		info("Wireless Gamepad connected");
+	xpad->isConnected = 1;
+}
+
+/**
+ *	xpad_wireless_disconnect
+ *
+ *	Called when a wireless gamepad is disconnected
+ */
+static void xpad_wireless_disconnect(struct usb_xpad *xpad)
+{
+	if (debug)
+		info("Wireless Gamepad disconnected");
+	xpad->isConnected = 0;
+}
+
+/**
  *	xpad_irq_in
  *
  *	Completion handler for interrupt in transfers (user input).
  *	Just calls xpad_process_packet which does then emit input events.
  */
-static void xpad_irq_in(struct urb *urb, struct pt_regs *regs)
+static void xpad_irq_in(struct urb *urb
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,19)
+	, struct pt_regs *regs
+#endif
+	)
 {
 	struct usb_xpad *xpad = urb->context;
 	int retval;
@@ -279,7 +328,34 @@ static void xpad_irq_in(struct urb *urb, struct pt_regs *regs)
 		goto exit;
 	}
 
-	xpad_process_packet(xpad, 0, xpad->idata, regs);
+	if ( xpad->isWireless ) {
+		// connection status message
+		if ( urb->actual_length == 2 ) {
+			if ( !xpad->isConnected && xpad->idata[1] == 0x80 )
+				xpad_wireless_connect(xpad);
+			else if ( xpad->isConnected && xpad->idata[1] == 0x00 )
+				xpad_wireless_disconnect(xpad);
+			else
+				err("unknown connection status %d", xpad->idata[1]);
+		} else if ( urb->actual_length == 29 && xpad->idata[1] == 0x01 ) {
+			if (debug)
+				info("HID report from controller");
+			xpad_process_packet(xpad, 0, (char*) ((unsigned long) xpad->idata + 4)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,19)
+				, regs
+#endif
+				);
+		} else {
+			if (debug)
+				info("unknown report from controller");
+		}
+	} else {
+		xpad_process_packet(xpad, 0, xpad->idata
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,19)
+			, regs
+#endif
+			);
+	}
 
 exit:
 	retval = usb_submit_urb(urb, GFP_ATOMIC);
@@ -298,7 +374,8 @@ static int xpad_open(struct input_dev *dev)
 	struct usb_xpad *xpad = dev->private;
 	int status;
 
-	info("opening device");
+	if (debug)
+		info("opening device");
 
 	xpad->irq_in->dev = xpad->udev;
 	if ((status = usb_submit_urb(xpad->irq_in, GFP_KERNEL))) {
@@ -322,7 +399,8 @@ static void xpad_close(struct input_dev *dev)
 {
 	struct usb_xpad *xpad = dev->private;
 
-	info("closing device");
+	if (debug)
+		info("closing device");
 	usb_kill_urb(xpad->irq_in);
 	if(!xpad->is360) {
 		xpad_rumble_close(xpad);
@@ -358,14 +436,20 @@ static int xpad_probe(struct usb_interface *intf, const struct usb_device_id *id
 	if ((probedDevNum == -1) || (!xpad_device[probedDevNum].idVendor &&
 				     !xpad_device[probedDevNum].idProduct))
 		return -ENODEV;
+	
+	/* ugly hack for Xbox 360 Wireless Gamepad */
+	if ((xpad_device[probedDevNum].type == GAMEPAD_XBOX360_WIRELESS) &&
+	    (le16_to_cpu(intf->cur_altsetting->desc.bInterfaceProtocol) != 129))
+		return -ENODEV;
 
 	xpad = kzalloc(sizeof(struct usb_xpad), GFP_KERNEL);
 	input_dev = input_allocate_device();
 	if (!xpad || !input_dev)
 		goto fail1;
 
+	// SLAB_ATOMIC -> GFP_ATOMIC
 	xpad->idata = usb_buffer_alloc(udev, XPAD_PKT_LEN,
-				       SLAB_ATOMIC, &xpad->idata_dma);
+				       GFP_ATOMIC, &xpad->idata_dma);
 	if (!xpad->idata)
 		goto fail1;
 
@@ -376,8 +460,25 @@ static int xpad_probe(struct usb_interface *intf, const struct usb_device_id *id
 
 	xpad->udev = udev;
 	xpad->dev = input_dev;
-	xpad->isMat = xpad_device[probedDevNum].isMat;
-	xpad->is360 = xpad_device[probedDevNum].is360;
+	xpad->isMat = 0;
+	xpad->is360 = 0;
+	xpad->isWireless = 0;
+	xpad->isConnected = 1;
+	
+	switch (xpad_device[probedDevNum].type) {
+	case GAMEPAD_XBOX_MAT:
+		xpad->isMat = 1;
+		break;
+	case GAMEPAD_XBOX360:
+		xpad->is360 = 1;
+		break;
+	case GAMEPAD_XBOX360_WIRELESS:
+		xpad->is360 = 1;
+		xpad->isWireless = 1;
+		xpad->isConnected = 0;
+		break;
+	};
+	
 	usb_make_path(udev, xpad->phys, sizeof(xpad->phys));
 	strlcat(xpad->phys, "/input0", sizeof(xpad->phys));
 
@@ -457,7 +558,7 @@ static int xpad_probe(struct usb_interface *intf, const struct usb_device_id *id
 	usb_set_intfdata(intf, xpad);
 
 	/* Turn off the LEDs on xpad 360 controllers */
-	if (xpad->is360) {
+	if (xpad->is360 && !xpad->isWireless) {
 		char ledcmd[] = {1, 3, 0}; /* The LED-off command for Xbox-360 controllers */
     		int j;
 		usb_bulk_msg(udev, usb_sndintpipe(udev,2), ledcmd, 3, &j, 0);
@@ -540,6 +641,8 @@ MODULE_LICENSE("GPL");
 /*
  *  driver history
  * ----------------
+ *
+ * 2007-05-12 - 0.1.7 : Added Xbox 360 Wireless Controller support - hacky!
  *
  * 2005-11-25 - 0.1.6 : Added Xbox 360 Controller support
  * 
