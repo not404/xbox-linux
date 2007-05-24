@@ -12,7 +12,8 @@
  *		Ivan Hawkes <blackhawk@ivanhawkes.com>,
  *		Edgar Hucek <hostmaster@ed-soft.at>,
  *      	Niklas Lundberg <niklas@jahej.com>,
- *		Pyry Haulos <pyry.haulos@gmail.com>
+ *		Pyry Haulos <pyry.haulos@gmail.com>,
+ *		Jiri Kosina <jkosina@suse.cz>
  *
  *
  * This program is free software; you can redistribute it and/or
@@ -102,6 +103,7 @@ static const struct xpad_device xpad_device[] = {
 	{ 0x0738, 0x4536, "Mad Catz MicroCON", GAMEPAD_XBOX },
 	{ 0x0738, 0x4540, "Mad Catz Beat Pad", GAMEPAD_XBOX_MAT },
 	{ 0x0738, 0x4556, "Mad Catz Lynx Wireless Controller", GAMEPAD_XBOX },
+	{ 0x0738, 0x4716, "Mad Catz Xbox 360 Controller", GAMEPAD_XBOX360 },
 	{ 0x0738, 0x6040, "Mad Catz Beat Pad Pro", GAMEPAD_XBOX_MAT },
 	{ 0x0c12, 0x8802, "Zeroplus Xbox Controller", GAMEPAD_XBOX },
 	{ 0x0c12, 0x8810, "Zeroplus Xbox Controller", GAMEPAD_XBOX },
@@ -116,6 +118,7 @@ static const struct xpad_device xpad_device[] = {
 	{ 0x0f30, 0x8888, "BigBen XBMiniPad Controller", GAMEPAD_XBOX },
 	{ 0x102c, 0xff0c, "Joytech Wireless Advanced Controller", GAMEPAD_XBOX },
 	{ 0x12ab, 0x8809, "Xbox DDR dancepad", GAMEPAD_XBOX_MAT },
+	{ 0x1430, 0x4748, "RedOctane Guitar Hero X-plorer", GAMEPAD_XBOX360 },
 	{ 0x1430, 0x8888, "TX6500+ Dance Pad (first generation)", GAMEPAD_XBOX_MAT },
 	{ 0xffff, 0xffff, "Chinese-made Xbox Controller", GAMEPAD_XBOX },
 	{ 0x0000, 0x0000, "Generic X-Box pad", GAMEPAD_XBOX }
@@ -151,9 +154,14 @@ static const signed short xpad_abs[] = {
 static struct usb_device_id xpad_table [] = {
 	{ USB_INTERFACE_INFO(  'X',  'B',   0 ) }, /* Xbox USB-IF not approved class */
 	{ USB_INTERFACE_INFO(   3 ,   0 ,   0 ) }, /* for Joytech Advanced Controller */
-	{ USB_INTERFACE_INFO( 255 ,  93 ,   1 ) }, /* Xbox 360 */
-	{ USB_INTERFACE_INFO( 255 ,  93 , 129 ) }, /* Xbox 360 Wireless */
-	{ USB_DEVICE(0x045e, 0x0719) }, /* Xbox 360 PC Receiver - why doesn't USB_INTERFACE_INFO work? */
+/* for some reasons USB_INTERFACE_INFO won't work when more than
+ * one identical info is there. Therefore the IDs are added. */
+//	{ USB_INTERFACE_INFO( 255 ,  93 ,   1 ) }, /* Xbox 360 */
+//	{ USB_INTERFACE_INFO( 255 ,  93 , 129 ) }, /* Xbox 360 Wireless */
+	{ USB_DEVICE(0x045e, 0x028e) }, /* Xbox 360 Controller */
+	{ USB_DEVICE(0x045e, 0x0291) }, /* Xbox 360 Wireless Controller */
+	{ USB_DEVICE(0x045e, 0x0719) }, /* Xbox 360 Wireless PC Receiver */
+	{ USB_DEVICE(0x1430, 0x4748) }, /* RedOctane Guitar Hero X-plorer */
 	{ }
 };
 
@@ -347,7 +355,7 @@ static void xpad_irq_in(struct urb *urb
 				);
 		} else {
 			if (debug)
-				info("unknown report from controller");
+				printk("unknown report from controller: [%i] 0x%02x 0x%02x 0x%02x 0x%02x\n", xpad->idata[0], xpad->idata[1], xpad->idata[2], xpad->idata[3], urb->actual_length);
 		}
 	} else {
 		xpad_process_packet(xpad, 0, xpad->idata
@@ -439,7 +447,7 @@ static int xpad_probe(struct usb_interface *intf, const struct usb_device_id *id
 	
 	/* ugly hack for Xbox 360 Wireless Gamepad */
 	if ((xpad_device[probedDevNum].type == GAMEPAD_XBOX360_WIRELESS) &&
-	    (le16_to_cpu(intf->cur_altsetting->desc.bInterfaceProtocol) != 129))
+	    (intf->cur_altsetting->desc.bInterfaceProtocol != 129))
 		return -ENODEV;
 
 	xpad = kzalloc(sizeof(struct usb_xpad), GFP_KERNEL);
@@ -518,7 +526,7 @@ static int xpad_probe(struct usb_interface *intf, const struct usb_device_id *id
 			case ABS_RX:
 			case ABS_RY:	/* the two sticks */
 				input_set_abs_params(input_dev, t,
-						-32768, 32767, 16, 12000);
+						-32768, 32767, 16, 128);
 				break;
 			case ABS_Z:	/* left trigger */
 			case ABS_RZ:	/* right trigger */
