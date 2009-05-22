@@ -1858,8 +1858,7 @@ static int xboxfb_cursor(struct fb_info *info, struct fb_cursor *cursor)
 				break;
 			}
 
-			fb_sysmove_buf_aligned(info, &info->pixmap, data,
-					       d_pitch, src, s_pitch,
+			fb_pad_aligned_buffer(data, d_pitch, src, s_pitch,
 					       cursor->image.height);
 
 			bg = ((info->cmap.red[bg_idx] & 0xf8) << 7) |

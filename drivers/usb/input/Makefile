@@ -4,7 +4,6 @@
 
 # Multipart objects.
 usbhid-objs	:= hid-core.o
-xpad-objs	:= xpad-core.o
 
 # Optional parts of multipart objects.
 
@@ -25,10 +24,6 @@ ifeq ($(CONFIG_THRUSTMASTER_FF),y)
 endif
 ifeq ($(CONFIG_HID_FF),y)
 	usbhid-objs	+= hid-ff.o
-endif
-
-ifeq ($(CONFIG_USB_XPAD_MOUSE),y)
-	xpad-objs	+= xpad-mouse.o
 endif
 
 obj-$(CONFIG_USB_AIPTEK)	+= aiptek.o
