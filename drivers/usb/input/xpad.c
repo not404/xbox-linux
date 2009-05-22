@@ -1,5 +1,5 @@
 /*
- * Xbox input device driver for Linux - v0.1.5
+ * Xbox input device driver for Linux - v0.1.6
  *
  * Copyright (c)  2002 - 2004  Marko Friedemann <mfr@bmx-chemnitz.de>
  *
@@ -10,6 +10,7 @@
  *		Steven Toth <steve@toth.demon.co.uk>,
  *		Franz Lehner <franz@caos.at>,
  *		Ivan Hawkes <blackhawk@ivanhawkes.com>
+ *		Edgar Hucek <hostmaster@ed-soft.at>
  *
  *
  * This program is free software; you can redistribute it and/or
@@ -56,53 +57,61 @@
 #include <linux/module.h>
 #include <linux/smp_lock.h>
 #include <linux/usb.h>
-#include <linux/usb_input.h>
 #include <linux/version.h>
+#include <linux/usb_input.h>
 #include <linux/timer.h>
 #include <asm/uaccess.h>
 
 #include "xpad.h"
 
+static unsigned long debug = 0;
+module_param(debug, ulong, 0444);
+MODULE_PARM_DESC(debug, "Debugging");
+
 static struct xpad_device xpad_device[] = {
 	/* please keep those ordered wrt. vendor/product ids
 	  vendor, product, isMat, name                              */
-	{ 0x044f, 0x0f07, 0, "Thrustmaster, Inc. Controller" },
-	{ 0x045e, 0x0202, 0, "Microsoft Xbox Controller" },
-	{ 0x045e, 0x0285, 0, "Microsoft Xbox Controller S" },
-	{ 0x045e, 0x0287, 0, "Microsoft Xbox Controller S" },
-	{ 0x045e, 0x0289, 0, "Microsoft Xbox Controller S" }, /* microsoft is stupid */
-	{ 0x046d, 0xca84, 0, "Logitech Xbox Cordless Controller" },
-	{ 0x046d, 0xca88, 0, "Logitech Compact Controller for Xbox" },
-	{ 0x05fd, 0x1007, 0, "???Mad Catz Controller???" }, /* CHECKME: this seems strange */
-	{ 0x05fd, 0x107a, 0, "InterAct PowerPad Pro" },
-	{ 0x0738, 0x4516, 0, "Mad Catz Control Pad" },
-	{ 0x0738, 0x4522, 0, "Mad Catz LumiCON" },
-	{ 0x0738, 0x4526, 0, "Mad Catz Control Pad Pro" },
-	{ 0x0738, 0x4536, 0, "Mad Catz MicroCON" },
-	{ 0x0738, 0x4540, 1, "Mad Catz Beat Pad" },
-	{ 0x0738, 0x4556, 0, "Mad Catz Lynx Wireless Controller" },
-	{ 0x0738, 0x6040, 1, "Mad Catz Beat Pad Pro" },
-	{ 0x0c12, 0x8802, 0, "Zeroplus Xbox Controller" },
-	{ 0x0c12, 0x8809, 0, "Level Six Xbox DDR Dancepad" },
-	{ 0x0c12, 0x8810, 0, "Zeroplus Xbox Controller" },
-	{ 0x0c12, 0x9902, 0, "HAMA VibraX - *FAULTY HARDWARE*" }, /* these are broken */
-	{ 0x0e4c, 0x1097, 0, "Radica Gamester Controller" },	
-	{ 0x0e4c, 0x2390, 0, "Radica Games Jtech Controller" },	
-	{ 0x0e6f, 0x0003, 0, "Logic3 Freebird wireless Controller" },
-	{ 0x0e6f, 0x0005, 0, "Eclipse wireless Controller" },
-	{ 0x0e6f, 0x0006, 0, "Edge wireless Controller" },
-	{ 0x0e8f, 0x0201, 0, "SmartJoy Frag Xpad/PS2 adaptor" },
-	{ 0x0f30, 0x0202, 0, "Joytech Advanced Controller" },
-	{ 0x102c, 0xff0c, 0, "Joytech Wireless Advanced Controller" },
-	{ 0x12ab, 0x8809, 1, "Xbox DDR dancepad" },
-	{ 0xffff, 0xffff, 0, "Chinese-made Xbox Controller" }, /* WTF are device IDs for? */
-	{ 0x0000, 0x0000, 0, "nothing detected - FAIL" }
+	{ 0x044f, 0x0f07, 0, "Thrustmaster, Inc. Controller", 0},
+	{ 0x045e, 0x0202, 0, "Microsoft Xbox Controller", 0},
+	{ 0x045e, 0x0285, 0, "Microsoft Xbox Controller S", 0},
+	{ 0x045e, 0x0287, 0, "Microsoft Xbox Controller S", 0},
+	{ 0x045e, 0x0289, 0, "Microsoft Xbox Controller S", 0}, /* microsoft is stupid */
+	{ 0x045e, 0x028e, 0, "Microsoft Xbox360 Controller", 1},
+	{ 0x046d, 0xca84, 0, "Logitech Xbox Cordless Controller", 0},
+	{ 0x046d, 0xca88, 0, "Logitech Compact Controller for Xbox", 0},
+	{ 0x05fd, 0x1007, 0, "???Mad Catz Controller???", 0}, /* CHECKME: this seems strange */
+	{ 0x05fd, 0x107a, 0, "InterAct PowerPad Pro", 0},
+	{ 0x0738, 0x4516, 0, "Mad Catz Control Pad", 0},
+	{ 0x0738, 0x4522, 0, "Mad Catz LumiCON", 0},
+	{ 0x0738, 0x4526, 0, "Mad Catz Control Pad Pro", 0},
+	{ 0x0738, 0x4536, 0, "Mad Catz MicroCON", 0},
+	{ 0x0738, 0x4540, 1, "Mad Catz Beat Pad", 0},
+	{ 0x0738, 0x4556, 0, "Mad Catz Lynx Wireless Controller", 0},
+	{ 0x0738, 0x6040, 1, "Mad Catz Beat Pad Pro", 0},
+	{ 0x0c12, 0x8802, 0, "Zeroplus Xbox Controller", 0},
+	{ 0x0c12, 0x8809, 0, "Level Six Xbox DDR Dancepad", 0},
+	{ 0x0c12, 0x8810, 0, "Zeroplus Xbox Controller", 0},
+	{ 0x0c12, 0x9902, 0, "HAMA VibraX - *FAULTY HARDWARE*", 0}, /* these are broken */
+	{ 0x0e4c, 0x1097, 0, "Radica Gamester Controller", 0},	
+	{ 0x0e4c, 0x2390, 0, "Radica Games Jtech Controller", 0},	
+	{ 0x0e6f, 0x0003, 0, "Logic3 Freebird wireless Controller", 0},
+	{ 0x0e6f, 0x0005, 0, "Eclipse wireless Controller", 0},
+	{ 0x0e6f, 0x0006, 0, "Edge wireless Controller", 0},
+	{ 0x0e8f, 0x0201, 0, "SmartJoy Frag Xpad/PS2 adaptor", 0},
+	{ 0x0f30, 0x0202, 0, "Joytech Advanced Controller", 0},
+	{ 0x0f30, 0x8888, 0, "BigBen XBMiniPad Controller", 0},
+	{ 0x102c, 0xff0c, 0, "Joytech Wireless Advanced Controller", 0},
+	{ 0x12ab, 0x8809, 1, "Xbox DDR dancepad", 0},
+	{ 0xffff, 0xffff, 0, "Chinese-made Xbox Controller", 0}, /* WTF are device IDs for? */
+	{ 0x0000, 0x0000, 0, "nothing detected - FAIL", 0}
 };
 
 static signed short xpad_btn[] = {
 	BTN_A, BTN_B, BTN_C, BTN_X, BTN_Y, BTN_Z,	/* analogue buttons */
 	BTN_START, BTN_BACK, BTN_THUMBL, BTN_THUMBR,	/* start/back/sticks */
 	BTN_0, BTN_1, BTN_2, BTN_3,			/* d-pad as buttons */
+	BTN_TL, BTN_TR,					/* Button LB/RB */
+	BTN_MODE,					/* The big X */
 	-1						/* terminating entry */
 };
 
@@ -127,6 +136,9 @@ static signed short xpad_abs[] = {
 static struct usb_device_id xpad_table [] = {
 	{ USB_INTERFACE_INFO('X', 'B', 0) },	/* Xbox USB-IF not approved class */
 	{ USB_INTERFACE_INFO( 3 ,  0 , 0) },	/* for Joytech Advanced Controller */
+	{ USB_INTERFACE_INFO( 255 ,  93 , 3) },	/* Xbox 360 */
+	{ USB_INTERFACE_INFO( 255 ,  93 , 2) }, /* Xbox 360 */
+	{ USB_INTERFACE_INFO( 255 ,  93 , 1) }, /* Xbox 360 */
 	{ }
 };
 
@@ -143,9 +155,18 @@ MODULE_DEVICE_TABLE(usb, xpad_table);
  */
 static void xpad_process_packet(struct usb_xpad *xpad, u16 cmd, unsigned char *data, struct pt_regs *regs)
 {
-	struct input_dev *dev = &xpad->dev;
+	struct input_dev *dev = xpad->dev;
+	int i;
 
 	input_regs(dev, regs);
+
+	if(debug) {
+		printk(KERN_INFO "xpad_debug: data :");
+		for(i = 0; i < 20; i++) {
+			printk("0x%02x ", data[i]);
+		}
+		printk("\n");
+	}
 
 	/* digital pad (button mode) bits (3 2 1 0) (right left down up) */
 	input_report_key(dev, BTN_0, (data[2] & 0x01));
@@ -157,48 +178,75 @@ static void xpad_process_packet(struct usb_xpad *xpad, u16 cmd, unsigned char *d
 	input_report_key(dev, BTN_START, (data[2] & 0x10) >> 4);
 	input_report_key(dev, BTN_BACK, (data[2] & 0x20) >> 5);
 
+	/* stick press left/right */
+	input_report_key(dev, BTN_THUMBL, (data[2] & 0x40) >> 6);
+	input_report_key(dev, BTN_THUMBR, data[2] >> 7);
+
 	/* buttons A, B, X, Y digital mode */
-	input_report_key(dev, BTN_A, data[4]);
-	input_report_key(dev, BTN_B, data[5]);
-	input_report_key(dev, BTN_X, data[6]);
-	input_report_key(dev, BTN_Y, data[7]);
+	if(xpad->is360) {
+		input_report_key(dev, BTN_A, (data[3] & 0x10) >> 4);
+		input_report_key(dev, BTN_B, (data[3] & 0x20) >> 5);
+		input_report_key(dev, BTN_X, (data[3] & 0x80) >> 7);
+		input_report_key(dev, BTN_Y, (data[3] & 0x40) >> 6);
+		input_report_key(dev, BTN_TL, data[3] & 0x01 );
+		input_report_key(dev, BTN_TR, (data[3] & 0x02) >> 1);
+		input_report_key(dev, BTN_MODE, (data[3] & 0x04) >> 2);
+	} else {
+		input_report_key(dev, BTN_A, data[4]);
+		input_report_key(dev, BTN_B, data[5]);
+		input_report_key(dev, BTN_X, data[6]);
+		input_report_key(dev, BTN_Y, data[7]);
+	}
 
 	if (xpad->isMat)
 		return;
 
 	/* left stick (Y axis needs to be flipped) */
-	input_report_abs(dev, ABS_X, (__s16)(((__s16)data[13] << 8) | (__s16)data[12]));
-	input_report_abs(dev, ABS_Y, ~(__s16)(((__s16)data[15] << 8) | data[14]));
+	if(xpad->is360) {
+		input_report_abs(dev, ABS_X, (__s16)(((__s16)data[7] << 8) | (__s16)data[6]));
+		input_report_abs(dev, ABS_Y, ~(__s16)(((__s16)data[9] << 8) | data[8]));
+	} else {
+		input_report_abs(dev, ABS_X, (__s16)(((__s16)data[13] << 8) | (__s16)data[12]));
+		input_report_abs(dev, ABS_Y, ~(__s16)(((__s16)data[15] << 8) | data[14]));
+	}
 
 	/* right stick */
-	input_report_abs(dev, ABS_RX, (__s16)(((__s16)data[17] << 8) | (__s16)data[16]));
-	input_report_abs(dev, ABS_RY, (__s16)(((__s16)data[19] << 8) | (__s16)data[18]));
+	if(xpad->is360) {
+		input_report_abs(dev, ABS_RX, (__s16)(((__s16)data[13] << 8) | (__s16)data[12]));
+		input_report_abs(dev, ABS_RY, (__s16)(((__s16)data[11] << 8) | (__s16)data[10]));
+	} else {
+		input_report_abs(dev, ABS_RX, (__s16)(((__s16)data[17] << 8) | (__s16)data[16]));
+		input_report_abs(dev, ABS_RY, (__s16)(((__s16)data[19] << 8) | (__s16)data[18]));
+	}
 
 	/* triggers left/right */
-	input_report_abs(dev, ABS_Z, data[10]);
-	input_report_abs(dev, ABS_RZ, data[11]);
+	if(xpad->is360) {
+		input_report_abs(dev, ABS_Z, data[4]);
+		input_report_abs(dev, ABS_RZ, data[5]);
+	} else {
+		input_report_abs(dev, ABS_Z, data[10]);
+		input_report_abs(dev, ABS_RZ, data[11]);
+	}
 
-	/* digital pad (analogue mode): bits (3 2 1 0) (right left down up) */
-	input_report_abs(dev, ABS_HAT0X, !!(data[2] & 0x08) - !!(data[2] & 0x04));
-	input_report_abs(dev, ABS_HAT0Y, !!(data[2] & 0x01) - !!(data[2] & 0x02));
+	if(!xpad->is360) {
+		/* digital pad (analogue mode): bits (3 2 1 0) (right left down up) */
+		input_report_abs(dev, ABS_HAT0X, !!(data[2] & 0x08) - !!(data[2] & 0x04));
+		input_report_abs(dev, ABS_HAT0Y, !!(data[2] & 0x01) - !!(data[2] & 0x02));
+		
+		/* button A, B, X, Y analogue mode */
+		input_report_abs(dev, ABS_HAT1X, data[4]);
+		input_report_abs(dev, ABS_HAT1Y, data[5]);
+		input_report_abs(dev, ABS_HAT2Y, data[6]);
+		input_report_abs(dev, ABS_HAT3X, data[7]);
 
-	/* stick press left/right */
-	input_report_key(dev, BTN_THUMBL, (data[2] & 0x40) >> 6);
-	input_report_key(dev, BTN_THUMBR, data[2] >> 7);
+		/* button C (black) digital/analogue mode */
+		input_report_key(dev, BTN_C, data[8]);
+		input_report_abs(dev, ABS_HAT2X, data[8]);
 
-	/* button A, B, X, Y analogue mode */
-	input_report_abs(dev, ABS_HAT1X, data[4]);
-	input_report_abs(dev, ABS_HAT1Y, data[5]);
-	input_report_abs(dev, ABS_HAT2Y, data[6]);
-	input_report_abs(dev, ABS_HAT3X, data[7]);
-
-	/* button C (black) digital/analogue mode */
-	input_report_key(dev, BTN_C, data[8]);
-	input_report_abs(dev, ABS_HAT2X, data[8]);
-
-	/* button Z (white) digital/analogue mode */
-	input_report_key(dev, BTN_Z, data[9]);
-	input_report_abs(dev, ABS_HAT3Y, data[9]);
+		/* button Z (white) digital/analogue mode */
+		input_report_key(dev, BTN_Z, data[9]);
+		input_report_abs(dev, ABS_HAT3Y, data[9]);
+	}
 
 	input_sync(dev);
 }
@@ -258,7 +306,9 @@ static int xpad_open(struct input_dev *dev)
 		return -EIO;
 	}
 
-	xpad_rumble_open(xpad);
+	if(!xpad->is360) {
+		xpad_rumble_open(xpad);
+	}
 
 	return 0;
 }
@@ -274,87 +324,9 @@ static void xpad_close(struct input_dev *dev)
 
 	info("closing device");
 	usb_kill_urb(xpad->irq_in);
-	xpad_rumble_close(xpad);
-}
-
-/**	xpad_init_input_device
- *
- *	setup the input device for the kernel
- */
-static void xpad_init_input_device(struct usb_interface *intf, struct xpad_device device)
-{
-	struct usb_xpad *xpad = usb_get_intfdata(intf);
-	struct usb_device *udev = interface_to_usbdev(intf);
-	char path[64];
-	int i;
-
-	usb_to_input_id(udev, &xpad->dev.id);
-	xpad->dev.dev = &intf->dev;
-	xpad->dev.private = xpad;
-	xpad->dev.name = device.name;
-	xpad->dev.phys = xpad->phys;
-	xpad->dev.open = xpad_open;
-	xpad->dev.close = xpad_close;
-
-	usb_make_path(udev, path, 64);
-	snprintf(xpad->phys, 64, "%s/input0", path);
-
-	/* this was meant to allow a user space tool on-the-fly configuration
-	   of driver options (rumble on, etc...)
-	   yet, Vojtech said this is better done using sysfs (linux 2.6)
-	   plus, it needs a patch to the input subsystem */
-/*	xpad->dev.ioctl = xpad_ioctl;*/
-
-	if (xpad->isMat) {
-		xpad->dev.evbit[0] = BIT(EV_KEY);
-		for (i = 0; xpad_mat_btn[i] >= 0; ++i)
-			set_bit(xpad_mat_btn[i], xpad->dev.keybit);
-	} else {
-		xpad->dev.evbit[0] = BIT(EV_KEY) | BIT(EV_ABS);
-
-		for (i = 0; xpad_btn[i] >= 0; ++i)
-		set_bit(xpad_btn[i], xpad->dev.keybit);
-
-		for (i = 0; xpad_abs[i] >= 0; ++i) {
-			signed short t = xpad_abs[i];
-
-			set_bit(t, xpad->dev.absbit);
-
-			switch (t) {
-			case ABS_X:
-			case ABS_Y:
-			case ABS_RX:
-			case ABS_RY:	/* the two sticks */
-				xpad->dev.absmax[t] =  32767;
-				xpad->dev.absmin[t] = -32768;
-				xpad->dev.absflat[t] = 12000;
-				xpad->dev.absfuzz[t] = 16;
-				break;
-			case ABS_Z:	/* left trigger */
-			case ABS_RZ:	/* right trigger */
-			case ABS_HAT1X:	/* analogue button A */
-			case ABS_HAT1Y:	/* analogue button B */
-			case ABS_HAT2X:	/* analogue button C */
-			case ABS_HAT2Y:	/* analogue button X */
-			case ABS_HAT3X:	/* analogue button Y */
-			case ABS_HAT3Y:	/* analogue button Z */
-				xpad->dev.absmax[t] = 255;
-				xpad->dev.absmin[t] = 0;
-				break;
-			case ABS_HAT0X:
-			case ABS_HAT0Y:	/* the d-pad */
-				xpad->dev.absmax[t] =  1;
-				xpad->dev.absmin[t] = -1;
-				break;
-			}
-		}
-
-		if (xpad_rumble_probe(udev, xpad, ifnum) != 0)
-			err("could not init rumble");
+	if(!xpad->is360) {
+		xpad_rumble_close(xpad);
 	}
-
-	input_register_device(&xpad->dev);
-	printk(KERN_INFO "input: %s on %s\n", xpad->dev.name, path);
 }
 
 /**
@@ -366,7 +338,8 @@ static void xpad_init_input_device(struct usb_interface *intf, struct xpad_devic
 static int xpad_probe(struct usb_interface *intf, const struct usb_device_id *id)
 {
 	struct usb_device *udev = interface_to_usbdev(intf);
-	struct usb_xpad *xpad = NULL;
+	struct usb_xpad *xpad;
+	struct input_dev *input_dev;
 	struct usb_endpoint_descriptor *ep_irq_in;
 	int i;
 	int probedDevNum = -1;	/* this takes the index into the known devices
@@ -386,48 +359,108 @@ static int xpad_probe(struct usb_interface *intf, const struct usb_device_id *id
 				     !xpad_device[probedDevNum].idProduct))
 		return -ENODEV;
 
-	if ((xpad = kmalloc (sizeof(struct usb_xpad), GFP_KERNEL)) == NULL) {
-		err("cannot allocate memory for new pad");
-		return -ENOMEM;
-	}
-	memset(xpad, 0, sizeof(struct usb_xpad));
+	xpad = kzalloc(sizeof(struct usb_xpad), GFP_KERNEL);
+	input_dev = input_allocate_device();
+	if (!xpad || !input_dev)
+		goto fail1;
 
 	xpad->idata = usb_buffer_alloc(udev, XPAD_PKT_LEN,
 				       SLAB_ATOMIC, &xpad->idata_dma);
-
-	if (!xpad->idata) {
-		kfree(xpad);
-		return -ENOMEM;
-	}
+	if (!xpad->idata)
+		goto fail1;
 
 	/* setup input interrupt pipe (button and axis state) */
 	xpad->irq_in = usb_alloc_urb(0, GFP_KERNEL);
-        if (!xpad->irq_in) {
-		err("cannot allocate memory for new pad irq urb");
-		usb_buffer_free(udev, XPAD_PKT_LEN, xpad->idata, xpad->idata_dma);
-                kfree(xpad);
-                return -ENOMEM;
-	}
-
-	ep_irq_in = &intf->cur_altsetting->endpoint[0].desc;
+	if (!xpad->irq_in)
+		goto fail2;
 
 	xpad->udev = udev;
+	xpad->dev = input_dev;
 	xpad->isMat = xpad_device[probedDevNum].isMat;
+	xpad->is360 = xpad_device[probedDevNum].is360;
+	usb_make_path(udev, xpad->phys, sizeof(xpad->phys));
+	strlcat(xpad->phys, "/input0", sizeof(xpad->phys));
+
+	input_dev->name = xpad_device[probedDevNum].name;
+	input_dev->phys = xpad->phys;
+	usb_to_input_id(udev, &input_dev->id);
+	input_dev->cdev.dev = &intf->dev;
+	input_dev->private = xpad;
+	input_dev->open = xpad_open;
+	input_dev->close = xpad_close;
+
+	/* this was meant to allow a user space tool on-the-fly configuration
+	   of driver options (rumble on, etc...)
+	   yet, Vojtech said this is better done using sysfs (linux 2.6)
+	   plus, it needs a patch to the input subsystem */
+/*	input_dev->ioctl = xpad_ioctl;*/
+
+	if (xpad->isMat) {
+		input_dev->evbit[0] = BIT(EV_KEY);
+		for (i = 0; xpad_mat_btn[i] >= 0; ++i)
+			set_bit(xpad_mat_btn[i], input_dev->keybit);
+	} else {
+		input_dev->evbit[0] = BIT(EV_KEY) | BIT(EV_ABS);
+
+		for (i = 0; xpad_btn[i] >= 0; ++i)
+			set_bit(xpad_btn[i], input_dev->keybit);
+
+		for (i = 0; xpad_abs[i] >= 0; ++i) {
+
+			signed short t = xpad_abs[i];
+
+			set_bit(t, input_dev->absbit);
+
+			switch (t) {
+			case ABS_X:
+			case ABS_Y:
+			case ABS_RX:
+			case ABS_RY:	/* the two sticks */
+				input_set_abs_params(input_dev, t,
+						-32768, 32767, 16, 12000);
+				break;
+			case ABS_Z:	/* left trigger */
+			case ABS_RZ:	/* right trigger */
+			case ABS_HAT1X:	/* analogue button A */
+			case ABS_HAT1Y:	/* analogue button B */
+			case ABS_HAT2X:	/* analogue button C */
+			case ABS_HAT2Y:	/* analogue button X */
+			case ABS_HAT3X:	/* analogue button Y */
+			case ABS_HAT3Y:	/* analogue button Z */
+				input_set_abs_params(input_dev, t,
+						0, 255, 0, 0);
+				break;
+			case ABS_HAT0X:
+			case ABS_HAT0Y:	/* the d-pad */
+				input_set_abs_params(input_dev, t,
+						-1, 1, 0, 0);
+				break;
+			}
+		}
+
+		if (!xpad->is360)
+			if (xpad_rumble_probe(udev, xpad, ifnum) != 0)
+				err("could not init rumble");
+	}
 
 	/* init input URB for USB INT transfer from device */
+	ep_irq_in = &intf->cur_altsetting->endpoint[0].desc;
 	usb_fill_int_urb(xpad->irq_in, udev,
 			 usb_rcvintpipe(udev, ep_irq_in->bEndpointAddress),
-			 xpad->idata, XPAD_PKT_LEN,
-			 xpad_irq_in, xpad, ep_irq_in->bInterval);
+			 xpad->idata, XPAD_PKT_LEN, xpad_irq_in,
+			 xpad, ep_irq_in->bInterval);
 	xpad->irq_in->transfer_dma = xpad->idata_dma;
 	xpad->irq_in->transfer_flags |= URB_NO_TRANSFER_DMA_MAP;
 
-	/* we set this here so we can extract it in the two functions below */
+	input_register_device(xpad->dev);
+
 	usb_set_intfdata(intf, xpad);
-
-	xpad_init_input_device(intf, xpad_device[probedDevNum]);
-
 	return 0;
+
+fail2:	usb_buffer_free(udev, XPAD_PKT_LEN, xpad->idata, xpad->idata_dma);
+fail1:	input_free_device(input_dev);
+	kfree(xpad);
+	return -ENOMEM;
 }
 
 /**
@@ -443,15 +476,19 @@ static void xpad_disconnect(struct usb_interface *intf)
 	usb_set_intfdata(intf, NULL);
 	if (xpad) {
 		usb_kill_urb(xpad->irq_in);
-		xpad_rumble_close(xpad);
-		input_unregister_device(&xpad->dev);
+		if(!xpad->is360) {
+			xpad_rumble_close(xpad);
+		}
+		input_unregister_device(xpad->dev);
 
 		usb_free_urb(xpad->irq_in);
 
 		usb_buffer_free(interface_to_usbdev(intf), XPAD_PKT_LEN,
 				xpad->idata, xpad->idata_dma);
 
-		xpad_rumble_disconnect(xpad);
+		if(!xpad->is360) {
+			xpad_rumble_disconnect(xpad);
+		}
 
 		kfree(xpad);
 	}
@@ -497,6 +534,8 @@ MODULE_LICENSE("GPL");
  *  driver history
  * ----------------
  *
+ * 2005-11-25 - 0.1.6 : Added Xbox360 Controller support
+ * 
  * 2005-03-15 - 0.1.5 : Mouse emulation removed.  Deadzones increased.
  *  - Flipped the Y axis of the left joystick (it was inverted, like on a 
  *    flight simulator).
