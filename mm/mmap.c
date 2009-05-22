@@ -188,7 +188,7 @@ static void __remove_shared_vm_struct(struct vm_area_struct *vma,
 		struct file *file, struct address_space *mapping)
 {
 	if (vma->vm_flags & VM_DENYWRITE)
-		atomic_inc(&file->f_dentry->d_inode->i_writecount);
+		atomic_inc(&file->f_path.dentry->d_inode->i_writecount);
 	if (vma->vm_flags & VM_SHARED)
 		mapping->i_mmap_writable--;
 
@@ -399,7 +399,7 @@ static inline void __vma_link_file(struct vm_area_struct *vma)
 		struct address_space *mapping = file->f_mapping;
 
 		if (vma->vm_flags & VM_DENYWRITE)
-			atomic_dec(&file->f_dentry->d_inode->i_writecount);
+			atomic_dec(&file->f_path.dentry->d_inode->i_writecount);
 		if (vma->vm_flags & VM_SHARED)
 			mapping->i_mmap_writable++;
 
@@ -907,7 +907,7 @@ unsigned long do_mmap_pgoff(struct file * file, unsigned long addr,
 	 *  mounted, in which case we dont add PROT_EXEC.)
 	 */
 	if ((prot & PROT_READ) && (current->personality & READ_IMPLIES_EXEC))
-		if (!(file && (file->f_vfsmnt->mnt_flags & MNT_NOEXEC)))
+		if (!(file && (file->f_path.mnt->mnt_flags & MNT_NOEXEC)))
 			prot |= PROT_EXEC;
 
 	if (!len)
@@ -960,7 +960,7 @@ unsigned long do_mmap_pgoff(struct file * file, unsigned long addr,
 			return -EAGAIN;
 	}
 
-	inode = file ? file->f_dentry->d_inode : NULL;
+	inode = file ? file->f_path.dentry->d_inode : NULL;
 
 	if (file) {
 		switch (flags & MAP_TYPE) {
@@ -989,7 +989,7 @@ unsigned long do_mmap_pgoff(struct file * file, unsigned long addr,
 		case MAP_PRIVATE:
 			if (!(file->f_mode & FMODE_READ))
 				return -EACCES;
-			if (file->f_vfsmnt->mnt_flags & MNT_NOEXEC) {
+			if (file->f_path.mnt->mnt_flags & MNT_NOEXEC) {
 				if (vm_flags & VM_EXEC)
 					return -EPERM;
 				vm_flags &= ~VM_MAYEXEC;
@@ -1477,6 +1477,7 @@ static int acct_stack_growth(struct vm_area_struct * vma, unsigned long size, un
 {
 	struct mm_struct *mm = vma->vm_mm;
 	struct rlimit *rlim = current->signal->rlim;
+	unsigned long new_start;
 
 	/* address space limit tests */
 	if (!may_expand_vm(mm, grow))
@@ -1495,6 +1496,12 @@ static int acct_stack_growth(struct vm_area_struct * vma, unsigned long size, un
 		if (locked > limit && !capable(CAP_IPC_LOCK))
 			return -ENOMEM;
 	}
+
+	/* Check to ensure the stack will not grow into a hugetlb-only region */
+	new_start = (vma->vm_flags & VM_GROWSUP) ? vma->vm_start :
+			vma->vm_end - size;
+	if (is_hugepage_only_range(vma->vm_mm, new_start, size))
+		return -EFAULT;
 
 	/*
 	 * Overcommit..  This must be the final test, as it will
@@ -1736,7 +1743,7 @@ int split_vma(struct mm_struct * mm, struct vm_area_struct * vma,
 	if (mm->map_count >= sysctl_max_map_count)
 		return -ENOMEM;
 
-	new = kmem_cache_alloc(vm_area_cachep, SLAB_KERNEL);
+	new = kmem_cache_alloc(vm_area_cachep, GFP_KERNEL);
 	if (!new)
 		return -ENOMEM;
 
@@ -2057,7 +2064,7 @@ struct vm_area_struct *copy_vma(struct vm_area_struct **vmap,
 		    vma_start < new_vma->vm_end)
 			*vmap = new_vma;
 	} else {
-		new_vma = kmem_cache_alloc(vm_area_cachep, SLAB_KERNEL);
+		new_vma = kmem_cache_alloc(vm_area_cachep, GFP_KERNEL);
 		if (new_vma) {
 			*new_vma = *vma;
 			pol = mpol_copy(vma_policy(vma));
