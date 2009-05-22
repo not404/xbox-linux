@@ -254,55 +254,6 @@ void scsi_do_req(struct scsi_request *sreq, const void *cmnd,
 }
 EXPORT_SYMBOL(scsi_do_req);
 
-/* This is the end routine we get to if a command was never attached
- * to the request.  Simply complete the request without changing
- * rq_status; this will cause a DRIVER_ERROR. */
-static void scsi_wait_req_end_io(struct request *req)
-{
-	BUG_ON(!req->waiting);
-
-	complete(req->waiting);
-}
-
-void scsi_wait_req(struct scsi_request *sreq, const void *cmnd, void *buffer,
-		   unsigned bufflen, int timeout, int retries)
-{
-	DECLARE_COMPLETION(wait);
-	int write = (sreq->sr_data_direction == DMA_TO_DEVICE);
-	struct request *req;
-
-	req = blk_get_request(sreq->sr_device->request_queue, write,
-			      __GFP_WAIT);
-	if (bufflen && blk_rq_map_kern(sreq->sr_device->request_queue, req,
-				       buffer, bufflen, __GFP_WAIT)) {
-		sreq->sr_result = DRIVER_ERROR << 24;
-		blk_put_request(req);
-		return;
-	}
-
-	req->flags |= REQ_NOMERGE;
-	req->waiting = &wait;
-	req->end_io = scsi_wait_req_end_io;
-	req->cmd_len = COMMAND_SIZE(((u8 *)cmnd)[0]);
-	req->sense = sreq->sr_sense_buffer;
-	req->sense_len = 0;
-	memcpy(req->cmd, cmnd, req->cmd_len);
-	req->timeout = timeout;
-	req->flags |= REQ_BLOCK_PC;
-	req->rq_disk = NULL;
-	blk_insert_request(sreq->sr_device->request_queue, req,
-			   sreq->sr_data_direction == DMA_TO_DEVICE, NULL);
-	wait_for_completion(&wait);
-	sreq->sr_request->waiting = NULL;
-	sreq->sr_result = req->errors;
-	if (req->errors)
-		sreq->sr_result |= (DRIVER_ERROR << 24);
-
-	blk_put_request(req);
-}
-
-EXPORT_SYMBOL(scsi_wait_req);
-
 /**
  * scsi_execute - insert request and wait for the result
  * @sdev:	scsi device
@@ -591,10 +542,17 @@ static void scsi_requeue_command(struct request_queue *q, struct scsi_cmnd *cmd)
 
 void scsi_next_command(struct scsi_cmnd *cmd)
 {
-	struct request_queue *q = cmd->device->request_queue;
+	struct scsi_device *sdev = cmd->device;
+	struct request_queue *q = sdev->request_queue;
+
+	/* need to hold a reference on the device before we let go of the cmd */
+	get_device(&sdev->sdev_gendev);
 
 	scsi_put_command(cmd);
 	scsi_run_queue(q);
+
+	/* ok to remove device now */
+	put_device(&sdev->sdev_gendev);
 }
 
 void scsi_run_host_queues(struct Scsi_Host *shost)
@@ -677,7 +635,7 @@ static struct scsi_cmnd *scsi_end_request(struct scsi_cmnd *cmd, int uptodate,
 	return NULL;
 }
 
-static struct scatterlist *scsi_alloc_sgtable(struct scsi_cmnd *cmd, int gfp_mask)
+static struct scatterlist *scsi_alloc_sgtable(struct scsi_cmnd *cmd, gfp_t gfp_mask)
 {
 	struct scsi_host_sg_pool *sgp;
 	struct scatterlist *sgl;
@@ -951,15 +909,13 @@ void scsi_io_completion(struct scsi_cmnd *cmd, unsigned int good_bytes,
 				return;
 			}
 			if (!(req->flags & REQ_QUIET))
-				dev_printk(KERN_INFO,
-					   &cmd->device->sdev_gendev,
+				scmd_printk(KERN_INFO, cmd,
 					   "Device not ready.\n");
 			scsi_end_request(cmd, 0, this_count, 1);
 			return;
 		case VOLUME_OVERFLOW:
 			if (!(req->flags & REQ_QUIET)) {
-				dev_printk(KERN_INFO,
-					   &cmd->device->sdev_gendev,
+				scmd_printk(KERN_INFO, cmd,
 					   "Volume overflow, CDB: ");
 				__scsi_print_command(cmd->data_cmnd);
 				scsi_print_sense("", cmd);
@@ -981,7 +937,7 @@ void scsi_io_completion(struct scsi_cmnd *cmd, unsigned int good_bytes,
 	}
 	if (result) {
 		if (!(req->flags & REQ_QUIET)) {
-			dev_printk(KERN_INFO, &cmd->device->sdev_gendev,
+			scmd_printk(KERN_INFO, cmd,
 				   "SCSI error: return code = 0x%x\n", result);
 
 			if (driver_byte(result) & DRIVER_SENSE)
@@ -1129,6 +1085,26 @@ static void scsi_generic_done(struct scsi_cmnd *cmd)
 	scsi_io_completion(cmd, cmd->result == 0 ? cmd->bufflen : 0, 0);
 }
 
+void scsi_setup_blk_pc_cmnd(struct scsi_cmnd *cmd, int retries)
+{
+	struct request *req = cmd->request;
+
+	BUG_ON(sizeof(req->cmd) > sizeof(cmd->cmnd));
+	memcpy(cmd->cmnd, req->cmd, sizeof(cmd->cmnd));
+	cmd->cmd_len = req->cmd_len;
+	if (!req->data_len)
+		cmd->sc_data_direction = DMA_NONE;
+	else if (rq_data_dir(req) == WRITE)
+		cmd->sc_data_direction = DMA_TO_DEVICE;
+	else
+		cmd->sc_data_direction = DMA_FROM_DEVICE;
+	
+	cmd->transfersize = req->data_len;
+	cmd->allowed = retries;
+	cmd->timeout_per_command = req->timeout;
+}
+EXPORT_SYMBOL_GPL(scsi_setup_blk_pc_cmnd);
+
 static int scsi_prep_fn(struct request_queue *q, struct request *req)
 {
 	struct scsi_device *sdev = q->queuedata;
@@ -1141,8 +1117,8 @@ static int scsi_prep_fn(struct request_queue *q, struct request *req)
 	 * online before trying any recovery commands
 	 */
 	if (unlikely(!scsi_device_online(sdev))) {
-		printk(KERN_ERR "scsi%d (%d:%d): rejecting I/O to offline device\n",
-		       sdev->host->host_no, sdev->id, sdev->lun);
+		sdev_printk(KERN_ERR, sdev,
+			    "rejecting I/O to offline device\n");
 		goto kill;
 	}
 	if (unlikely(sdev->sdev_state != SDEV_RUNNING)) {
@@ -1151,8 +1127,8 @@ static int scsi_prep_fn(struct request_queue *q, struct request *req)
 		if (sdev->sdev_state == SDEV_DEL) {
 			/* Device is fully deleted, no commands
 			 * at all allowed down */
-			printk(KERN_ERR "scsi%d (%d:%d): rejecting I/O to dead device\n",
-			       sdev->host->host_no, sdev->id, sdev->lun);
+			sdev_printk(KERN_ERR, sdev,
+				    "rejecting I/O to dead device\n");
 			goto kill;
 		}
 		/* OK, we only allow special commands (i.e. not
@@ -1187,8 +1163,8 @@ static int scsi_prep_fn(struct request_queue *q, struct request *req)
 					specials_only == SDEV_BLOCK)
 				goto defer;
 			
-			printk(KERN_ERR "scsi%d (%d:%d): rejecting I/O to device being removed\n",
-			       sdev->host->host_no, sdev->id, sdev->lun);
+			sdev_printk(KERN_ERR, sdev,
+				    "rejecting I/O to device being removed\n");
 			goto kill;
 		}
 			
@@ -1264,18 +1240,7 @@ static int scsi_prep_fn(struct request_queue *q, struct request *req)
 				goto kill;
 			}
 		} else {
-			memcpy(cmd->cmnd, req->cmd, sizeof(cmd->cmnd));
-			cmd->cmd_len = req->cmd_len;
-			if (rq_data_dir(req) == WRITE)
-				cmd->sc_data_direction = DMA_TO_DEVICE;
-			else if (req->data_len)
-				cmd->sc_data_direction = DMA_FROM_DEVICE;
-			else
-				cmd->sc_data_direction = DMA_NONE;
-			
-			cmd->transfersize = req->data_len;
-			cmd->allowed = 3;
-			cmd->timeout_per_command = req->timeout;
+			scsi_setup_blk_pc_cmnd(cmd, 3);
 			cmd->done = scsi_generic_done;
 		}
 	}
@@ -1315,9 +1280,8 @@ static inline int scsi_dev_queue_ready(struct request_queue *q,
 		 */
 		if (--sdev->device_blocked == 0) {
 			SCSI_LOG_MLQUEUE(3,
-				printk("scsi%d (%d:%d) unblocking device at"
-				       " zero depth\n", sdev->host->host_no,
-				       sdev->id, sdev->lun));
+				   sdev_printk(KERN_INFO, sdev,
+				   "unblocking device at zero depth\n"));
 		} else {
 			blk_plug_device(q);
 			return 0;
@@ -1436,8 +1400,8 @@ static void scsi_request_fn(struct request_queue *q)
 			break;
 
 		if (unlikely(!scsi_device_online(sdev))) {
-			printk(KERN_ERR "scsi%d (%d:%d): rejecting I/O to offline device\n",
-			       sdev->host->host_no, sdev->id, sdev->lun);
+			sdev_printk(KERN_ERR, sdev,
+				    "rejecting I/O to offline device\n");
 			scsi_kill_request(req, q);
 			continue;
 		}
@@ -1893,10 +1857,10 @@ scsi_device_set_state(struct scsi_device *sdev, enum scsi_device_state state)
 
  illegal:
 	SCSI_LOG_ERROR_RECOVERY(1, 
-				dev_printk(KERN_ERR, &sdev->sdev_gendev,
-					   "Illegal state transition %s->%s\n",
-					   scsi_device_state_name(oldstate),
-					   scsi_device_state_name(state))
+				sdev_printk(KERN_ERR, sdev,
+					    "Illegal state transition %s->%s\n",
+					    scsi_device_state_name(oldstate),
+					    scsi_device_state_name(state))
 				);
 	return -EINVAL;
 }

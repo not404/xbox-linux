@@ -346,6 +346,7 @@ int xfrm_policy_insert(int dir, struct xfrm_policy *policy, int excl)
 	struct xfrm_policy *pol, **p;
 	struct xfrm_policy *delpol = NULL;
 	struct xfrm_policy **newpos = NULL;
+	struct dst_entry *gc_list;
 
 	write_lock_bh(&xfrm_policy_lock);
 	for (p = &xfrm_policy_list[dir]; (pol=*p)!=NULL;) {
@@ -381,9 +382,36 @@ int xfrm_policy_insert(int dir, struct xfrm_policy *policy, int excl)
 		xfrm_pol_hold(policy);
 	write_unlock_bh(&xfrm_policy_lock);
 
-	if (delpol) {
+	if (delpol)
 		xfrm_policy_kill(delpol);
+
+	read_lock_bh(&xfrm_policy_lock);
+	gc_list = NULL;
+	for (policy = policy->next; policy; policy = policy->next) {
+		struct dst_entry *dst;
+
+		write_lock(&policy->lock);
+		dst = policy->bundles;
+		if (dst) {
+			struct dst_entry *tail = dst;
+			while (tail->next)
+				tail = tail->next;
+			tail->next = gc_list;
+			gc_list = dst;
+
+			policy->bundles = NULL;
+		}
+		write_unlock(&policy->lock);
 	}
+	read_unlock_bh(&xfrm_policy_lock);
+
+	while (gc_list) {
+		struct dst_entry *dst = gc_list;
+
+		gc_list = dst->next;
+		dst_free(dst);
+	}
+
 	return 0;
 }
 EXPORT_SYMBOL(xfrm_policy_insert);
@@ -1014,13 +1042,12 @@ int __xfrm_route_forward(struct sk_buff *skb, unsigned short family)
 }
 EXPORT_SYMBOL(__xfrm_route_forward);
 
-/* Optimize later using cookies and generation ids. */
-
 static struct dst_entry *xfrm_dst_check(struct dst_entry *dst, u32 cookie)
 {
-	if (!stale_bundle(dst))
-		return dst;
-
+	/* If it is marked obsolete, which is how we even get here,
+	 * then we have purged it from the policy bundle list and we
+	 * did that for a good reason.
+	 */
 	return NULL;
 }
 
@@ -1102,6 +1129,16 @@ int xfrm_flush_bundles(void)
 {
 	xfrm_prune_bundles(stale_bundle);
 	return 0;
+}
+
+static int always_true(struct dst_entry *dst)
+{
+	return 1;
+}
+
+void xfrm_flush_all_bundles(void)
+{
+	xfrm_prune_bundles(always_true);
 }
 
 void xfrm_init_pmtu(struct dst_entry *dst)
@@ -1192,46 +1229,6 @@ int xfrm_bundle_ok(struct xfrm_dst *first, struct flowi *fl, int family)
 
 EXPORT_SYMBOL(xfrm_bundle_ok);
 
-/* Well... that's _TASK_. We need to scan through transformation
- * list and figure out what mss tcp should generate in order to
- * final datagram fit to mtu. Mama mia... :-)
- *
- * Apparently, some easy way exists, but we used to choose the most
- * bizarre ones. :-) So, raising Kalashnikov... tra-ta-ta.
- *
- * Consider this function as something like dark humour. :-)
- */
-static int xfrm_get_mss(struct dst_entry *dst, u32 mtu)
-{
-	int res = mtu - dst->header_len;
-
-	for (;;) {
-		struct dst_entry *d = dst;
-		int m = res;
-
-		do {
-			struct xfrm_state *x = d->xfrm;
-			if (x) {
-				spin_lock_bh(&x->lock);
-				if (x->km.state == XFRM_STATE_VALID &&
-				    x->type && x->type->get_max_size)
-					m = x->type->get_max_size(d->xfrm, m);
-				else
-					m += x->props.header_len;
-				spin_unlock_bh(&x->lock);
-			}
-		} while ((d = d->child) != NULL);
-
-		if (m <= mtu)
-			break;
-		res -= (m - mtu);
-		if (res < 88)
-			return mtu;
-	}
-
-	return res + dst->header_len;
-}
-
 int xfrm_policy_register_afinfo(struct xfrm_policy_afinfo *afinfo)
 {
 	int err = 0;
@@ -1252,8 +1249,6 @@ int xfrm_policy_register_afinfo(struct xfrm_policy_afinfo *afinfo)
 			dst_ops->negative_advice = xfrm_negative_advice;
 		if (likely(dst_ops->link_failure == NULL))
 			dst_ops->link_failure = xfrm_link_failure;
-		if (likely(dst_ops->get_mss == NULL))
-			dst_ops->get_mss = xfrm_get_mss;
 		if (likely(afinfo->garbage_collect == NULL))
 			afinfo->garbage_collect = __xfrm_garbage_collect;
 		xfrm_policy_afinfo[afinfo->family] = afinfo;
@@ -1281,7 +1276,6 @@ int xfrm_policy_unregister_afinfo(struct xfrm_policy_afinfo *afinfo)
 			dst_ops->check = NULL;
 			dst_ops->negative_advice = NULL;
 			dst_ops->link_failure = NULL;
-			dst_ops->get_mss = NULL;
 			afinfo->garbage_collect = NULL;
 		}
 	}

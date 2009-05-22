@@ -23,6 +23,7 @@
 #include <linux/module.h>
 #include <linux/device.h>
 #include <linux/err.h>
+#include <linux/slab.h>
 
 #if 0
 #define DEBUGP printk
@@ -618,7 +619,7 @@ static void __init param_sysfs_builtin(void)
 
 
 /* module-related sysfs stuff */
-#ifdef CONFIG_MODULES
+#ifdef CONFIG_SYSFS
 
 #define to_module_attr(n) container_of(n, struct module_attribute, attr);
 #define to_module_kobject(n) container_of(n, struct module_kobject, kobj);

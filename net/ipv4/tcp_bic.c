@@ -27,7 +27,7 @@
 					  */
 
 static int fast_convergence = 1;
-static int max_increment = 32;
+static int max_increment = 16;
 static int low_window = 14;
 static int beta = 819;		/* = 819/1024 (BICTCP_BETA_SCALE) */
 static int low_utilization_threshold = 153;
@@ -217,17 +217,15 @@ static void bictcp_cong_avoid(struct sock *sk, u32 ack,
 
 	bictcp_low_utilization(sk, data_acked);
 
-	if (in_flight < tp->snd_cwnd)
+	if (!tcp_is_cwnd_limited(sk, in_flight))
 		return;
 
-	if (tp->snd_cwnd <= tp->snd_ssthresh) {
-		/* In "safe" area, increase. */
-		if (tp->snd_cwnd < tp->snd_cwnd_clamp)
-			tp->snd_cwnd++;
-	} else {
+	if (tp->snd_cwnd <= tp->snd_ssthresh)
+		tcp_slow_start(tp);
+	else {
 		bictcp_update(ca, tp->snd_cwnd);
 
-                /* In dangerous area, increase slowly.
+		/* In dangerous area, increase slowly.
 		 * In theory this is tp->snd_cwnd += 1 / tp->snd_cwnd
 		 */
 		if (tp->snd_cwnd_cnt >= ca->cnt) {

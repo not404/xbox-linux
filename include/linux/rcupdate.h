@@ -100,6 +100,7 @@ struct rcu_data {
 	struct rcu_head *donelist;
 	struct rcu_head **donetail;
 	int cpu;
+	struct rcu_head barrier;
 };
 
 DECLARE_PER_CPU(struct rcu_data, rcu_data);
@@ -275,6 +276,7 @@ static inline int rcu_pending(int cpu)
 extern void rcu_init(void);
 extern void rcu_check_callbacks(int cpu, int user);
 extern void rcu_restart_cpu(int cpu);
+extern long rcu_batches_completed(void);
 
 /* Exported interfaces */
 extern void FASTCALL(call_rcu(struct rcu_head *head, 
@@ -284,6 +286,7 @@ extern void FASTCALL(call_rcu_bh(struct rcu_head *head,
 extern __deprecated_for_modules void synchronize_kernel(void);
 extern void synchronize_rcu(void);
 void synchronize_idle(void);
+extern void rcu_barrier(void);
 
 #endif /* __KERNEL__ */
 #endif /* __LINUX_RCUPDATE_H */

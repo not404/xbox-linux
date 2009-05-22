@@ -242,6 +242,15 @@ get_branch_address(struct task_struct *child, unsigned long pc, unsigned long in
 		 */
 		long aluop1, aluop2, ccbit;
 
+	        if ((insn & 0x0fffffd0) == 0x012fff10) {
+		        /*
+			 * bx or blx
+			 */
+			alt = get_user_reg(child, insn & 15);
+			break;
+		}
+
+
 		if ((insn & 0xf000) != 0xf000)
 			break;
 
@@ -648,7 +657,7 @@ static int ptrace_setwmmxregs(struct task_struct *tsk, void __user *ufp)
 
 #endif
 
-static int do_ptrace(int request, struct task_struct *child, long addr, long data)
+long arch_ptrace(struct task_struct *child, long request, long addr, long data)
 {
 	unsigned long tmp;
 	int ret;
@@ -779,53 +788,6 @@ static int do_ptrace(int request, struct task_struct *child, long addr, long dat
 			break;
 	}
 
-	return ret;
-}
-
-asmlinkage int sys_ptrace(long request, long pid, long addr, long data)
-{
-	struct task_struct *child;
-	int ret;
-
-	lock_kernel();
-	ret = -EPERM;
-	if (request == PTRACE_TRACEME) {
-		/* are we already being traced? */
-		if (current->ptrace & PT_PTRACED)
-			goto out;
-		ret = security_ptrace(current->parent, current);
-		if (ret)
-			goto out;
-		/* set the ptrace bit in the process flags. */
-		current->ptrace |= PT_PTRACED;
-		ret = 0;
-		goto out;
-	}
-	ret = -ESRCH;
-	read_lock(&tasklist_lock);
-	child = find_task_by_pid(pid);
-	if (child)
-		get_task_struct(child);
-	read_unlock(&tasklist_lock);
-	if (!child)
-		goto out;
-
-	ret = -EPERM;
-	if (pid == 1)		/* you may not mess with init */
-		goto out_tsk;
-
-	if (request == PTRACE_ATTACH) {
-		ret = ptrace_attach(child);
-		goto out_tsk;
-	}
-	ret = ptrace_check_attach(child, request == PTRACE_KILL);
-	if (ret == 0)
-		ret = do_ptrace(request, child, addr, data);
-
-out_tsk:
-	put_task_struct(child);
-out:
-	unlock_kernel();
 	return ret;
 }
 
