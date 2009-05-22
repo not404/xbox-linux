@@ -193,12 +193,12 @@ add_io_space (struct pci_root_info *info, struct acpi_resource_address64 *addr)
 		goto free_resource;
 	}
 
-	min = addr->min_address_range;
+	min = addr->minimum;
 	max = min + addr->address_length - 1;
-	if (addr->attribute.io.translation_attribute == ACPI_SPARSE_TRANSLATION)
+	if (addr->info.io.translation_type == ACPI_SPARSE_TRANSLATION)
 		sparse = 1;
 
-	space_nr = new_space(addr->address_translation_offset, sparse);
+	space_nr = new_space(addr->translation_offset, sparse);
 	if (space_nr == ~0)
 		goto free_name;
 
@@ -285,7 +285,7 @@ static __devinit acpi_status add_window(struct acpi_resource *res, void *data)
 	if (addr.resource_type == ACPI_MEMORY_RANGE) {
 		flags = IORESOURCE_MEM;
 		root = &iomem_resource;
-		offset = addr.address_translation_offset;
+		offset = addr.translation_offset;
 	} else if (addr.resource_type == ACPI_IO_RANGE) {
 		flags = IORESOURCE_IO;
 		root = &ioport_resource;
@@ -298,7 +298,7 @@ static __devinit acpi_status add_window(struct acpi_resource *res, void *data)
 	window = &info->controller->window[info->controller->windows++];
 	window->resource.name = info->name;
 	window->resource.flags = flags;
-	window->resource.start = addr.min_address_range + offset;
+	window->resource.start = addr.minimum + offset;
 	window->resource.end = window->resource.start + addr.address_length - 1;
 	window->resource.child = NULL;
 	window->offset = offset;
@@ -454,14 +454,13 @@ static int __devinit is_valid_resource(struct pci_dev *dev, int idx)
 	return 0;
 }
 
-static void __devinit pcibios_fixup_device_resources(struct pci_dev *dev)
+static void __devinit
+pcibios_fixup_resources(struct pci_dev *dev, int start, int limit)
 {
 	struct pci_bus_region region;
 	int i;
-	int limit = (dev->hdr_type == PCI_HEADER_TYPE_NORMAL) ? \
-		PCI_BRIDGE_RESOURCES : PCI_NUM_RESOURCES;
 
-	for (i = 0; i < limit; i++) {
+	for (i = start; i < limit; i++) {
 		if (!dev->resource[i].flags)
 			continue;
 		region.start = dev->resource[i].start;
@@ -470,6 +469,16 @@ static void __devinit pcibios_fixup_device_resources(struct pci_dev *dev)
 		if ((is_valid_resource(dev, i)))
 			pci_claim_resource(dev, i);
 	}
+}
+
+static void __devinit pcibios_fixup_device_resources(struct pci_dev *dev)
+{
+	pcibios_fixup_resources(dev, 0, PCI_BRIDGE_RESOURCES);
+}
+
+static void __devinit pcibios_fixup_bridge_resources(struct pci_dev *dev)
+{
+	pcibios_fixup_resources(dev, PCI_BRIDGE_RESOURCES, PCI_NUM_RESOURCES);
 }
 
 /*
@@ -482,7 +491,7 @@ pcibios_fixup_bus (struct pci_bus *b)
 
 	if (b->self) {
 		pci_read_bridge_bases(b);
-		pcibios_fixup_device_resources(b->self);
+		pcibios_fixup_bridge_resources(b->self);
 	}
 	list_for_each_entry(dev, &b->devices, bus_list)
 		pcibios_fixup_device_resources(dev);
@@ -570,7 +579,7 @@ pcibios_align_resource (void *data, struct resource *res,
 char * __init
 pcibios_setup (char *str)
 {
-	return NULL;
+	return str;
 }
 
 int
@@ -700,7 +709,7 @@ int ia64_pci_legacy_read(struct pci_bus *bus, u16 port, u32 *val, u8 size)
  */
 int ia64_pci_legacy_write(struct pci_dev *bus, u16 port, u32 val, u8 size)
 {
-	int ret = 0;
+	int ret = size;
 
 	switch (size) {
 	case 1:

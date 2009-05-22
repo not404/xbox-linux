@@ -22,13 +22,16 @@
 #include <linux/completion.h>
 #include <linux/interrupt.h>
 #include <linux/workqueue.h>
+#include <linux/firmware.h>
 #include <asm/semaphore.h>
 
 #include <scsi/scsi.h>
 #include <scsi/scsi_host.h>
 #include <scsi/scsi_device.h>
 #include <scsi/scsi_cmnd.h>
+#include <scsi/scsi_transport_fc.h>
 
+#if defined(CONFIG_SCSI_QLA2XXX_EMBEDDED_FIRMWARE)
 #if defined(CONFIG_SCSI_QLA21XX) || defined(CONFIG_SCSI_QLA21XX_MODULE)
 #define IS_QLA2100(ha)	((ha)->pdev->device == PCI_DEVICE_ID_QLOGIC_ISP2100)
 #else
@@ -79,9 +82,23 @@
 #define IS_QLA2522(ha)	0
 #endif
 
+#else	/* !defined(CONFIG_SCSI_QLA2XXX_EMBEDDED_FIRMWARE) */
+
+#define IS_QLA2100(ha)	((ha)->pdev->device == PCI_DEVICE_ID_QLOGIC_ISP2100)
+#define IS_QLA2200(ha)	((ha)->pdev->device == PCI_DEVICE_ID_QLOGIC_ISP2200)
+#define IS_QLA2300(ha)	((ha)->pdev->device == PCI_DEVICE_ID_QLOGIC_ISP2300)
+#define IS_QLA2312(ha)	((ha)->pdev->device == PCI_DEVICE_ID_QLOGIC_ISP2312)
+#define IS_QLA2322(ha)	((ha)->pdev->device == PCI_DEVICE_ID_QLOGIC_ISP2322)
+#define IS_QLA6312(ha)	((ha)->pdev->device == PCI_DEVICE_ID_QLOGIC_ISP6312)
+#define IS_QLA6322(ha)	((ha)->pdev->device == PCI_DEVICE_ID_QLOGIC_ISP6322)
+#define IS_QLA2422(ha)	((ha)->pdev->device == PCI_DEVICE_ID_QLOGIC_ISP2422)
+#define IS_QLA2432(ha)	((ha)->pdev->device == PCI_DEVICE_ID_QLOGIC_ISP2432)
+#define IS_QLA2512(ha)	((ha)->pdev->device == PCI_DEVICE_ID_QLOGIC_ISP2512)
+#define IS_QLA2522(ha)	((ha)->pdev->device == PCI_DEVICE_ID_QLOGIC_ISP2522)
+#endif
+
 #define IS_QLA23XX(ha)	(IS_QLA2300(ha) || IS_QLA2312(ha) || IS_QLA2322(ha) || \
     			 IS_QLA6312(ha) || IS_QLA6322(ha))
-
 #define IS_QLA24XX(ha)	(IS_QLA2422(ha) || IS_QLA2432(ha))
 #define IS_QLA25XX(ha)	(IS_QLA2512(ha) || IS_QLA2522(ha))
 
@@ -163,6 +180,13 @@
 #define WRT_REG_BYTE(addr, data)	writeb(data,addr)
 #define WRT_REG_WORD(addr, data)	writew(data,addr)
 #define WRT_REG_DWORD(addr, data)	writel(data,addr)
+
+/*
+ * The ISP2312 v2 chip cannot access the FLASH/GPIO registers via MMIO in an
+ * 133Mhz slot.
+ */
+#define RD_REG_WORD_PIO(addr)		(inw((unsigned long)addr))
+#define WRT_REG_WORD_PIO(addr, data)	(outw(data,(unsigned long)addr))
 
 /*
  * Fibre Channel device definitions.
@@ -416,6 +440,9 @@ struct device_reg_2xxx {
 #define GPIO_LED_GREEN_ON_AMBER_OFF	0x0040
 #define GPIO_LED_GREEN_OFF_AMBER_ON	0x0080
 #define GPIO_LED_GREEN_ON_AMBER_ON	0x00C0
+#define GPIO_LED_ALL_OFF		0x0000
+#define GPIO_LED_RED_ON_OTHER_OFF	0x0001	/* isp2322 */
+#define GPIO_LED_RGA_ON			0x00C1	/* isp2322: red green amber */
 
 	union {
 		struct {
@@ -1664,7 +1691,8 @@ typedef struct fc_port {
 	uint8_t mp_byte;		/* multi-path byte (not used) */
     	uint8_t cur_path;		/* current path id */
 
-	struct fc_rport *rport;
+	spinlock_t rport_lock;
+	struct fc_rport *rport, *drport;
 	u32 supported_classes;
 	struct work_struct rport_add_work;
 	struct work_struct rport_del_work;
@@ -2124,6 +2152,12 @@ struct qla_board_info {
 	struct scsi_host_template *sht;
 };
 
+struct fw_blob {
+	char *name;
+	uint32_t segs[4];
+	const struct firmware *fw;
+};
+
 /* Return data from MBC_GET_ID_LIST call. */
 struct gid_list_info {
 	uint8_t	al_pa;
@@ -2176,6 +2210,15 @@ struct isp_operations {
 
 	void (*fw_dump) (struct scsi_qla_host *, int);
 	void (*ascii_fw_dump) (struct scsi_qla_host *);
+
+	int (*beacon_on) (struct scsi_qla_host *);
+	int (*beacon_off) (struct scsi_qla_host *);
+	void (*beacon_blink) (struct scsi_qla_host *);
+
+	uint8_t * (*read_optrom) (struct scsi_qla_host *, uint8_t *,
+		uint32_t, uint32_t);
+	int (*write_optrom) (struct scsi_qla_host *, uint8_t *, uint32_t,
+		uint32_t);
 };
 
 /*
@@ -2248,6 +2291,7 @@ typedef struct scsi_qla_host {
 #define LOOP_RESET_NEEDED	24
 #define BEACON_BLINK_NEEDED	25
 #define REGISTER_FDMI_NEEDED	26
+#define FCPORT_UPDATE_NEEDED	27
 
 	uint32_t	device_flags;
 #define DFLG_LOCAL_DEVICES		BIT_0
@@ -2307,6 +2351,10 @@ typedef struct scsi_qla_host {
 	uint16_t	min_external_loopid;	/* First external loop Id */
 
 	uint16_t	link_data_rate;		/* F/W operating speed */
+#define LDR_1GB		0
+#define LDR_2GB		1
+#define LDR_4GB		3
+#define LDR_UNKNOWN	0xFFFF
 
 	uint8_t		current_topology;
 	uint8_t		prev_topology;
@@ -2462,12 +2510,26 @@ typedef struct scsi_qla_host {
 	uint8_t		*port_name;
 	uint32_t    isp_abort_cnt;
 
+	/* Option ROM information. */
+	char		*optrom_buffer;
+	uint32_t	optrom_size;
+	int		optrom_state;
+#define QLA_SWAITING	0
+#define QLA_SREADING	1
+#define QLA_SWRITING	2
+
 	/* Needed for BEACON */
 	uint16_t	beacon_blink_led;
-	uint16_t	beacon_green_on;
+	uint8_t		beacon_color_state;
+#define QLA_LED_GRN_ON		0x01
+#define QLA_LED_YLW_ON		0x02
+#define QLA_LED_ABR_ON		0x04
+#define QLA_LED_ALL_ON		0x07	/* yellow, green, amber. */
+					/* ISP2322: red, green, amber. */
 
 	uint16_t	zio_mode;
 	uint16_t	zio_timer;
+	struct fc_host_statistics fc_host_stat;
 } scsi_qla_host_t;
 
 
@@ -2533,7 +2595,9 @@ struct _qla2x00stats  {
 /*
  * Flash support definitions
  */
-#define FLASH_IMAGE_SIZE	131072
+#define OPTROM_SIZE_2300	0x20000
+#define OPTROM_SIZE_2322	0x100000
+#define OPTROM_SIZE_24XX	0x100000
 
 #include "qla_gbl.h"
 #include "qla_dbg.h"

@@ -117,7 +117,7 @@ config BLK_DEV_XD
 
 config PARIDE
 	tristate "Parallel port IDE device support"
-	depends on PARPORT
+	depends on PARPORT_PC
 	---help---
 	  There are many external CD-ROM and disk devices that connect through
 	  your computer's parallel port. Most of them are actually IDE devices
@@ -358,7 +358,8 @@ config BLK_DEV_UB
 	  This driver supports certain USB attached storage devices
 	  such as flash keys.
 
-	  Warning: Enabling this cripples the usb-storage driver.
+	  If you enable this driver, it is recommended to avoid conflicts
+	  with usb-storage by enabling USB_LIBUSUAL.
 
 	  If unsure, say N.
 
@@ -432,12 +433,12 @@ config CDROM_PKTCDVD_BUFFERS
 	  This controls the maximum number of active concurrent packets. More
 	  concurrent packets can increase write performance, but also require
 	  more memory. Each concurrent packet will require approximately 64Kb
-	  of non-swappable kernel memory, memory which will be allocated at
-	  pktsetup time.
+	  of non-swappable kernel memory, memory which will be allocated when
+	  a disc is opened for writing.
 
 config CDROM_PKTCDVD_WCACHE
-	bool "Enable write caching"
-	depends on CDROM_PKTCDVD
+	bool "Enable write caching (EXPERIMENTAL)"
+	depends on CDROM_PKTCDVD && EXPERIMENTAL
 	help
 	  If enabled, write caching will be set for the CD-R/W device. For now
 	  this option is dangerous unless the CD-RW media is known good, as we

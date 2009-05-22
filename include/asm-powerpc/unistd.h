@@ -296,8 +296,13 @@
 #define __NR_inotify_init	275
 #define __NR_inotify_add_watch	276
 #define __NR_inotify_rm_watch	277
+#define __NR_spu_run		278
+#define __NR_spu_create		279
+#define __NR_pselect6		280
+#define __NR_ppoll		281
+#define __NR_unshare		282
 
-#define __NR_syscalls		278
+#define __NR_syscalls		283
 
 #ifdef __KERNEL__
 #define __NR__exit __NR_exit
@@ -442,11 +447,13 @@ type name(type1 arg1, type2 arg2, type3 arg3, type4 arg4, type5 arg5, type6 arg6
 #define __ARCH_WANT_SYS_SIGPENDING
 #define __ARCH_WANT_SYS_SIGPROCMASK
 #define __ARCH_WANT_SYS_RT_SIGACTION
+#define __ARCH_WANT_SYS_RT_SIGSUSPEND
 #ifdef CONFIG_PPC32
 #define __ARCH_WANT_OLD_STAT
 #endif
 #ifdef CONFIG_PPC64
 #define __ARCH_WANT_COMPAT_SYS_TIME
+#define __ARCH_WANT_COMPAT_SYS_RT_SIGSUSPEND
 #endif
 
 /*

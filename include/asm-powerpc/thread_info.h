@@ -37,8 +37,6 @@ struct thread_info {
 	int		preempt_count;		/* 0 => preemptable,
 						   <0 => BUG */
 	struct restart_block restart_block;
-	/* set by force_successful_syscall_return */
-	unsigned char	syscall_noerror;
 	/* low level flags - has atomic operations done on it */
 	unsigned long	flags ____cacheline_aligned_in_smp;
 };
@@ -90,9 +88,6 @@ struct thread_info {
 
 #endif /* THREAD_SHIFT < PAGE_SHIFT */
 
-#define get_thread_info(ti)	get_task_struct((ti)->task)
-#define put_thread_info(ti)	put_task_struct((ti)->task)
-
 /* how to get the thread information struct from C */
 static inline struct thread_info *current_thread_info(void)
 {
@@ -117,12 +112,15 @@ static inline struct thread_info *current_thread_info(void)
 #define TIF_POLLING_NRFLAG	4	/* true if poll_idle() is polling
 					   TIF_NEED_RESCHED */
 #define TIF_32BIT		5	/* 32 bit binary */
-/* #define SPARE		6 */
+#define TIF_RUNLATCH		6	/* Is the runlatch enabled? */
 #define TIF_ABI_PENDING		7	/* 32/64 bit switch needed */
 #define TIF_SYSCALL_AUDIT	8	/* syscall auditing active */
 #define TIF_SINGLESTEP		9	/* singlestepping active */
 #define TIF_MEMDIE		10
 #define TIF_SECCOMP		11	/* secure computing */
+#define TIF_RESTOREALL		12	/* Restore all regs (implies NOERROR) */
+#define TIF_NOERROR		14	/* Force successful syscall return */
+#define TIF_RESTORE_SIGMASK	15	/* Restore signal mask in do_signal */
 
 /* as above, but as bit values */
 #define _TIF_SYSCALL_TRACE	(1<<TIF_SYSCALL_TRACE)
@@ -131,15 +129,19 @@ static inline struct thread_info *current_thread_info(void)
 #define _TIF_NEED_RESCHED	(1<<TIF_NEED_RESCHED)
 #define _TIF_POLLING_NRFLAG	(1<<TIF_POLLING_NRFLAG)
 #define _TIF_32BIT		(1<<TIF_32BIT)
-/* #define _SPARE		(1<<SPARE) */
+#define _TIF_RUNLATCH		(1<<TIF_RUNLATCH)
 #define _TIF_ABI_PENDING	(1<<TIF_ABI_PENDING)
 #define _TIF_SYSCALL_AUDIT	(1<<TIF_SYSCALL_AUDIT)
 #define _TIF_SINGLESTEP		(1<<TIF_SINGLESTEP)
 #define _TIF_SECCOMP		(1<<TIF_SECCOMP)
+#define _TIF_RESTOREALL		(1<<TIF_RESTOREALL)
+#define _TIF_NOERROR		(1<<TIF_NOERROR)
+#define _TIF_RESTORE_SIGMASK	(1<<TIF_RESTORE_SIGMASK)
 #define _TIF_SYSCALL_T_OR_A	(_TIF_SYSCALL_TRACE|_TIF_SYSCALL_AUDIT|_TIF_SECCOMP)
 
 #define _TIF_USER_WORK_MASK	(_TIF_NOTIFY_RESUME | _TIF_SIGPENDING | \
-				 _TIF_NEED_RESCHED)
+				 _TIF_NEED_RESCHED | _TIF_RESTORE_SIGMASK)
+#define _TIF_PERSYSCALL_MASK	(_TIF_RESTOREALL|_TIF_NOERROR)
 
 #endif /* __KERNEL__ */
 

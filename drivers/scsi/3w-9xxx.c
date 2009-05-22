@@ -61,6 +61,7 @@
                  Add support for embedded firmware error strings.
    2.26.02.003 - Correctly handle single sgl's with use_sg=1.
    2.26.02.004 - Add support for 9550SX controllers.
+   2.26.02.005 - Fix use_sg == 0 mapping on systems with 4GB or higher.
 */
 
 #include <linux/module.h>
@@ -73,6 +74,7 @@
 #include <linux/delay.h>
 #include <linux/pci.h>
 #include <linux/time.h>
+#include <linux/mutex.h>
 #include <asm/io.h>
 #include <asm/irq.h>
 #include <asm/uaccess.h>
@@ -83,7 +85,7 @@
 #include "3w-9xxx.h"
 
 /* Globals */
-#define TW_DRIVER_VERSION "2.26.02.004"
+#define TW_DRIVER_VERSION "2.26.02.005"
 static TW_Device_Extension *twa_device_extension_list[TW_MAX_SLOT];
 static unsigned int twa_device_extension_count;
 static int twa_major = -1;
@@ -615,7 +617,7 @@ static int twa_chrdev_ioctl(struct inode *inode, struct file *file, unsigned int
 	void __user *argp = (void __user *)arg;
 
 	/* Only let one of these through at a time */
-	if (down_interruptible(&tw_dev->ioctl_sem)) {
+	if (mutex_lock_interruptible(&tw_dev->ioctl_lock)) {
 		retval = TW_IOCTL_ERROR_OS_EINTR;
 		goto out;
 	}
@@ -852,7 +854,7 @@ out3:
 	/* Now free ioctl buf memory */
 	dma_free_coherent(&tw_dev->tw_pci_dev->dev, data_buffer_length_adjusted+sizeof(TW_Ioctl_Buf_Apache) - 1, cpu_addr, dma_handle);
 out2:
-	up(&tw_dev->ioctl_sem);
+	mutex_unlock(&tw_dev->ioctl_lock);
 out:
 	return retval;
 } /* End twa_chrdev_ioctl() */
@@ -1182,7 +1184,7 @@ static int twa_initialize_device_extension(TW_Device_Extension *tw_dev)
 	tw_dev->error_sequence_id = 1;
 	tw_dev->chrdev_request_id = TW_IOCTL_CHRDEV_FREE;
 
-	init_MUTEX(&tw_dev->ioctl_sem);
+	mutex_init(&tw_dev->ioctl_lock);
 	init_waitqueue_head(&tw_dev->ioctl_wqueue);
 
 	retval = 0;
@@ -1407,7 +1409,7 @@ static dma_addr_t twa_map_scsi_single_data(TW_Device_Extension *tw_dev, int requ
 	dma_addr_t mapping;
 	struct scsi_cmnd *cmd = tw_dev->srb[request_id];
 	struct pci_dev *pdev = tw_dev->tw_pci_dev;
-	int retval = 0;
+	dma_addr_t retval = 0;
 
 	if (cmd->request_bufflen == 0) {
 		retval = 0;
@@ -1797,7 +1799,7 @@ static int twa_scsiop_execute_scsi(TW_Device_Extension *tw_dev, int request_id, 
 	int i, sg_count;
 	struct scsi_cmnd *srb = NULL;
 	struct scatterlist *sglist = NULL;
-	u32 buffaddr = 0x0;
+	dma_addr_t buffaddr = 0x0;
 	int retval = 1;
 
 	if (tw_dev->srb[request_id]) {

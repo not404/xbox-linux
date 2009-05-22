@@ -3,9 +3,6 @@
 #include <asm/checksum.h>
 #include <asm/desc.h>
 
-/* This is definitely a GPL-only symbol */
-EXPORT_SYMBOL_GPL(cpu_gdt_table);
-
 EXPORT_SYMBOL(__down_failed);
 EXPORT_SYMBOL(__down_failed_interruptible);
 EXPORT_SYMBOL(__down_failed_trylock);

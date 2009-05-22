@@ -1319,6 +1319,9 @@ ips_slave_configure(struct scsi_device * SDptr)
 			min = ha->max_cmds - 1;
 		scsi_adjust_queue_depth(SDptr, MSG_ORDERED_TAG, min);
 	}
+
+	SDptr->skip_ms_page_8 = 1;
+	SDptr->skip_ms_page_3f = 1;
 	return 0;
 }
 #endif
@@ -3496,6 +3499,7 @@ ips_map_status(ips_ha_t * ha, ips_scb_t * scb, ips_stat_t * sp)
 	int device_error;
 	uint32_t transfer_len;
 	IPS_DCDB_TABLE_TAPE *tapeDCDB;
+	IPS_SCSI_INQ_DATA inquiryData;
 
 	METHOD_TRACE("ips_map_status", 1);
 
@@ -3554,13 +3558,13 @@ ips_map_status(ips_ha_t * ha, ips_scb_t * scb, ips_stat_t * sp)
 				errcode = DID_OK;
 
 				/* Restrict access to physical DASD */
-				if ((scb->scsi_cmd->cmnd[0] == INQUIRY) &&
-				    ((((char *) scb->scsi_cmd->
-				       buffer)[0] & 0x1f) == TYPE_DISK)) {
-					/* underflow -- no error               */
-					/* restrict access to physical DASD    */
-					errcode = DID_TIME_OUT;
-					break;
+				if (scb->scsi_cmd->cmnd[0] == INQUIRY) {
+				    ips_scmd_buf_read(scb->scsi_cmd, 
+                                      &inquiryData, sizeof (inquiryData));
+ 				    if ((inquiryData.DeviceType & 0x1f) == TYPE_DISK) {
+				        errcode = DID_TIME_OUT;
+				        break;
+				    }
 				}
 			} else
 				errcode = DID_ERROR;
@@ -4132,6 +4136,7 @@ ips_chkstatus(ips_ha_t * ha, IPS_STATUS * pstatus)
 	uint8_t basic_status;
 	uint8_t ext_status;
 	int errcode;
+	IPS_SCSI_INQ_DATA inquiryData;
 
 	METHOD_TRACE("ips_chkstatus", 1);
 
@@ -4252,11 +4257,11 @@ ips_chkstatus(ips_ha_t * ha, IPS_STATUS * pstatus)
 			scb->scsi_cmd->result = errcode << 16;
 		} else {	/* bus == 0 */
 			/* restrict access to physical drives */
-			if ((scb->scsi_cmd->cmnd[0] == INQUIRY) &&
-			    ((((char *) scb->scsi_cmd->buffer)[0] & 0x1f) ==
-			     TYPE_DISK)) {
-
-				scb->scsi_cmd->result = DID_TIME_OUT << 16;
+			if (scb->scsi_cmd->cmnd[0] == INQUIRY) { 
+			    ips_scmd_buf_read(scb->scsi_cmd, 
+                                  &inquiryData, sizeof (inquiryData));
+			    if ((inquiryData.DeviceType & 0x1f) == TYPE_DISK) 
+			        scb->scsi_cmd->result = DID_TIME_OUT << 16;
 			}
 		}		/* else */
 	} else {		/* recovered error / success */
@@ -5009,7 +5014,7 @@ ips_init_copperhead(ips_ha_t * ha)
 				break;
 
 			/* Delay for 1 Second */
-			MDELAY(IPS_ONE_SEC);
+			msleep(IPS_ONE_SEC);
 		}
 
 		if (j >= 45)
@@ -5035,7 +5040,7 @@ ips_init_copperhead(ips_ha_t * ha)
 				break;
 
 			/* Delay for 1 Second */
-			MDELAY(IPS_ONE_SEC);
+			msleep(IPS_ONE_SEC);
 		}
 
 		if (j >= 240)
@@ -5053,7 +5058,7 @@ ips_init_copperhead(ips_ha_t * ha)
 			break;
 
 		/* Delay for 1 Second */
-		MDELAY(IPS_ONE_SEC);
+		msleep(IPS_ONE_SEC);
 	}
 
 	if (i >= 240)
@@ -5103,7 +5108,7 @@ ips_init_copperhead_memio(ips_ha_t * ha)
 				break;
 
 			/* Delay for 1 Second */
-			MDELAY(IPS_ONE_SEC);
+			msleep(IPS_ONE_SEC);
 		}
 
 		if (j >= 45)
@@ -5129,7 +5134,7 @@ ips_init_copperhead_memio(ips_ha_t * ha)
 				break;
 
 			/* Delay for 1 Second */
-			MDELAY(IPS_ONE_SEC);
+			msleep(IPS_ONE_SEC);
 		}
 
 		if (j >= 240)
@@ -5147,7 +5152,7 @@ ips_init_copperhead_memio(ips_ha_t * ha)
 			break;
 
 		/* Delay for 1 Second */
-		MDELAY(IPS_ONE_SEC);
+		msleep(IPS_ONE_SEC);
 	}
 
 	if (i >= 240)
@@ -5199,7 +5204,7 @@ ips_init_morpheus(ips_ha_t * ha)
 			break;
 
 		/* Delay for 1 Second */
-		MDELAY(IPS_ONE_SEC);
+		msleep(IPS_ONE_SEC);
 	}
 
 	if (i >= 45) {
@@ -5225,7 +5230,7 @@ ips_init_morpheus(ips_ha_t * ha)
 			if (Post != 0x4F00)
 				break;
 			/* Delay for 1 Second */
-			MDELAY(IPS_ONE_SEC);
+			msleep(IPS_ONE_SEC);
 		}
 
 		if (i >= 120) {
@@ -5255,7 +5260,7 @@ ips_init_morpheus(ips_ha_t * ha)
 			break;
 
 		/* Delay for 1 Second */
-		MDELAY(IPS_ONE_SEC);
+		msleep(IPS_ONE_SEC);
 	}
 
 	if (i >= 240) {
@@ -5315,12 +5320,12 @@ ips_reset_copperhead(ips_ha_t * ha)
 		outb(IPS_BIT_RST, ha->io_addr + IPS_REG_SCPR);
 
 		/* Delay for 1 Second */
-		MDELAY(IPS_ONE_SEC);
+		msleep(IPS_ONE_SEC);
 
 		outb(0, ha->io_addr + IPS_REG_SCPR);
 
 		/* Delay for 1 Second */
-		MDELAY(IPS_ONE_SEC);
+		msleep(IPS_ONE_SEC);
 
 		if ((*ha->func.init) (ha))
 			break;
@@ -5360,12 +5365,12 @@ ips_reset_copperhead_memio(ips_ha_t * ha)
 		writeb(IPS_BIT_RST, ha->mem_ptr + IPS_REG_SCPR);
 
 		/* Delay for 1 Second */
-		MDELAY(IPS_ONE_SEC);
+		msleep(IPS_ONE_SEC);
 
 		writeb(0, ha->mem_ptr + IPS_REG_SCPR);
 
 		/* Delay for 1 Second */
-		MDELAY(IPS_ONE_SEC);
+		msleep(IPS_ONE_SEC);
 
 		if ((*ha->func.init) (ha))
 			break;
@@ -5406,7 +5411,7 @@ ips_reset_morpheus(ips_ha_t * ha)
 		writel(0x80000000, ha->mem_ptr + IPS_REG_I960_IDR);
 
 		/* Delay for 5 Seconds */
-		MDELAY(5 * IPS_ONE_SEC);
+		msleep(5 * IPS_ONE_SEC);
 
 		/* Do a PCI config read to wait for adapter */
 		pci_read_config_byte(ha->pcidev, 4, &junk);

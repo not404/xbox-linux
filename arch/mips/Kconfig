@@ -595,6 +595,7 @@ config SGI_IP32
 	select SYS_HAS_CPU_R5000
 	select SYS_HAS_CPU_R10000 if BROKEN
 	select SYS_HAS_CPU_RM7000
+	select SYS_HAS_CPU_NEVADA
 	select SYS_SUPPORTS_64BIT_KERNEL
 	select SYS_SUPPORTS_BIG_ENDIAN
 	help
@@ -1052,6 +1053,7 @@ config CPU_MIPS32_R1
 	depends on SYS_HAS_CPU_MIPS32_R1
 	select CPU_HAS_PREFETCH
 	select CPU_SUPPORTS_32BIT_KERNEL
+	select CPU_SUPPORTS_HIGHMEM
 	help
 	  Choose this option to build a kernel for release 1 or later of the
 	  MIPS32 architecture.  Most modern embedded systems with a 32-bit
@@ -1068,6 +1070,7 @@ config CPU_MIPS32_R2
 	depends on SYS_HAS_CPU_MIPS32_R2
 	select CPU_HAS_PREFETCH
 	select CPU_SUPPORTS_32BIT_KERNEL
+	select CPU_SUPPORTS_HIGHMEM
 	help
 	  Choose this option to build a kernel for release 2 or later of the
 	  MIPS32 architecture.  Most modern embedded systems with a 32-bit
@@ -1081,6 +1084,7 @@ config CPU_MIPS64_R1
 	select CPU_HAS_PREFETCH
 	select CPU_SUPPORTS_32BIT_KERNEL
 	select CPU_SUPPORTS_64BIT_KERNEL
+	select CPU_SUPPORTS_HIGHMEM
 	help
 	  Choose this option to build a kernel for release 1 or later of the
 	  MIPS64 architecture.  Many modern embedded systems with a 64-bit
@@ -1098,6 +1102,7 @@ config CPU_MIPS64_R2
 	select CPU_HAS_PREFETCH
 	select CPU_SUPPORTS_32BIT_KERNEL
 	select CPU_SUPPORTS_64BIT_KERNEL
+	select CPU_SUPPORTS_HIGHMEM
 	help
 	  Choose this option to build a kernel for release 2 or later of the
 	  MIPS64 architecture.  Many modern embedded systems with a 64-bit
@@ -1471,7 +1476,7 @@ config SB1_PASS_2_1_WORKAROUNDS
 
 config 64BIT_PHYS_ADDR
 	bool "Support for 64-bit physical address space"
-	depends on (CPU_R4X00 || CPU_R5000 || CPU_RM7000 || CPU_RM9000 || CPU_R10000 || CPU_SB1 || CPU_MIPS32_R1 || CPU_MIPS64_R1) && 32BIT
+	depends on (CPU_R4X00 || CPU_R5000 || CPU_RM7000 || CPU_RM9000 || CPU_R10000 || CPU_SB1 || CPU_MIPS32 || CPU_MIPS64) && 32BIT
 
 config CPU_ADVANCED
 	bool "Override CPU Options"
@@ -1491,14 +1496,6 @@ config CPU_HAS_LLSC
 	  Say Y here if your CPU has the ll and sc instructions.  Say Y here
 	  for better performance, N if you don't know.  You must say Y here
 	  for multiprocessor machines.
-
-config CPU_HAS_LLDSCD
-	bool "lld/scd Instructions available" if CPU_ADVANCED
-	default y if !CPU_ADVANCED && !CPU_R3000 && !CPU_VR41XX && !CPU_TX39XX && !CPU_MIPS32_R1
-	help
-	  Say Y here if your CPU has the lld and scd instructions, the 64-bit
-	  equivalents of ll and sc.  Say Y here for better performance, N if
-	  you don't know.  You must say Y here for multiprocessor machines.
 
 config CPU_HAS_WB
 	bool "Writeback Buffer available" if CPU_ADVANCED

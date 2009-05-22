@@ -451,6 +451,9 @@ I am fairly certain that they are correct unless stated otherwise in comments.
 /* END */
 
 /* gap */
+/* Zero to flush caches. */
+#define R300_TX_CNTL                        0x4100
+
 /* The upper enable bits are guessed, based on fglrx reported limits. */
 #define R300_TX_ENABLE                      0x4104
 #       define R300_TX_ENABLE_0                  (1 << 0)
@@ -797,6 +800,7 @@ I am fairly certain that they are correct unless stated otherwise in comments.
 
 #	define R300_TX_FORMAT_YUV_MODE		0x00800000
 
+#define R300_TX_PITCH_0			    0x4500
 #define R300_TX_OFFSET_0                    0x4540
 /* BEGIN: Guess from R200 */
 #       define R300_TXO_ENDIAN_NO_SWAP           (0 << 0)

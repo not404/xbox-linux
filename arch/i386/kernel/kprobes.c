@@ -58,13 +58,14 @@ static inline int is_IF_modifier(kprobe_opcode_t opcode)
 
 int __kprobes arch_prepare_kprobe(struct kprobe *p)
 {
-	return 0;
-}
+	/* insn: must be on special executable page on i386. */
+	p->ainsn.insn = get_insn_slot();
+	if (!p->ainsn.insn)
+		return -ENOMEM;
 
-void __kprobes arch_copy_kprobe(struct kprobe *p)
-{
 	memcpy(p->ainsn.insn, p->addr, MAX_INSN_SIZE * sizeof(kprobe_opcode_t));
 	p->opcode = *p->addr;
+	return 0;
 }
 
 void __kprobes arch_arm_kprobe(struct kprobe *p)
@@ -83,6 +84,9 @@ void __kprobes arch_disarm_kprobe(struct kprobe *p)
 
 void __kprobes arch_remove_kprobe(struct kprobe *p)
 {
+	down(&kprobe_mutex);
+	free_insn_slot(p->ainsn.insn);
+	up(&kprobe_mutex);
 }
 
 static inline void save_previous_kprobe(struct kprobe_ctlblk *kcb)
@@ -119,7 +123,7 @@ static inline void prepare_singlestep(struct kprobe *p, struct pt_regs *regs)
 	if (p->opcode == BREAKPOINT_INSTRUCTION)
 		regs->eip = (unsigned long)p->addr;
 	else
-		regs->eip = (unsigned long)&p->ainsn.insn;
+		regs->eip = (unsigned long)p->ainsn.insn;
 }
 
 /* Called with kretprobe_lock held */
@@ -196,6 +200,19 @@ static int __kprobes kprobe_handler(struct pt_regs *regs)
 			kcb->kprobe_status = KPROBE_REENTER;
 			return 1;
 		} else {
+			if (regs->eflags & VM_MASK) {
+			/* We are in virtual-8086 mode. Return 0 */
+				goto no_kprobe;
+			}
+			if (*addr != BREAKPOINT_INSTRUCTION) {
+			/* The breakpoint instruction was removed by
+			 * another cpu right after we hit, no further
+			 * handling of this interrupt is appropriate
+			 */
+				regs->eip -= sizeof(kprobe_opcode_t);
+				ret = 1;
+				goto no_kprobe;
+			}
 			p = __get_cpu_var(current_kprobe);
 			if (p->break_handler && p->break_handler(p, regs)) {
 				goto ss_probe;
@@ -346,7 +363,7 @@ static void __kprobes resume_execution(struct kprobe *p,
 {
 	unsigned long *tos = (unsigned long *)&regs->esp;
 	unsigned long next_eip = 0;
-	unsigned long copy_eip = (unsigned long)&p->ainsn.insn;
+	unsigned long copy_eip = (unsigned long)p->ainsn.insn;
 	unsigned long orig_eip = (unsigned long)p->addr;
 
 	switch (p->ainsn.insn[0]) {

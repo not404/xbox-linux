@@ -224,7 +224,7 @@ int ipv6_sock_mc_join(struct sock *sk, int ifindex, struct in6_addr *addr)
 
 	mc_lst->ifindex = dev->ifindex;
 	mc_lst->sfmode = MCAST_EXCLUDE;
-	mc_lst->sflock = RW_LOCK_UNLOCKED;
+	rwlock_init(&mc_lst->sflock);
 	mc_lst->sflist = NULL;
 
 	/*
@@ -449,8 +449,7 @@ int ip6_mc_source(int add, int omode, struct sock *sk,
 
 		if (psl)
 			count += psl->sl_max;
-		newpsl = (struct ip6_sf_socklist *)sock_kmalloc(sk,
-			IP6_SFLSIZE(count), GFP_ATOMIC);
+		newpsl = sock_kmalloc(sk, IP6_SFLSIZE(count), GFP_ATOMIC);
 		if (!newpsl) {
 			err = -ENOBUFS;
 			goto done;
@@ -535,8 +534,8 @@ int ip6_mc_msfilter(struct sock *sk, struct group_filter *gsf)
 		goto done;
 	}
 	if (gsf->gf_numsrc) {
-		newpsl = (struct ip6_sf_socklist *)sock_kmalloc(sk,
-				IP6_SFLSIZE(gsf->gf_numsrc), GFP_ATOMIC);
+		newpsl = sock_kmalloc(sk, IP6_SFLSIZE(gsf->gf_numsrc),
+							  GFP_ATOMIC);
 		if (!newpsl) {
 			err = -ENOBUFS;
 			goto done;
@@ -768,7 +767,7 @@ static void mld_add_delrec(struct inet6_dev *idev, struct ifmcaddr6 *im)
 	 * for deleted items allows change reports to use common code with
 	 * non-deleted or query-response MCA's.
 	 */
-	pmc = (struct ifmcaddr6 *)kmalloc(sizeof(*pmc), GFP_ATOMIC);
+	pmc = kmalloc(sizeof(*pmc), GFP_ATOMIC);
 	if (!pmc)
 		return;
 	memset(pmc, 0, sizeof(*pmc));
@@ -1253,8 +1252,7 @@ int igmp6_event_query(struct sk_buff *skb)
 		}
 	} else {
 		for (ma = idev->mc_list; ma; ma=ma->next) {
-			if (group_type != IPV6_ADDR_ANY &&
-			    !ipv6_addr_equal(group, &ma->mca_addr))
+			if (!ipv6_addr_equal(group, &ma->mca_addr))
 				continue;
 			spin_lock_bh(&ma->mca_lock);
 			if (ma->mca_flags & MAF_TIMER_RUNNING) {
@@ -1269,11 +1267,10 @@ int igmp6_event_query(struct sk_buff *skb)
 					ma->mca_flags &= ~MAF_GSQUERY;
 			}
 			if (!(ma->mca_flags & MAF_GSQUERY) ||
-			   mld_marksources(ma, ntohs(mlh2->nsrcs), mlh2->srcs))
+			    mld_marksources(ma, ntohs(mlh2->nsrcs), mlh2->srcs))
 				igmp6_group_queried(ma, max_delay);
 			spin_unlock_bh(&ma->mca_lock);
-			if (group_type != IPV6_ADDR_ANY)
-				break;
+			break;
 		}
 	}
 	read_unlock_bh(&idev->lock);
@@ -1352,7 +1349,7 @@ static int is_in(struct ifmcaddr6 *pmc, struct ip6_sf_list *psf, int type,
 			 * in all filters
 			 */
 			if (psf->sf_count[MCAST_INCLUDE])
-				return 0;
+				return type == MLD2_MODE_IS_INCLUDE;
 			return pmc->mca_sfcount[MCAST_EXCLUDE] ==
 				psf->sf_count[MCAST_EXCLUDE];
 		}
@@ -1937,7 +1934,7 @@ static int ip6_mc_add1_src(struct ifmcaddr6 *pmc, int sfmode,
 		psf_prev = psf;
 	}
 	if (!psf) {
-		psf = (struct ip6_sf_list *)kmalloc(sizeof(*psf), GFP_ATOMIC);
+		psf = kmalloc(sizeof(*psf), GFP_ATOMIC);
 		if (!psf)
 			return -ENOBUFS;
 		memset(psf, 0, sizeof(*psf));
@@ -1967,7 +1964,7 @@ static void sf_markstate(struct ifmcaddr6 *pmc)
 
 static int sf_setstate(struct ifmcaddr6 *pmc)
 {
-	struct ip6_sf_list *psf;
+	struct ip6_sf_list *psf, *dpsf;
 	int mca_xcount = pmc->mca_sfcount[MCAST_EXCLUDE];
 	int qrv = pmc->idev->mc_qrv;
 	int new_in, rv;
@@ -1979,8 +1976,48 @@ static int sf_setstate(struct ifmcaddr6 *pmc)
 				!psf->sf_count[MCAST_INCLUDE];
 		} else
 			new_in = psf->sf_count[MCAST_INCLUDE] != 0;
-		if (new_in != psf->sf_oldin) {
-			psf->sf_crcount = qrv;
+		if (new_in) {
+			if (!psf->sf_oldin) {
+				struct ip6_sf_list *prev = NULL;
+
+				for (dpsf=pmc->mca_tomb; dpsf;
+				     dpsf=dpsf->sf_next) {
+					if (ipv6_addr_equal(&dpsf->sf_addr,
+					    &psf->sf_addr))
+						break;
+					prev = dpsf;
+				}
+				if (dpsf) {
+					if (prev)
+						prev->sf_next = dpsf->sf_next;
+					else
+						pmc->mca_tomb = dpsf->sf_next;
+					kfree(dpsf);
+				}
+				psf->sf_crcount = qrv;
+				rv++;
+			}
+		} else if (psf->sf_oldin) {
+			psf->sf_crcount = 0;
+			/*
+			 * add or update "delete" records if an active filter
+			 * is now inactive
+			 */
+			for (dpsf=pmc->mca_tomb; dpsf; dpsf=dpsf->sf_next)
+				if (ipv6_addr_equal(&dpsf->sf_addr,
+				    &psf->sf_addr))
+					break;
+			if (!dpsf) {
+				dpsf = (struct ip6_sf_list *)
+					kmalloc(sizeof(*dpsf), GFP_ATOMIC);
+				if (!dpsf)
+					continue;
+				*dpsf = *psf;
+				/* pmc->mca_lock held by callers */
+				dpsf->sf_next = pmc->mca_tomb;
+				pmc->mca_tomb = dpsf;
+			}
+			dpsf->sf_crcount = qrv;
 			rv++;
 		}
 	}
@@ -2374,7 +2411,7 @@ static int igmp6_mc_seq_show(struct seq_file *seq, void *v)
 	struct igmp6_mc_iter_state *state = igmp6_mc_seq_private(seq);
 
 	seq_printf(seq,
-		   "%-4d %-15s %04x%04x%04x%04x%04x%04x%04x%04x %5d %08X %ld\n", 
+		   "%-4d %-15s " NIP6_SEQFMT " %5d %08X %ld\n", 
 		   state->dev->ifindex, state->dev->name,
 		   NIP6(im->mca_addr),
 		   im->mca_users, im->mca_flags,
@@ -2548,10 +2585,7 @@ static int igmp6_mcf_seq_show(struct seq_file *seq, void *v)
 			   "Source Address", "INC", "EXC");
 	} else {
 		seq_printf(seq,
-			   "%3d %6.6s "
-			   "%04x%04x%04x%04x%04x%04x%04x%04x "
-			   "%04x%04x%04x%04x%04x%04x%04x%04x "
-			   "%6lu %6lu\n",
+			   "%3d %6.6s " NIP6_SEQFMT " " NIP6_SEQFMT " %6lu %6lu\n",
 			   state->dev->ifindex, state->dev->name,
 			   NIP6(state->im->mca_addr),
 			   NIP6(psf->sf_addr),

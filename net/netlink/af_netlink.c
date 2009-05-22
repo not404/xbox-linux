@@ -24,6 +24,7 @@
 #include <linux/config.h>
 #include <linux/module.h>
 
+#include <linux/capability.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/signal.h>
@@ -293,7 +294,7 @@ static inline int nl_pid_hash_dilute(struct nl_pid_hash *hash, int len)
 	return 0;
 }
 
-static struct proto_ops netlink_ops;
+static const struct proto_ops netlink_ops;
 
 static int netlink_insert(struct sock *sk, u32 pid)
 {
@@ -402,7 +403,7 @@ static int netlink_create(struct socket *sock, int protocol)
 	groups = nl_table[protocol].groups;
 	netlink_unlock_table();
 
-	if ((err = __netlink_create(sock, protocol) < 0))
+	if ((err = __netlink_create(sock, protocol)) < 0)
 		goto out_module;
 
 	nlk = nlk_sk(sock->sk);
@@ -701,7 +702,8 @@ struct sock *netlink_getsockbyfilp(struct file *filp)
  * 0: continue
  * 1: repeat lookup - reference dropped while waiting for socket memory.
  */
-int netlink_attachskb(struct sock *sk, struct sk_buff *skb, int nonblock, long timeo)
+int netlink_attachskb(struct sock *sk, struct sk_buff *skb, int nonblock,
+		long timeo, struct sock *ssk)
 {
 	struct netlink_sock *nlk;
 
@@ -711,7 +713,7 @@ int netlink_attachskb(struct sock *sk, struct sk_buff *skb, int nonblock, long t
 	    test_bit(0, &nlk->state)) {
 		DECLARE_WAITQUEUE(wait, current);
 		if (!timeo) {
-			if (!nlk->pid)
+			if (!ssk || nlk_sk(ssk)->pid == 0)
 				netlink_overrun(sk);
 			sock_put(sk);
 			kfree_skb(skb);
@@ -796,7 +798,7 @@ retry:
 		kfree_skb(skb);
 		return PTR_ERR(sk);
 	}
-	err = netlink_attachskb(sk, skb, nonblock, timeo);
+	err = netlink_attachskb(sk, skb, nonblock, timeo, ssk);
 	if (err == 1)
 		goto retry;
 	if (err)
@@ -1192,6 +1194,9 @@ static int netlink_recvmsg(struct kiocb *kiocb, struct socket *sock,
 		msg->msg_namelen = sizeof(*addr);
 	}
 
+	if (nlk->flags & NETLINK_RECV_PKTINFO)
+		netlink_cmsg_recv_pktinfo(msg, skb);
+
 	if (NULL == siocb->scm) {
 		memset(&scm, 0, sizeof(scm));
 		siocb->scm = &scm;
@@ -1203,8 +1208,6 @@ static int netlink_recvmsg(struct kiocb *kiocb, struct socket *sock,
 		netlink_dump(sk);
 
 	scm_recv(sock, msg, siocb->scm, flags);
-	if (nlk->flags & NETLINK_RECV_PKTINFO)
-		netlink_cmsg_recv_pktinfo(msg, skb);
 
 out:
 	netlink_rcv_wake(sk);
@@ -1422,7 +1425,7 @@ static int netlink_rcv_skb(struct sk_buff *skb, int (*cb)(struct sk_buff *,
 	while (skb->len >= nlmsg_total_size(0)) {
 		nlh = (struct nlmsghdr *) skb->data;
 
-		if (skb->len < nlh->nlmsg_len)
+		if (nlh->nlmsg_len < NLMSG_HDRLEN || skb->len < nlh->nlmsg_len)
 			return 0;
 
 		total_len = min(NLMSG_ALIGN(nlh->nlmsg_len), skb->len);
@@ -1656,7 +1659,7 @@ int netlink_unregister_notifier(struct notifier_block *nb)
 	return notifier_chain_unregister(&netlink_chain, nb);
 }
                 
-static struct proto_ops netlink_ops = {
+static const struct proto_ops netlink_ops = {
 	.family =	PF_NETLINK,
 	.owner =	THIS_MODULE,
 	.release =	netlink_release,

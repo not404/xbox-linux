@@ -10,6 +10,7 @@
 #include <linux/nodemask.h>
 #include <asm/sn/types.h>
 #include <asm/sn/addrs.h>
+#include <asm/sn/sn_feature_sets.h>
 #include <asm/sn/geo.h>
 #include <asm/sn/io.h>
 #include <asm/sn/pcibr_provider.h>
@@ -21,6 +22,10 @@
 #include <asm/sn/tioce_provider.h>
 #include "xtalk/hubdev.h"
 #include "xtalk/xwidgetdev.h"
+
+
+extern void sn_init_cpei_timer(void);
+extern void register_sn_procfs(void);
 
 static struct list_head sn_sysdata_list;
 
@@ -39,12 +44,12 @@ struct brick {
 	struct slab_info slab_info[MAX_SLABS + 1];
 };
 
-int sn_ioif_inited = 0;		/* SN I/O infrastructure initialized? */
+int sn_ioif_inited;		/* SN I/O infrastructure initialized? */
 
 struct sn_pcibus_provider *sn_pci_provider[PCIIO_ASIC_MAX_TYPES];	/* indexed by asic type */
 
-static int max_segment_number = 0; /* Default highest segment number */
-static int max_pcibus_number = 255; /* Default highest pci bus number */
+static int max_segment_number;		 /* Default highest segment number */
+static int max_pcibus_number = 255;	/* Default highest pci bus number */
 
 /*
  * Hooks and struct for unsupported pci providers
@@ -76,31 +81,29 @@ static struct sn_pcibus_provider sn_pci_default_provider = {
 };
 
 /*
- * Retrieve the DMA Flush List given nasid.  This list is needed 
- * to implement the WAR - Flush DMA data on PIO Reads.
+ * Retrieve the DMA Flush List given nasid, widget, and device.
+ * This list is needed to implement the WAR - Flush DMA data on PIO Reads.
  */
-static inline uint64_t
-sal_get_widget_dmaflush_list(u64 nasid, u64 widget_num, u64 address)
+static inline u64
+sal_get_device_dmaflush_list(u64 nasid, u64 widget_num, u64 device_num,
+			     u64 address)
 {
-
 	struct ia64_sal_retval ret_stuff;
 	ret_stuff.status = 0;
 	ret_stuff.v0 = 0;
 
 	SAL_CALL_NOLOCK(ret_stuff,
-			(u64) SN_SAL_IOIF_GET_WIDGET_DMAFLUSH_LIST,
-			(u64) nasid, (u64) widget_num, (u64) address, 0, 0, 0,
-			0);
-	return ret_stuff.v0;
-
+			(u64) SN_SAL_IOIF_GET_DEVICE_DMAFLUSH_LIST,
+			(u64) nasid, (u64) widget_num,
+			(u64) device_num, (u64) address, 0, 0, 0);
+	return ret_stuff.status;
 }
 
 /*
  * Retrieve the hub device info structure for the given nasid.
  */
-static inline uint64_t sal_get_hubdev_info(u64 handle, u64 address)
+static inline u64 sal_get_hubdev_info(u64 handle, u64 address)
 {
-
 	struct ia64_sal_retval ret_stuff;
 	ret_stuff.status = 0;
 	ret_stuff.v0 = 0;
@@ -114,9 +117,8 @@ static inline uint64_t sal_get_hubdev_info(u64 handle, u64 address)
 /*
  * Retrieve the pci bus information given the bus number.
  */
-static inline uint64_t sal_get_pcibus_info(u64 segment, u64 busnum, u64 address)
+static inline u64 sal_get_pcibus_info(u64 segment, u64 busnum, u64 address)
 {
-
 	struct ia64_sal_retval ret_stuff;
 	ret_stuff.status = 0;
 	ret_stuff.v0 = 0;
@@ -130,9 +132,9 @@ static inline uint64_t sal_get_pcibus_info(u64 segment, u64 busnum, u64 address)
 /*
  * Retrieve the pci device information given the bus and device|function number.
  */
-static inline uint64_t
-sal_get_pcidev_info(u64 segment, u64 bus_number, u64 devfn, u64 pci_dev, 
-			u64 sn_irq_info)
+static inline u64
+sal_get_pcidev_info(u64 segment, u64 bus_number, u64 devfn, u64 pci_dev,
+		    u64 sn_irq_info)
 {
 	struct ia64_sal_retval ret_stuff;
 	ret_stuff.status = 0;
@@ -140,7 +142,7 @@ sal_get_pcidev_info(u64 segment, u64 bus_number, u64 devfn, u64 pci_dev,
 
 	SAL_CALL_NOLOCK(ret_stuff,
 			(u64) SN_SAL_IOIF_GET_PCIDEV_INFO,
-			(u64) segment, (u64) bus_number, (u64) devfn, 
+			(u64) segment, (u64) bus_number, (u64) devfn,
 			(u64) pci_dev,
 			sn_irq_info, 0, 0);
 	return ret_stuff.v0;
@@ -164,18 +166,56 @@ sn_pcidev_info_get(struct pci_dev *dev)
 	return NULL;
 }
 
+/* Older PROM flush WAR
+ *
+ * 01/16/06 -- This war will be in place until a new official PROM is released.
+ * Additionally note that the struct sn_flush_device_war also has to be
+ * removed from arch/ia64/sn/include/xtalk/hubdev.h
+ */
+static u8 war_implemented = 0;
+
+static s64 sn_device_fixup_war(u64 nasid, u64 widget, int device,
+			       struct sn_flush_device_common *common)
+{
+	struct sn_flush_device_war *war_list;
+	struct sn_flush_device_war *dev_entry;
+	struct ia64_sal_retval isrv = {0,0,0,0};
+
+	if (!war_implemented) {
+		printk(KERN_WARNING "PROM version < 4.50 -- implementing old "
+		       "PROM flush WAR\n");
+		war_implemented = 1;
+	}
+
+	war_list = kzalloc(DEV_PER_WIDGET * sizeof(*war_list), GFP_KERNEL);
+	if (!war_list)
+		BUG();
+
+	SAL_CALL_NOLOCK(isrv, SN_SAL_IOIF_GET_WIDGET_DMAFLUSH_LIST,
+			nasid, widget, __pa(war_list), 0, 0, 0 ,0);
+	if (isrv.status)
+		panic("sn_device_fixup_war failed: %s\n",
+		      ia64_sal_strerror(isrv.status));
+
+	dev_entry = war_list + device;
+	memcpy(common,dev_entry, sizeof(*common));
+	kfree(war_list);
+
+	return isrv.status;
+}
+
 /*
- * sn_fixup_ionodes() - This routine initializes the HUB data strcuture for 
+ * sn_fixup_ionodes() - This routine initializes the HUB data strcuture for
  *	each node in the system.
  */
-static void sn_fixup_ionodes(void)
+static void __init sn_fixup_ionodes(void)
 {
-
-	struct sn_flush_device_list *sn_flush_device_list;
+	struct sn_flush_device_kernel *sn_flush_device_kernel;
+	struct sn_flush_device_kernel *dev_entry;
 	struct hubdev_info *hubdev;
-	uint64_t status;
-	uint64_t nasid;
-	int i, widget;
+	u64 status;
+	u64 nasid;
+	int i, widget, device, size;
 
 	/*
 	 * Get SGI Specific HUB chipset information.
@@ -186,7 +226,7 @@ static void sn_fixup_ionodes(void)
 		nasid = cnodeid_to_nasid(i);
 		hubdev->max_segment_number = 0xffffffff;
 		hubdev->max_pcibus_number = 0xff;
-		status = sal_get_hubdev_info(nasid, (uint64_t) __pa(hubdev));
+		status = sal_get_hubdev_info(nasid, (u64) __pa(hubdev));
 		if (status)
 			continue;
 
@@ -211,40 +251,49 @@ static void sn_fixup_ionodes(void)
 		if (!hubdev->hdi_flush_nasid_list.widget_p)
 			continue;
 
+		size = (HUB_WIDGET_ID_MAX + 1) *
+			sizeof(struct sn_flush_device_kernel *);
 		hubdev->hdi_flush_nasid_list.widget_p =
-		    kmalloc((HUB_WIDGET_ID_MAX + 1) *
-			    sizeof(struct sn_flush_device_list *), GFP_KERNEL);
-
-		memset(hubdev->hdi_flush_nasid_list.widget_p, 0x0,
-		       (HUB_WIDGET_ID_MAX + 1) *
-		       sizeof(struct sn_flush_device_list *));
+			kzalloc(size, GFP_KERNEL);
+		if (!hubdev->hdi_flush_nasid_list.widget_p)
+			BUG();
 
 		for (widget = 0; widget <= HUB_WIDGET_ID_MAX; widget++) {
-			sn_flush_device_list = kmalloc(DEV_PER_WIDGET *
-						       sizeof(struct
-							      sn_flush_device_list),
-						       GFP_KERNEL);
-			memset(sn_flush_device_list, 0x0,
-			       DEV_PER_WIDGET *
-			       sizeof(struct sn_flush_device_list));
+			size = DEV_PER_WIDGET *
+				sizeof(struct sn_flush_device_kernel);
+			sn_flush_device_kernel = kzalloc(size, GFP_KERNEL);
+			if (!sn_flush_device_kernel)
+				BUG();
 
-			status =
-			    sal_get_widget_dmaflush_list(nasid, widget,
-							 (uint64_t)
-							 __pa
-							 (sn_flush_device_list));
-			if (status) {
-				kfree(sn_flush_device_list);
-				continue;
+			dev_entry = sn_flush_device_kernel;
+			for (device = 0; device < DEV_PER_WIDGET;
+			     device++,dev_entry++) {
+				size = sizeof(struct sn_flush_device_common);
+				dev_entry->common = kzalloc(size, GFP_KERNEL);
+				if (!dev_entry->common)
+					BUG();
+
+				if (sn_prom_feature_available(
+						       PRF_DEVICE_FLUSH_LIST))
+					status = sal_get_device_dmaflush_list(
+						     nasid, widget, device,
+						     (u64)(dev_entry->common));
+				else
+					status = sn_device_fixup_war(nasid,
+						     widget, device,
+						     dev_entry->common);
+				if (status != SALRET_OK)
+					panic("SAL call failed: %s\n",
+					      ia64_sal_strerror(status));
+
+				spin_lock_init(&dev_entry->sfdl_flush_lock);
 			}
 
-			spin_lock_init(&sn_flush_device_list->sfdl_flush_lock);
-			hubdev->hdi_flush_nasid_list.widget_p[widget] =
-			    sn_flush_device_list;
-		}
-
+			if (sn_flush_device_kernel)
+				hubdev->hdi_flush_nasid_list.widget_p[widget] =
+						       sn_flush_device_kernel;
+	        }
 	}
-
 }
 
 /*
@@ -256,7 +305,7 @@ static void sn_fixup_ionodes(void)
  */
 static void
 sn_pci_window_fixup(struct pci_dev *dev, unsigned int count,
-		    int64_t * pci_addrs)
+		    s64 * pci_addrs)
 {
 	struct pci_controller *controller = PCI_CONTROLLER(dev->bus);
 	unsigned int i;
@@ -316,20 +365,19 @@ void sn_pci_fixup_slot(struct pci_dev *dev)
  	struct pci_bus *host_pci_bus;
  	struct pci_dev *host_pci_dev;
 	struct pcidev_info *pcidev_info;
-	int64_t pci_addrs[PCI_ROM_RESOURCE + 1];
+	s64 pci_addrs[PCI_ROM_RESOURCE + 1];
  	struct sn_irq_info *sn_irq_info;
  	unsigned long size;
  	unsigned int bus_no, devfn;
 
 	pci_dev_get(dev); /* for the sysdata pointer */
 	pcidev_info = kzalloc(sizeof(struct pcidev_info), GFP_KERNEL);
-	if (pcidev_info <= 0)
+	if (!pcidev_info)
 		BUG();		/* Cannot afford to run out of memory */
 
-	sn_irq_info = kmalloc(sizeof(struct sn_irq_info), GFP_KERNEL);
-	if (sn_irq_info <= 0)
+	sn_irq_info = kzalloc(sizeof(struct sn_irq_info), GFP_KERNEL);
+	if (!sn_irq_info)
 		BUG();		/* Cannot afford to run out of memory */
-	memset(sn_irq_info, 0, sizeof(struct sn_irq_info));
 
 	/* Call to retrieve pci device information needed by kernel. */
 	status = sal_get_pcidev_info((u64) segment, (u64) dev->bus->number, 
@@ -407,6 +455,13 @@ void sn_pci_fixup_slot(struct pci_dev *dev)
 		pcidev_info->pdi_sn_irq_info = NULL;
 		kfree(sn_irq_info);
 	}
+
+	/*
+	 * MSI currently not supported on altix.  Remove this when
+	 * the MSI abstraction patches are integrated into the kernel
+	 * (sometime after 2.6.16 releases)
+	 */
+	dev->no_msi = 1;
 }
 
 /*
@@ -415,13 +470,13 @@ void sn_pci_fixup_slot(struct pci_dev *dev)
  */
 void sn_pci_controller_fixup(int segment, int busnum, struct pci_bus *bus)
 {
-	int status = 0;
+	int status;
 	int nasid, cnode;
 	struct pci_controller *controller;
 	struct sn_pci_controller *sn_controller;
 	struct pcibus_bussoft *prom_bussoft_ptr;
 	struct hubdev_info *hubdev_info;
-	void *provider_soft = NULL;
+	void *provider_soft;
 	struct sn_pcibus_provider *provider;
 
  	status = sal_get_pcibus_info((u64) segment, (u64) busnum,
@@ -468,6 +523,8 @@ void sn_pci_controller_fixup(int segment, int busnum, struct pci_bus *bus)
 	bus->sysdata = controller;
 	if (provider->bus_fixup)
 		provider_soft = (*provider->bus_fixup) (prom_bussoft_ptr, controller);
+	else
+		provider_soft = NULL;
 
 	if (provider_soft == NULL) {
 		/* fixup failed or not applicable */
@@ -550,15 +607,15 @@ void sn_bus_store_sysdata(struct pci_dev *dev)
 void sn_bus_free_sysdata(void)
 {
 	struct sysdata_el *element;
-	struct list_head *list;
+	struct list_head *list, *safe;
 
-sn_sysdata_free_start:
-	list_for_each(list, &sn_sysdata_list) {
+	list_for_each_safe(list, safe, &sn_sysdata_list) {
 		element = list_entry(list, struct sysdata_el, entry);
 		list_del(&element->entry);
+		list_del(&(((struct pcidev_info *)
+			     (element->sysdata))->pdi_list));
 		kfree(element->sysdata);
 		kfree(element);
-		goto sn_sysdata_free_start;
 	}
 	return;
 }
@@ -571,13 +628,8 @@ sn_sysdata_free_start:
 
 static int __init sn_pci_init(void)
 {
-	int i = 0;
-	int j = 0;
+	int i, j;
 	struct pci_dev *pci_dev = NULL;
-	extern void sn_init_cpei_timer(void);
-#ifdef CONFIG_PROC_FS
-	extern void register_sn_procfs(void);
-#endif
 
 	if (!ia64_platform_is("sn2") || IS_RUNNING_ON_FAKE_PROM())
 		return 0;
@@ -633,32 +685,29 @@ static int __init sn_pci_init(void)
  */
 void hubdev_init_node(nodepda_t * npda, cnodeid_t node)
 {
-
 	struct hubdev_info *hubdev_info;
+	int size;
+	pg_data_t *pg;
+
+	size = sizeof(struct hubdev_info);
 
 	if (node >= num_online_nodes())	/* Headless/memless IO nodes */
-		hubdev_info =
-		    (struct hubdev_info *)alloc_bootmem_node(NODE_DATA(0),
-							     sizeof(struct
-								    hubdev_info));
+		pg = NODE_DATA(0);
 	else
-		hubdev_info =
-		    (struct hubdev_info *)alloc_bootmem_node(NODE_DATA(node),
-							     sizeof(struct
-								    hubdev_info));
-	npda->pdinfo = (void *)hubdev_info;
+		pg = NODE_DATA(node);
 
+	hubdev_info = (struct hubdev_info *)alloc_bootmem_node(pg, size);
+
+	npda->pdinfo = (void *)hubdev_info;
 }
 
 geoid_t
 cnodeid_get_geoid(cnodeid_t cnode)
 {
-
 	struct hubdev_info *hubdev;
 
 	hubdev = (struct hubdev_info *)(NODEPDA(cnode)->pdinfo);
 	return hubdev->hdi_geoid;
-
 }
 
 subsys_initcall(sn_pci_init);

@@ -49,6 +49,7 @@
 #include <linux/interrupt.h>
 #include <linux/ctype.h>
 #include <linux/dma-mapping.h>
+#include <linux/platform_device.h>
 
 #include <asm/mach-au1x00/au1000.h>
 
@@ -379,7 +380,7 @@ void au1100fb_fb_rotate(struct fb_info *fbi, int angle)
  * Map video memory in user space. We don't use the generic fb_mmap method mainly
  * to allow the use of the TLB streaming flag (CCA=6)
  */
-int au1100fb_fb_mmap(struct fb_info *fbi, struct file *file, struct vm_area_struct *vma)
+int au1100fb_fb_mmap(struct fb_info *fbi, struct vm_area_struct *vma)
 {
 	struct au1100fb_device *fbdev = to_au1100fb_device(fbi);
 	unsigned int len;
@@ -406,7 +407,7 @@ int au1100fb_fb_mmap(struct fb_info *fbi, struct file *file, struct vm_area_stru
 
 	vma->vm_flags |= VM_IO;
 
-	if (io_remap_page_range(vma, vma->vm_start, off,
+	if (io_remap_pfn_range(vma, vma->vm_start, off >> PAGE_SHIFT,
 				vma->vm_end - vma->vm_start,
 				vma->vm_page_prot)) {
 		return -EAGAIN;

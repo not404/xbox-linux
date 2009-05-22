@@ -253,7 +253,7 @@ static void arcfb_lcd_update_page(struct arcfb_par *par, unsigned int upper,
 {
 	unsigned char *src;
 	unsigned int xindex, yindex, chipindex, linesize;
-	int i, count;
+	int i;
 	unsigned char val;
 	unsigned char bitmask, rightshift;
 
@@ -282,7 +282,6 @@ static void arcfb_lcd_update_page(struct arcfb_par *par, unsigned int upper,
 		}
 		ks108_writeb_data(par, chipindex, val);
 		left++;
-		count++;
 		if (bitmask == 0x80) {
 			bitmask = 1;
 			src++;
@@ -366,7 +365,8 @@ static void arcfb_lcd_update(struct arcfb_par *par, unsigned int dx,
 	}
 }
 
-void arcfb_fillrect(struct fb_info *info, const struct fb_fillrect *rect)
+static void arcfb_fillrect(struct fb_info *info,
+			   const struct fb_fillrect *rect)
 {
 	struct arcfb_par *par = info->par;
 
@@ -376,7 +376,8 @@ void arcfb_fillrect(struct fb_info *info, const struct fb_fillrect *rect)
 	arcfb_lcd_update(par, rect->dx, rect->dy, rect->width, rect->height);
 }
 
-void arcfb_copyarea(struct fb_info *info, const struct fb_copyarea *area)
+static void arcfb_copyarea(struct fb_info *info,
+			   const struct fb_copyarea *area)
 {
 	struct arcfb_par *par = info->par;
 
@@ -386,7 +387,7 @@ void arcfb_copyarea(struct fb_info *info, const struct fb_copyarea *area)
 	arcfb_lcd_update(par, area->dx, area->dy, area->width, area->height);
 }
 
-void arcfb_imageblit(struct fb_info *info, const struct fb_image *image)
+static void arcfb_imageblit(struct fb_info *info, const struct fb_image *image)
 {
 	struct arcfb_par *par = info->par;
 
@@ -397,9 +398,8 @@ void arcfb_imageblit(struct fb_info *info, const struct fb_image *image)
 				image->height);
 }
 
-static int arcfb_ioctl(struct inode *inode, struct file *file,
-			  unsigned int cmd, unsigned long arg,
-			  struct fb_info *info)
+static int arcfb_ioctl(struct fb_info *info,
+			  unsigned int cmd, unsigned long arg)
 {
 	void __user *argp = (void __user *)arg;
 	struct arcfb_par *par = info->par;
@@ -459,11 +459,11 @@ static ssize_t arcfb_write(struct file *file, const char __user *buf, size_t cou
 	inode = file->f_dentry->d_inode;
 	fbidx = iminor(inode);
 	info = registered_fb[fbidx];
-	par = info->par;
 
 	if (!info || !info->screen_base)
 		return -ENODEV;
 
+	par = info->par;
 	xres = info->var.xres;
 	fbmemlength = (xres * info->var.yres)/8;
 

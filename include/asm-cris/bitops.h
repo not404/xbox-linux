@@ -240,6 +240,7 @@ static inline int test_bit(int nr, const volatile unsigned long *addr)
  */
 
 #define fls(x) generic_fls(x)
+#define fls64(x)   generic_fls64(x)
 
 /*
  * hweightN - returns the hamming weight of a N-bit word
@@ -289,7 +290,7 @@ static inline int find_next_zero_bit (const unsigned long * addr, int size, int 
 	tmp = *p;
 	
  found_first:
-	tmp |= ~0UL >> size;
+	tmp |= ~0UL << size;
  found_middle:
 	return result + ffz(tmp);
 }

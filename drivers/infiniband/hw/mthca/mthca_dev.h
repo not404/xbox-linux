@@ -43,6 +43,9 @@
 #include <linux/kernel.h>
 #include <linux/pci.h>
 #include <linux/dma-mapping.h>
+#include <linux/timer.h>
+#include <linux/mutex.h>
+
 #include <asm/semaphore.h>
 
 #include "mthca_provider.h"
@@ -50,8 +53,8 @@
 
 #define DRV_NAME	"ib_mthca"
 #define PFX		DRV_NAME ": "
-#define DRV_VERSION	"0.06"
-#define DRV_RELDATE	"June 23, 2005"
+#define DRV_VERSION	"0.07"
+#define DRV_RELDATE	"February 13, 2006"
 
 enum {
 	MTHCA_FLAG_DDR_HIDDEN = 1 << 1,
@@ -110,7 +113,7 @@ enum {
 struct mthca_cmd {
 	struct pci_pool          *pool;
 	int                       use_events;
-	struct semaphore          hcr_sem;
+	struct mutex              hcr_mutex;
 	struct semaphore 	  poll_sem;
 	struct semaphore 	  event_sem;
 	int              	  max_cmds;
@@ -255,7 +258,7 @@ struct mthca_av_table {
 };
 
 struct mthca_mcg_table {
-	struct semaphore   	sem;
+	struct mutex		mutex;
 	struct mthca_alloc 	alloc;
 	struct mthca_icm_table *table;
 };
@@ -300,7 +303,7 @@ struct mthca_dev {
 	u64              ddr_end;
 
 	MTHCA_DECLARE_DOORBELL_LOCK(doorbell_lock)
-	struct semaphore cap_mask_mutex;
+	struct mutex cap_mask_mutex;
 
 	void __iomem    *hcr;
 	void __iomem    *kar;
@@ -519,6 +522,7 @@ int mthca_create_ah(struct mthca_dev *dev,
 int mthca_destroy_ah(struct mthca_dev *dev, struct mthca_ah *ah);
 int mthca_read_ah(struct mthca_dev *dev, struct mthca_ah *ah,
 		  struct ib_ud_header *header);
+int mthca_ah_grh_present(struct mthca_ah *ah);
 
 int mthca_multicast_attach(struct ib_qp *ibqp, union ib_gid *gid, u16 lid);
 int mthca_multicast_detach(struct ib_qp *ibqp, union ib_gid *gid, u16 lid);

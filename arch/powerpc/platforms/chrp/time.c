@@ -21,6 +21,7 @@
 #include <linux/mc146818rtc.h>
 #include <linux/init.h>
 #include <linux/bcd.h>
+#include <linux/ioport.h>
 
 #include <asm/io.h>
 #include <asm/nvram.h>
@@ -37,14 +38,16 @@ static int nvram_data = NVRAM_DATA;
 long __init chrp_time_init(void)
 {
 	struct device_node *rtcs;
+	struct resource r;
 	int base;
 
 	rtcs = find_compatible_devices("rtc", "pnpPNP,b00");
 	if (rtcs == NULL)
 		rtcs = find_compatible_devices("rtc", "ds1385-rtc");
-	if (rtcs == NULL || rtcs->addrs == NULL)
+	if (rtcs == NULL || of_address_to_resource(rtcs, 0, &r))
 		return 0;
-	base = rtcs->addrs[0].address;
+	
+	base = r.start;
 	nvram_as1 = 0;
 	nvram_as0 = base;
 	nvram_data = base + 1;
@@ -163,25 +166,4 @@ void chrp_get_rtc_time(struct rtc_time *tm)
 	tm->tm_mday = day;
 	tm->tm_mon = mon;
 	tm->tm_year = year;
-}
-
-
-void __init chrp_calibrate_decr(void)
-{
-	struct device_node *cpu;
-	unsigned int freq, *fp;
-
-	/*
-	 * The cpu node should have a timebase-frequency property
-	 * to tell us the rate at which the decrementer counts.
-	 */
-	freq = 16666000;		/* hardcoded default */
-	cpu = find_type_devices("cpu");
-	if (cpu != 0) {
-		fp = (unsigned int *)
-			get_property(cpu, "timebase-frequency", NULL);
-		if (fp != 0)
-			freq = *fp;
-	}
-	ppc_tb_freq = freq;
 }

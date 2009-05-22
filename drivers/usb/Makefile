@@ -22,6 +22,7 @@ obj-$(CONFIG_USB_MIDI)		+= class/
 obj-$(CONFIG_USB_PRINTER)	+= class/
 
 obj-$(CONFIG_USB_STORAGE)	+= storage/
+obj-$(CONFIG_USB)		+= storage/
 
 obj-$(CONFIG_USB_AIPTEK)	+= input/
 obj-$(CONFIG_USB_ATI_REMOTE)	+= input/
@@ -37,6 +38,7 @@ obj-$(CONFIG_USB_XPAD)		+= input/
 
 obj-$(CONFIG_USB_DABUSB)	+= media/
 obj-$(CONFIG_USB_DSBR)		+= media/
+obj-$(CONFIG_USB_ET61X251)	+= media/
 obj-$(CONFIG_USB_IBMCAM)	+= media/
 obj-$(CONFIG_USB_KONICAWC)	+= media/
 obj-$(CONFIG_USB_OV511)		+= media/

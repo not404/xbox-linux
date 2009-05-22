@@ -33,6 +33,7 @@
 #include <linux/posix-timers.h>
 #include <linux/cpu.h>
 #include <linux/syscalls.h>
+#include <linux/delay.h>
 
 #include <asm/uaccess.h>
 #include <asm/unistd.h>
@@ -488,13 +489,25 @@ unsigned long next_timer_interrupt(void)
 	struct list_head *list;
 	struct timer_list *nte;
 	unsigned long expires;
+	unsigned long hr_expires = MAX_JIFFY_OFFSET;
+	ktime_t hr_delta;
 	tvec_t *varray[4];
 	int i, j;
+
+	hr_delta = hrtimer_get_next_event();
+	if (hr_delta.tv64 != KTIME_MAX) {
+		struct timespec tsdelta;
+		tsdelta = ktime_to_timespec(hr_delta);
+		hr_expires = timespec_to_jiffies(&tsdelta);
+		if (hr_expires < 3)
+			return hr_expires + jiffies;
+	}
+	hr_expires += jiffies;
 
 	base = &__get_cpu_var(tvec_bases);
 	spin_lock(&base->t_base.lock);
 	expires = base->timer_jiffies + (LONG_MAX >> 1);
-	list = 0;
+	list = NULL;
 
 	/* Look for timer events in tv1. */
 	j = base->timer_jiffies & TVR_MASK;
@@ -541,6 +554,10 @@ found:
 		}
 	}
 	spin_unlock(&base->t_base.lock);
+
+	if (time_before(hr_expires, expires))
+		return hr_expires;
+
 	return expires;
 }
 #endif
@@ -716,12 +733,16 @@ static void second_overflow(void)
 #endif
 }
 
-/* in the NTP reference this is called "hardclock()" */
-static void update_wall_time_one_tick(void)
+/*
+ * Returns how many microseconds we need to add to xtime this tick
+ * in doing an adjustment requested with adjtime.
+ */
+static long adjtime_adjustment(void)
 {
-	long time_adjust_step, delta_nsec;
+	long time_adjust_step;
 
-	if ((time_adjust_step = time_adjust) != 0 ) {
+	time_adjust_step = time_adjust;
+	if (time_adjust_step) {
 		/*
 		 * We are doing an adjtime thing.  Prepare time_adjust_step to
 		 * be within bounds.  Note that a positive time_adjust means we
@@ -732,10 +753,19 @@ static void update_wall_time_one_tick(void)
 		 */
 		time_adjust_step = min(time_adjust_step, (long)tickadj);
 		time_adjust_step = max(time_adjust_step, (long)-tickadj);
+	}
+	return time_adjust_step;
+}
 
+/* in the NTP reference this is called "hardclock()" */
+static void update_wall_time_one_tick(void)
+{
+	long time_adjust_step, delta_nsec;
+
+	time_adjust_step = adjtime_adjustment();
+	if (time_adjust_step)
 		/* Reduce by this step the amount of time left  */
 		time_adjust -= time_adjust_step;
-	}
 	delta_nsec = tick_nsec + time_adjust_step * 1000;
 	/*
 	 * Advance the phase, once it gets to one microsecond, then
@@ -755,6 +785,22 @@ static void update_wall_time_one_tick(void)
 		time_adjust = time_next_adjust;
 		time_next_adjust = 0;
 	}
+}
+
+/*
+ * Return how long ticks are at the moment, that is, how much time
+ * update_wall_time_one_tick will add to xtime next time we call it
+ * (assuming no calls to do_adjtimex in the meantime).
+ * The return value is in fixed-point nanoseconds with SHIFT_SCALE-10
+ * bits to the right of the binary point.
+ * This function has no side-effects.
+ */
+u64 current_tick_length(void)
+{
+	long delta_nsec;
+
+	delta_nsec = tick_nsec + adjtime_adjustment() * 1000;
+	return ((u64) delta_nsec << (SHIFT_SCALE - 10)) + time_adj;
 }
 
 /*
@@ -857,6 +903,7 @@ static void run_timer_softirq(struct softirq_action *h)
 {
 	tvec_base_t *base = &__get_cpu_var(tvec_bases);
 
+ 	hrtimer_run_queues();
 	if (time_after_eq(jiffies, base->timer_jiffies))
 		__run_timers(base);
 }
@@ -894,6 +941,8 @@ static inline void update_times(void)
 void do_timer(struct pt_regs *regs)
 {
 	jiffies_64++;
+	/* prevent loading jiffies before storing new jiffies_64 value. */
+	barrier();
 	update_times();
 	softlockup_tick(regs);
 }
@@ -1118,62 +1167,6 @@ asmlinkage long sys_gettid(void)
 	return current->pid;
 }
 
-static long __sched nanosleep_restart(struct restart_block *restart)
-{
-	unsigned long expire = restart->arg0, now = jiffies;
-	struct timespec __user *rmtp = (struct timespec __user *) restart->arg1;
-	long ret;
-
-	/* Did it expire while we handled signals? */
-	if (!time_after(expire, now))
-		return 0;
-
-	expire = schedule_timeout_interruptible(expire - now);
-
-	ret = 0;
-	if (expire) {
-		struct timespec t;
-		jiffies_to_timespec(expire, &t);
-
-		ret = -ERESTART_RESTARTBLOCK;
-		if (rmtp && copy_to_user(rmtp, &t, sizeof(t)))
-			ret = -EFAULT;
-		/* The 'restart' block is already filled in */
-	}
-	return ret;
-}
-
-asmlinkage long sys_nanosleep(struct timespec __user *rqtp, struct timespec __user *rmtp)
-{
-	struct timespec t;
-	unsigned long expire;
-	long ret;
-
-	if (copy_from_user(&t, rqtp, sizeof(t)))
-		return -EFAULT;
-
-	if ((t.tv_nsec >= 1000000000L) || (t.tv_nsec < 0) || (t.tv_sec < 0))
-		return -EINVAL;
-
-	expire = timespec_to_jiffies(&t) + (t.tv_sec || t.tv_nsec);
-	expire = schedule_timeout_interruptible(expire);
-
-	ret = 0;
-	if (expire) {
-		struct restart_block *restart;
-		jiffies_to_timespec(expire, &t);
-		if (rmtp && copy_to_user(rmtp, &t, sizeof(t)))
-			return -EFAULT;
-
-		restart = &current_thread_info()->restart_block;
-		restart->fn = nanosleep_restart;
-		restart->arg0 = jiffies + expire;
-		restart->arg1 = (unsigned long) rmtp;
-		ret = -ERESTART_RESTARTBLOCK;
-	}
-	return ret;
-}
-
 /*
  * sys_sysinfo - fill in sysinfo struct
  */ 
@@ -1361,8 +1354,8 @@ void __init init_timers(void)
 
 #ifdef CONFIG_TIME_INTERPOLATION
 
-struct time_interpolator *time_interpolator;
-static struct time_interpolator *time_interpolator_list;
+struct time_interpolator *time_interpolator __read_mostly;
+static struct time_interpolator *time_interpolator_list __read_mostly;
 static DEFINE_SPINLOCK(time_interpolator_lock);
 
 static inline u64 time_interpolator_get_cycles(unsigned int src)
@@ -1376,10 +1369,10 @@ static inline u64 time_interpolator_get_cycles(unsigned int src)
 			return x();
 
 		case TIME_SOURCE_MMIO64	:
-			return readq((void __iomem *) time_interpolator->addr);
+			return readq_relaxed((void __iomem *)time_interpolator->addr);
 
 		case TIME_SOURCE_MMIO32	:
-			return readl((void __iomem *) time_interpolator->addr);
+			return readl_relaxed((void __iomem *)time_interpolator->addr);
 
 		default: return get_cycles();
 	}

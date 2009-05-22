@@ -19,7 +19,6 @@
 
 #include <asm/pgalloc.h>
 #include <asm/page.h>
-#include <asm/io.h>
 #include <asm/setup.h>
 #include <asm/tlbflush.h>
 
@@ -343,6 +342,12 @@ static struct mem_types mem_types[] __initdata = {
 		.prot_sect = PMD_TYPE_SECT | PMD_SECT_UNCACHED |
 				PMD_SECT_AP_WRITE | PMD_SECT_BUFFERABLE |
 				PMD_SECT_TEX(1),
+		.domain    = DOMAIN_IO,
+	},
+	[MT_NONSHARED_DEVICE] = {
+		.prot_l1   = PMD_TYPE_TABLE,
+		.prot_sect = PMD_TYPE_SECT | PMD_SECT_NONSHARED_DEV |
+				PMD_SECT_AP_WRITE,
 		.domain    = DOMAIN_IO,
 	}
 };

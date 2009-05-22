@@ -1,6 +1,5 @@
 /*
- *
- * linux/drivers/s390/net/qeth_main.c ($Revision: 1.251 $)
+ * linux/drivers/s390/net/qeth_main.c
  *
  * Linux on zSeries OSA Express and HiperSockets support
  *
@@ -11,8 +10,6 @@
  *		 Rewritten by
  *			  Frank Pavlic (fpavlic@de.ibm.com) and
  *		 	  Thomas Spatzier <tspat@de.ibm.com>
- *
- *    $Revision: 1.251 $	 $Date: 2005/05/04 20:19:18 $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -65,6 +62,7 @@
 #include <asm/timex.h>
 #include <asm/semaphore.h>
 #include <asm/uaccess.h>
+#include <asm/s390_rdev.h>
 
 #include "qeth.h"
 #include "qeth_mpc.h"
@@ -72,7 +70,6 @@
 #include "qeth_eddp.h"
 #include "qeth_tso.h"
 
-#define VERSION_QETH_C "$Revision: 1.251 $"
 static const char *version = "qeth S/390 OSA-Express driver";
 
 /**
@@ -519,7 +516,8 @@ __qeth_set_offline(struct ccwgroup_device *cgdev, int recovery_mode)
 	QETH_DBF_TEXT(setup, 3, "setoffl");
 	QETH_DBF_HEX(setup, 3, &card, sizeof(void *));
 	
-	netif_carrier_off(card->dev);
+	if (card->dev && netif_carrier_ok(card->dev))
+		netif_carrier_off(card->dev);
 	recover_flag = card->state;
 	if (qeth_stop_card(card, recovery_mode) == -ERESTARTSYS){
 		PRINT_WARN("Stopping card %s interrupted by user!\n",
@@ -1396,7 +1394,7 @@ qeth_idx_activate_get_answer(struct qeth_channel *channel,
 	channel->ccw.cda = (__u32) __pa(iob->data);
 
 	wait_event(card->wait_q,
-		   atomic_compare_and_swap(0,1,&channel->irq_pending) == 0);
+		   atomic_cmpxchg(&channel->irq_pending, 0, 1) == 0);
 	QETH_DBF_TEXT(setup, 6, "noirqpnd");
 	spin_lock_irqsave(get_ccwdev_lock(channel->ccwdev), flags);
 	rc = ccw_device_start(channel->ccwdev,
@@ -1463,7 +1461,7 @@ qeth_idx_activate_channel(struct qeth_channel *channel,
 	memcpy(QETH_IDX_ACT_QDIO_DEV_REALADDR(iob->data), &temp, 2);
 
 	wait_event(card->wait_q,
-		   atomic_compare_and_swap(0,1,&channel->irq_pending) == 0);
+		   atomic_cmpxchg(&channel->irq_pending, 0, 1) == 0);
 	QETH_DBF_TEXT(setup, 6, "noirqpnd");
 	spin_lock_irqsave(get_ccwdev_lock(channel->ccwdev), flags);
 	rc = ccw_device_start(channel->ccwdev,
@@ -1616,7 +1614,7 @@ qeth_issue_next_read(struct qeth_card *card)
 	}
 	qeth_setup_ccw(&card->read, iob->data, QETH_BUFSIZE);
 	wait_event(card->wait_q,
-		   atomic_compare_and_swap(0,1,&card->read.irq_pending) == 0);
+		   atomic_cmpxchg(&card->read.irq_pending, 0, 1) == 0);
 	QETH_DBF_TEXT(trace, 6, "noirqpnd");
 	rc = ccw_device_start(card->read.ccwdev, &card->read.ccw,
 			      (addr_t) iob, 0, 0);
@@ -1682,6 +1680,7 @@ qeth_cmd_timeout(unsigned long data)
 	spin_unlock_irqrestore(&reply->card->lock, flags);
 }
 
+
 static struct qeth_ipa_cmd *
 qeth_check_ipa_data(struct qeth_card *card, struct qeth_cmd_buffer *iob)
 {
@@ -1702,7 +1701,8 @@ qeth_check_ipa_data(struct qeth_card *card, struct qeth_cmd_buffer *iob)
 					   QETH_CARD_IFNAME(card),
 					   card->info.chpid);
 				card->lan_online = 0;
-				netif_carrier_off(card->dev);
+				if (card->dev && netif_carrier_ok(card->dev))
+					netif_carrier_off(card->dev);
 				return NULL;
 			case IPA_CMD_STARTLAN:
 				PRINT_INFO("Link reestablished on %s "
@@ -1882,7 +1882,7 @@ qeth_send_control_data(struct qeth_card *card, int len,
 	spin_unlock_irqrestore(&card->lock, flags);
 	QETH_DBF_HEX(control, 2, iob->data, QETH_DBF_CONTROL_LEN);
 	wait_event(card->wait_q,
-		   atomic_compare_and_swap(0,1,&card->write.irq_pending) == 0);
+		   atomic_cmpxchg(&card->write.irq_pending, 0, 1) == 0);
 	qeth_prepare_control_data(card, len, iob);
 	if (IS_IPA(iob->data))
 		timer.expires = jiffies + QETH_IPA_TIMEOUT;
@@ -1924,7 +1924,7 @@ qeth_osn_send_control_data(struct qeth_card *card, int len,
 	QETH_DBF_TEXT(trace, 5, "osndctrd");
 
 	wait_event(card->wait_q,
-		   atomic_compare_and_swap(0,1,&card->write.irq_pending) == 0);
+		   atomic_cmpxchg(&card->write.irq_pending, 0, 1) == 0);
 	qeth_prepare_control_data(card, len, iob);
 	QETH_DBF_TEXT(trace, 6, "osnoirqp");
 	spin_lock_irqsave(get_ccwdev_lock(card->write.ccwdev), flags);
@@ -4236,9 +4236,8 @@ qeth_do_send_packet_fast(struct qeth_card *card, struct qeth_qdio_out_q *queue,
 	QETH_DBF_TEXT(trace, 6, "dosndpfa");
 
 	/* spin until we get the queue ... */
-	while (atomic_compare_and_swap(QETH_OUT_Q_UNLOCKED,
-				       QETH_OUT_Q_LOCKED,
-				       &queue->state));
+	while (atomic_cmpxchg(&queue->state, QETH_OUT_Q_UNLOCKED,
+			      QETH_OUT_Q_LOCKED) != QETH_OUT_Q_UNLOCKED);
 	/* ... now we've got the queue */
 	index = queue->next_buf_to_fill;
 	buffer = &queue->bufs[queue->next_buf_to_fill];
@@ -4292,9 +4291,8 @@ qeth_do_send_packet(struct qeth_card *card, struct qeth_qdio_out_q *queue,
 	QETH_DBF_TEXT(trace, 6, "dosndpkt");
 
 	/* spin until we get the queue ... */
-	while (atomic_compare_and_swap(QETH_OUT_Q_UNLOCKED,
-				       QETH_OUT_Q_LOCKED,
-				       &queue->state));
+	while (atomic_cmpxchg(&queue->state, QETH_OUT_Q_UNLOCKED,
+			      QETH_OUT_Q_LOCKED) != QETH_OUT_Q_UNLOCKED);
 	start_index = queue->next_buf_to_fill;
 	buffer = &queue->bufs[queue->next_buf_to_fill];
 	/*
@@ -5567,7 +5565,7 @@ qeth_set_multicast_list(struct net_device *dev)
 	if (card->info.type == QETH_CARD_TYPE_OSN)
 		return ;
 	 
-	QETH_DBF_TEXT(trace,3,"setmulti");
+	QETH_DBF_TEXT(trace, 3, "setmulti");
 	qeth_delete_mc_addresses(card);
 	if (card->options.layer2) {
 		qeth_layer2_add_multicast(card);
@@ -5584,7 +5582,6 @@ out:
 		return;
 	if (qeth_set_thread_start_bit(card, QETH_SET_PROMISC_MODE_THREAD)==0)
 		schedule_work(&card->kernel_thread_starter);
-
 }
 
 static int
@@ -7457,6 +7454,7 @@ qeth_softsetup_card(struct qeth_card *card)
 		card->lan_online = 1;
 	if (card->info.type==QETH_CARD_TYPE_OSN)
 		goto out;
+	qeth_set_large_send(card, card->options.large_send);
 	if (card->options.layer2) {
 		card->dev->features |=
 			NETIF_F_HW_VLAN_FILTER |
@@ -7473,12 +7471,6 @@ qeth_softsetup_card(struct qeth_card *card)
 #endif
 		goto out;
 	}
-	if ((card->options.large_send == QETH_LARGE_SEND_EDDP) ||
-	    (card->options.large_send == QETH_LARGE_SEND_TSO))
-		card->dev->features |= NETIF_F_TSO | NETIF_F_SG;
-	else
-		card->dev->features &= ~(NETIF_F_TSO | NETIF_F_SG);
-
 	if ((rc = qeth_setadapter_parms(card)))
 		QETH_DBF_TEXT_(setup, 2, "2err%d", rc);
 	if ((rc = qeth_start_ipassists(card)))
@@ -8627,12 +8619,7 @@ qeth_init(void)
 {
 	int rc=0;
 
-	PRINT_INFO("loading %s (%s/%s/%s/%s/%s/%s/%s %s %s)\n",
-		   version, VERSION_QETH_C, VERSION_QETH_H,
-		   VERSION_QETH_MPC_H, VERSION_QETH_MPC_C,
-		   VERSION_QETH_FS_H, VERSION_QETH_PROC_C,
-		   VERSION_QETH_SYS_C, QETH_VERSION_IPV6,
-		   QETH_VERSION_VLAN);
+	PRINT_INFO("loading %s\n", version);
 
 	INIT_LIST_HEAD(&qeth_card_list.list);
 	INIT_LIST_HEAD(&qeth_notify_list);

@@ -374,7 +374,6 @@ static struct scsi_host_template mv_sht = {
 	.dma_boundary		= MV_DMA_BOUNDARY,
 	.slave_configure	= ata_scsi_slave_config,
 	.bios_param		= ata_std_bios_param,
-	.ordered_flush		= 1,
 };
 
 static const struct ata_port_operations mv5_ops = {
@@ -431,7 +430,7 @@ static const struct ata_port_operations mv6_ops = {
 	.host_stop		= mv_host_stop,
 };
 
-static struct ata_port_info mv_port_info[] = {
+static const struct ata_port_info mv_port_info[] = {
 	{  /* chip_504x */
 		.sht		= &mv_sht,
 		.host_flags	= MV_COMMON_FLAGS,
@@ -509,6 +508,12 @@ static const struct mv_hw_ops mv6xxx_ops = {
 	.reset_flash		= mv6_reset_flash,
 	.reset_bus		= mv_reset_pci_bus,
 };
+
+/*
+ * module options
+ */
+static int msi;	      /* Use PCI msi; either zero (off, default) or non-zero */
+
 
 /*
  * Functions
@@ -992,6 +997,7 @@ static void mv_qc_prep(struct ata_queued_cmd *qc)
 	case ATA_CMD_READ_EXT:
 	case ATA_CMD_WRITE:
 	case ATA_CMD_WRITE_EXT:
+	case ATA_CMD_WRITE_FUA_EXT:
 		mv_crqb_pack_cmd(cw++, tf->hob_nsect, ATA_REG_NSECT, 0);
 		break;
 #ifdef LIBATA_NCQ		/* FIXME: remove this line when NCQ added */
@@ -1243,8 +1249,10 @@ static void mv_host_intr(struct ata_host_set *host_set, u32 relevant,
 				VPRINTK("port %u IRQ found for qc, "
 					"ata_status 0x%x\n", port,ata_status);
 				/* mark qc status appropriately */
-				if (!(qc->tf.ctl & ATA_NIEN))
-					ata_qc_complete(qc, err_mask);
+				if (!(qc->tf.ctl & ATA_NIEN)) {
+					qc->err_mask |= err_mask;
+					ata_qc_complete(qc);
+				}
 			}
 		}
 	}
@@ -1865,7 +1873,8 @@ static void mv_eng_timeout(struct ata_port *ap)
 	 	 */
 		spin_lock_irqsave(&ap->host_set->lock, flags);
 		qc->scsidone = scsi_finish_command;
-		ata_qc_complete(qc, AC_ERR_OTHER);
+		qc->err_mask |= AC_ERR_OTHER;
+		ata_qc_complete(qc);
 		spin_unlock_irqrestore(&ap->host_set->lock, flags);
 	}
 }
@@ -2189,7 +2198,7 @@ static int mv_init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
 	}
 
 	/* Enable interrupts */
-	if (pci_enable_msi(pdev) == 0) {
+	if (msi && pci_enable_msi(pdev) == 0) {
 		hpriv->hp_flags |= MV_HP_FLAG_MSI;
 	} else {
 		pci_intx(pdev, 1);
@@ -2243,6 +2252,9 @@ MODULE_DESCRIPTION("SCSI low-level driver for Marvell SATA controllers");
 MODULE_LICENSE("GPL");
 MODULE_DEVICE_TABLE(pci, mv_pci_tbl);
 MODULE_VERSION(DRV_VERSION);
+
+module_param(msi, int, 0444);
+MODULE_PARM_DESC(msi, "Enable use of PCI MSI (0=off, 1=on)");
 
 module_init(mv_init);
 module_exit(mv_exit);

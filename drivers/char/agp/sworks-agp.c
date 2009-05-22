@@ -7,6 +7,7 @@
 #include <linux/init.h>
 #include <linux/string.h>
 #include <linux/slab.h>
+#include <linux/jiffies.h>
 #include <linux/agp_backend.h>
 #include "agp.h"
 
@@ -467,9 +468,7 @@ static int __devinit agp_serverworks_probe(struct pci_dev *pdev,
 
 	switch (pdev->device) {
 	case 0x0006:
-		/* ServerWorks CNB20HE
-		Fail silently.*/
-		printk (KERN_ERR PFX "Detected ServerWorks CNB20HE chipset: No AGP present.\n");
+		printk (KERN_ERR PFX "ServerWorks CNB20HE is unsupported due to lack of documentation.\n");
 		return -ENODEV;
 
 	case PCI_DEVICE_ID_SERVERWORKS_HE:

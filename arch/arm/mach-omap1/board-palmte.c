@@ -19,6 +19,7 @@
 #include <linux/init.h>
 #include <linux/platform_device.h>
 #include <linux/notifier.h>
+#include <linux/clk.h>
 
 #include <asm/hardware.h>
 #include <asm/mach-types.h>
@@ -30,10 +31,10 @@
 #include <asm/arch/usb.h>
 #include <asm/arch/board.h>
 #include <asm/arch/common.h>
-#include <asm/hardware/clock.h>
 
 static void __init omap_generic_init_irq(void)
 {
+	omap1_init_common_hw();
 	omap_init_irq();
 }
 
@@ -72,11 +73,10 @@ static void __init omap_generic_init(void)
 
 static void __init omap_generic_map_io(void)
 {
-	omap_map_common_io();
+	omap1_map_common_io();
 }
 
 MACHINE_START(OMAP_PALMTE, "OMAP310 based Palm Tungsten E")
-	.phys_ram	= 0x10000000,
 	.phys_io	= 0xfff00000,
 	.io_pg_offst	= ((0xfef00000) >> 18) & 0xfffc,
 	.boot_params	= 0x10000100,

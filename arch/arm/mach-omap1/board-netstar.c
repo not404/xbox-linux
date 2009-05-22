@@ -65,6 +65,7 @@ static struct omap_board_config_kernel netstar_config[] = {
 
 static void __init netstar_init_irq(void)
 {
+	omap1_init_common_hw();
 	omap_init_irq();
 	omap_gpio_init();
 }
@@ -108,7 +109,7 @@ static void __init netstar_init(void)
 
 static void __init netstar_map_io(void)
 {
-	omap_map_common_io();
+	omap1_map_common_io();
 }
 
 #define MACHINE_PANICED		1
@@ -149,7 +150,6 @@ postcore_initcall(netstar_late_init);
 
 MACHINE_START(NETSTAR, "NetStar OMAP5910")
 	/* Maintainer: Ladislav Michl <michl@2n.cz> */
-	.phys_ram	= 0x10000000,
 	.phys_io	= 0xfff00000,
 	.io_pg_offst	= ((0xfef00000) >> 18) & 0xfffc,
 	.boot_params	= 0x10000100,

@@ -95,7 +95,6 @@ static void iforce_usb_irq(struct urb *urb, struct pt_regs *regs)
 		goto exit;
 	}
 
-	wake_up(&iforce->wait);
 	iforce_process_packet(iforce,
 		(iforce->data[0] << 8) | (urb->actual_length - 1), iforce->data + 1, regs);
 
@@ -235,7 +234,6 @@ static struct usb_device_id iforce_usb_ids [] = {
 MODULE_DEVICE_TABLE (usb, iforce_usb_ids);
 
 struct usb_driver iforce_usb_driver = {
-	.owner =	THIS_MODULE,
 	.name =		"iforce",
 	.probe =	iforce_usb_probe,
 	.disconnect =	iforce_usb_disconnect,

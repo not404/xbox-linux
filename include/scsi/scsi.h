@@ -32,6 +32,12 @@ extern const unsigned char scsi_command_size[8];
 extern const char *const scsi_device_types[MAX_SCSI_DEVICE_CODE];
 
 /*
+ * Special value for scanning to specify scanning or rescanning of all
+ * possible channels, (target) ids, or luns on a given shost.
+ */
+#define SCAN_WILD_CARD	~0
+
+/*
  *      SCSI opcodes
  */
 
@@ -426,5 +432,7 @@ struct scsi_lun {
 
 /* Used to obtain the PCI location of a device */
 #define SCSI_IOCTL_GET_PCI		0x5387
+
+int scsi_execute_in_process_context(void (*fn)(void *data), void *data);
 
 #endif /* _SCSI_SCSI_H */

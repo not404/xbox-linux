@@ -72,6 +72,8 @@ static int get_kobj_path_length(struct kobject *kobj)
 	 * Add 1 to strlen for leading '/' of each level.
 	 */
 	do {
+		if (kobject_name(parent) == NULL)
+			return 0;
 		length += strlen(kobject_name(parent)) + 1;
 		parent = parent->parent;
 	} while (parent);
@@ -107,6 +109,8 @@ char *kobject_get_path(struct kobject *kobj, gfp_t gfp_mask)
 	int len;
 
 	len = get_kobj_path_length(kobj);
+	if (len == 0)
+		return NULL;
 	path = kmalloc(len, gfp_mask);
 	if (!path)
 		return NULL;
@@ -162,6 +166,11 @@ int kobject_add(struct kobject * kobj)
 		return -ENOENT;
 	if (!kobj->k_name)
 		kobj->k_name = kobj->name;
+	if (!kobj->k_name) {
+		pr_debug("kobject attempted to be registered with no name!\n");
+		WARN_ON(1);
+		return -EINVAL;
+	}
 	parent = kobject_get(kobj->parent);
 
 	pr_debug("kobject %s: registering. parent: %s, set: %s\n",
@@ -207,7 +216,7 @@ int kobject_register(struct kobject * kobj)
 			       kobject_name(kobj),error);
 			dump_stack();
 		} else
-			kobject_hotplug(kobj, KOBJ_ADD);
+			kobject_uevent(kobj, KOBJ_ADD);
 	} else
 		error = -EINVAL;
 	return error;
@@ -312,7 +321,7 @@ void kobject_del(struct kobject * kobj)
 void kobject_unregister(struct kobject * kobj)
 {
 	pr_debug("kobject %s: unregistering\n",kobject_name(kobj));
-	kobject_hotplug(kobj, KOBJ_REMOVE);
+	kobject_uevent(kobj, KOBJ_REMOVE);
 	kobject_del(kobj);
 	kobject_put(kobj);
 }

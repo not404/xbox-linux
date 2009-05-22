@@ -17,6 +17,8 @@ static int av_cnt;
 static struct av7110 *av_list[4];
 static struct input_dev *input_dev;
 
+static u8 delay_timer_finished;
+
 static u16 key_map [256] = {
 	KEY_0, KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7,
 	KEY_8, KEY_9, KEY_BACK, 0, KEY_POWER, KEY_MUTE, 0, KEY_INFO,
@@ -112,13 +114,16 @@ static void av7110_emit_key(unsigned long parm)
 	if (timer_pending(&keyup_timer)) {
 		del_timer(&keyup_timer);
 		if (keyup_timer.data != keycode || new_toggle != old_toggle) {
+			delay_timer_finished = 0;
 			input_event(input_dev, EV_KEY, keyup_timer.data, !!0);
 			input_event(input_dev, EV_KEY, keycode, !0);
 		} else
-			input_event(input_dev, EV_KEY, keycode, 2);
-
-	} else
+			if (delay_timer_finished)
+				input_event(input_dev, EV_KEY, keycode, 2);
+	} else {
+		delay_timer_finished = 0;
 		input_event(input_dev, EV_KEY, keycode, !0);
+	}
 
 	keyup_timer.expires = jiffies + UP_TIMEOUT;
 	keyup_timer.data = keycode;
@@ -145,7 +150,21 @@ static void input_register_keys(void)
 
 static void input_repeat_key(unsigned long data)
 {
-       /* dummy routine to disable autorepeat in the input driver */
+	/* called by the input driver after rep[REP_DELAY] ms */
+	delay_timer_finished = 1;
+}
+
+
+static int av7110_setup_irc_config(struct av7110 *av7110, u32 ir_config)
+{
+	int ret = 0;
+
+	dprintk(4, "%p\n", av7110);
+	if (av7110) {
+		ret = av7110_fw_cmd(av7110, COMTYPE_PIDFILTER, SetIR, 1, ir_config);
+		av7110->ir_config = ir_config;
+	}
+	return ret;
 }
 
 
@@ -181,19 +200,6 @@ static int av7110_ir_write_proc(struct file *file, const char __user *buffer,
 }
 
 
-int av7110_setup_irc_config(struct av7110 *av7110, u32 ir_config)
-{
-	int ret = 0;
-
-	dprintk(4, "%p\n", av7110);
-	if (av7110) {
-		ret = av7110_fw_cmd(av7110, COMTYPE_PIDFILTER, SetIR, 1, ir_config);
-		av7110->ir_config = ir_config;
-	}
-	return ret;
-}
-
-
 static void ir_handler(struct av7110 *av7110, u32 ircom)
 {
 	dprintk(4, "ircommand = %08x\n", ircom);
@@ -202,7 +208,7 @@ static void ir_handler(struct av7110 *av7110, u32 ircom)
 }
 
 
-int __init av7110_ir_init(struct av7110 *av7110)
+int __devinit av7110_ir_init(struct av7110 *av7110)
 {
 	static struct proc_dir_entry *e;
 
@@ -242,7 +248,7 @@ int __init av7110_ir_init(struct av7110 *av7110)
 }
 
 
-void __exit av7110_ir_exit(struct av7110 *av7110)
+void __devexit av7110_ir_exit(struct av7110 *av7110)
 {
 	int i;
 

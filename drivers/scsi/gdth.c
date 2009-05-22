@@ -328,7 +328,7 @@
  * hdr_channel:x                x - number of virtual bus for host drives
  * shared_access:Y              disable driver reserve/release protocol to 
  *                              access a shared resource from several nodes, 
- *                              appropiate controller firmware required
+ *                              appropriate controller firmware required
  * shared_access:N              enable driver reserve/release protocol
  * probe_eisa_isa:Y             scan for EISA/ISA controllers
  * probe_eisa_isa:N             do not scan for EISA/ISA controllers
@@ -2816,7 +2816,7 @@ static int gdth_fill_cache_cmd(int hanum,Scsi_Cmnd *scp,ushort hdrive)
             }
 #endif
 
-        } else {
+        } else if (scp->request_bufflen) {
             scp->SCp.Status = GDTH_MAP_SINGLE;
             scp->SCp.Message = (read_write == 1 ? 
                 PCI_DMA_TODEVICE : PCI_DMA_FROMDEVICE);

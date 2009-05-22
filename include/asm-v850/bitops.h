@@ -188,7 +188,7 @@ static inline int find_next_zero_bit(const void *addr, int size, int offset)
 	tmp = *p;
 
  found_first:
-	tmp |= ~0UL >> size;
+	tmp |= ~0UL << size;
  found_middle:
 	return result + ffz (tmp);
 }
@@ -276,6 +276,7 @@ found_middle:
 
 #define ffs(x) generic_ffs (x)
 #define fls(x) generic_fls (x)
+#define fls64(x) generic_fls64(x)
 #define __ffs(x) ffs(x)
 
 

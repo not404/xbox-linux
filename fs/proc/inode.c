@@ -19,7 +19,7 @@
 #include <asm/system.h>
 #include <asm/uaccess.h>
 
-extern void free_proc_entry(struct proc_dir_entry *);
+#include "internal.h"
 
 static inline struct proc_dir_entry * de_get(struct proc_dir_entry *de)
 {
@@ -204,10 +204,6 @@ int proc_fill_super(struct super_block *s, void *data, int silent)
 	root_inode = proc_get_inode(s, PROC_ROOT_INO, &proc_root);
 	if (!root_inode)
 		goto out_no_root;
-	/*
-	 * Fixup the root inode's nlink value
-	 */
-	root_inode->i_nlink += nr_processes();
 	root_inode->i_uid = 0;
 	root_inode->i_gid = 0;
 	s->s_root = d_alloc_root(root_inode);

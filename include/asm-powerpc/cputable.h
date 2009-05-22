@@ -1,7 +1,6 @@
 #ifndef __ASM_POWERPC_CPUTABLE_H
 #define __ASM_POWERPC_CPUTABLE_H
 
-#include <linux/config.h>
 #include <asm/asm-compat.h>
 
 #define PPC_FEATURE_32			0x80000000
@@ -20,6 +19,9 @@
 #define PPC_FEATURE_POWER5		0x00040000
 #define PPC_FEATURE_POWER5_PLUS		0x00020000
 #define PPC_FEATURE_CELL		0x00010000
+#define PPC_FEATURE_BOOKE		0x00008000
+#define PPC_FEATURE_SMT			0x00004000
+#define PPC_FEATURE_ICACHE_SNOOP	0x00002000
 
 #ifdef __KERNEL__
 #ifndef __ASSEMBLY__
@@ -28,9 +30,16 @@
  * via the mkdefs mechanism.
  */
 struct cpu_spec;
-struct op_powerpc_model;
 
 typedef	void (*cpu_setup_t)(unsigned long offset, struct cpu_spec* spec);
+
+enum powerpc_oprofile_type {
+	PPC_OPROFILE_INVALID = 0,
+	PPC_OPROFILE_RS64 = 1,
+	PPC_OPROFILE_POWER4 = 2,
+	PPC_OPROFILE_G4 = 3,
+	PPC_OPROFILE_BOOKE = 4,
+};
 
 struct cpu_spec {
 	/* CPU is matched via (PVR & pvr_mask) == pvr_value */
@@ -57,7 +66,10 @@ struct cpu_spec {
 	char		*oprofile_cpu_type;
 
 	/* Processor specific oprofile operations */
-	struct op_powerpc_model *oprofile_model;
+	enum powerpc_oprofile_type oprofile_type;
+
+	/* Name of processor class, for the ELF AT_PLATFORM entry */
+	char		*platform;
 };
 
 extern struct cpu_spec		*cur_cpu_spec;
@@ -106,6 +118,7 @@ extern void do_cpu_ftr_fixups(unsigned long offset);
 #define CPU_FTR_LOCKLESS_TLBIE		ASM_CONST(0x0000040000000000)
 #define CPU_FTR_MMCRA_SIHV		ASM_CONST(0x0000080000000000)
 #define CPU_FTR_CI_LARGE_PAGE		ASM_CONST(0x0000100000000000)
+#define CPU_FTR_PAUSE_ZERO		ASM_CONST(0x0000200000000000)
 #else
 /* ensure on 32b processors the flags are available for compiling but
  * don't do anything */
@@ -148,9 +161,11 @@ extern void do_cpu_ftr_fixups(unsigned long offset);
 #endif
 
 /* We need to mark all pages as being coherent if we're SMP or we
- * have a 74[45]x and an MPC107 host bridge.
+ * have a 74[45]x and an MPC107 host bridge. Also 83xx requires
+ * it for PCI "streaming/prefetch" to work properly.
  */
-#if defined(CONFIG_SMP) || defined(CONFIG_MPC10X_BRIDGE)
+#if defined(CONFIG_SMP) || defined(CONFIG_MPC10X_BRIDGE) \
+	|| defined(CONFIG_PPC_83xx)
 #define CPU_FTR_COMMON                  CPU_FTR_NEED_COHERENT
 #else
 #define CPU_FTR_COMMON                  0
@@ -266,7 +281,8 @@ enum {
 	CPU_FTRS_G2_LE = CPU_FTR_SPLIT_ID_CACHE | CPU_FTR_MAYBE_CAN_DOZE |
 	    CPU_FTR_USE_TB | CPU_FTR_MAYBE_CAN_NAP | CPU_FTR_HAS_HIGH_BATS,
 	CPU_FTRS_E300 = CPU_FTR_SPLIT_ID_CACHE | CPU_FTR_MAYBE_CAN_DOZE |
-	    CPU_FTR_USE_TB | CPU_FTR_MAYBE_CAN_NAP | CPU_FTR_HAS_HIGH_BATS,
+	    CPU_FTR_USE_TB | CPU_FTR_MAYBE_CAN_NAP | CPU_FTR_HAS_HIGH_BATS |
+	    CPU_FTR_COMMON,
 	CPU_FTRS_CLASSIC32 = CPU_FTR_COMMON | CPU_FTR_SPLIT_ID_CACHE |
 	    CPU_FTR_USE_TB | CPU_FTR_HPTE_TABLE,
 	CPU_FTRS_POWER3_32 = CPU_FTR_COMMON | CPU_FTR_SPLIT_ID_CACHE |
@@ -305,12 +321,18 @@ enum {
 	    CPU_FTR_MMCRA_SIHV,
 	CPU_FTRS_CELL = CPU_FTR_SPLIT_ID_CACHE | CPU_FTR_USE_TB |
 	    CPU_FTR_HPTE_TABLE | CPU_FTR_PPCAS_ARCH_V2 |
-	    CPU_FTR_ALTIVEC_COMP | CPU_FTR_MMCRA | CPU_FTR_SMT,
+	    CPU_FTR_ALTIVEC_COMP | CPU_FTR_MMCRA | CPU_FTR_SMT |
+	    CPU_FTR_CTRL | CPU_FTR_PAUSE_ZERO,
 	CPU_FTRS_COMPATIBLE = CPU_FTR_SPLIT_ID_CACHE | CPU_FTR_USE_TB |
 	    CPU_FTR_HPTE_TABLE | CPU_FTR_PPCAS_ARCH_V2,
 #endif
 
 	CPU_FTRS_POSSIBLE =
+#ifdef __powerpc64__
+	    CPU_FTRS_POWER3 | CPU_FTRS_RS64 | CPU_FTRS_POWER4 |
+	    CPU_FTRS_PPC970 | CPU_FTRS_POWER5 | CPU_FTRS_CELL |
+            CPU_FTR_CI_LARGE_PAGE |
+#else
 #if CLASSIC_PPC
 	    CPU_FTRS_PPC601 | CPU_FTRS_603 | CPU_FTRS_604 | CPU_FTRS_740_NOTAU |
 	    CPU_FTRS_740 | CPU_FTRS_750 | CPU_FTRS_750FX1 |
@@ -344,14 +366,14 @@ enum {
 #ifdef CONFIG_E500
 	    CPU_FTRS_E500 | CPU_FTRS_E500_2 |
 #endif
-#ifdef __powerpc64__
-	    CPU_FTRS_POWER3 | CPU_FTRS_RS64 | CPU_FTRS_POWER4 |
-	    CPU_FTRS_PPC970 | CPU_FTRS_POWER5 | CPU_FTRS_CELL |
-            CPU_FTR_CI_LARGE_PAGE |
-#endif
+#endif /* __powerpc64__ */
 	    0,
 
 	CPU_FTRS_ALWAYS =
+#ifdef __powerpc64__
+	    CPU_FTRS_POWER3 & CPU_FTRS_RS64 & CPU_FTRS_POWER4 &
+	    CPU_FTRS_PPC970 & CPU_FTRS_POWER5 & CPU_FTRS_CELL &
+#else
 #if CLASSIC_PPC
 	    CPU_FTRS_PPC601 & CPU_FTRS_603 & CPU_FTRS_604 & CPU_FTRS_740_NOTAU &
 	    CPU_FTRS_740 & CPU_FTRS_750 & CPU_FTRS_750FX1 &
@@ -385,10 +407,7 @@ enum {
 #ifdef CONFIG_E500
 	    CPU_FTRS_E500 & CPU_FTRS_E500_2 &
 #endif
-#ifdef __powerpc64__
-	    CPU_FTRS_POWER3 & CPU_FTRS_RS64 & CPU_FTRS_POWER4 &
-	    CPU_FTRS_PPC970 & CPU_FTRS_POWER5 & CPU_FTRS_CELL &
-#endif
+#endif /* __powerpc64__ */
 	    CPU_FTRS_POSSIBLE,
 };
 

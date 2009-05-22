@@ -120,7 +120,6 @@ D: Author of lil (Linux Interrupt Latency benchmark)
 D: Fixed the shm swap deallocation at swapoff time (try_to_unuse message)
 D: VM hacker
 D: Various other kernel hacks
-S: Via Cicalini 26
 S: Imola 40026
 S: Italy
 
@@ -1883,6 +1882,7 @@ N: Jaya Kumar
 E: jayalk@intworks.biz
 W: http://www.intworks.biz
 D: Arc monochrome LCD framebuffer driver, x86 reboot fixups
+D: pirq addr, CS5535 alsa audio driver
 S: Gurgaon, India
 S: Kuala Lumpur, Malaysia
 
@@ -3100,7 +3100,7 @@ S: Minto, NSW, 2566
 S: Australia
 
 N: Stephen Smalley
-E: sds@epoch.ncsc.mil
+E: sds@tycho.nsa.gov
 D: portions of the Linux Security Module (LSM) framework and security modules
 
 N: Chris Smith
@@ -3202,7 +3202,7 @@ N: Eugene Surovegin
 E: ebs@ebshome.net
 W: http://kernel.ebshome.net/
 P: 1024D/AE5467F1 FF22 39F1 6728 89F6 6E6C  2365 7602 F33D AE54 67F1
-D: Embedded PowerPC 4xx: I2C, PIC and random hacks/fixes
+D: Embedded PowerPC 4xx: EMAC, I2C, PIC and random hacks/fixes
 S: Sunnyvale, California 94085
 S: USA
 
@@ -3642,11 +3642,9 @@ S: Cambridge. CB1 7EG
 S: England
 
 N: Chris Wright
-E: chrisw@osdl.org
+E: chrisw@sous-sol.org
 D: hacking on LSM framework and security modules.
-S: c/o OSDL
-S: 12725 SW Millikan Way, Suite 400
-S: Beaverton, OR 97005
+S: Portland, OR
 S: USA
 
 N: Michal Wronski

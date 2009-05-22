@@ -425,13 +425,18 @@ ipt_log_target(struct sk_buff **pskb,
 	li.u.log.level = loginfo->level;
 	li.u.log.logflags = loginfo->logflags;
 
-	nf_log_packet(PF_INET, hooknum, *pskb, in, out, &li, loginfo->prefix);
+	if (loginfo->logflags & IPT_LOG_NFLOG)
+		nf_log_packet(PF_INET, hooknum, *pskb, in, out, &li,
+		              loginfo->prefix);
+	else
+		ipt_log_packet(PF_INET, hooknum, *pskb, in, out, &li,
+		               loginfo->prefix);
 
 	return IPT_CONTINUE;
 }
 
 static int ipt_log_checkentry(const char *tablename,
-			      const struct ipt_entry *e,
+			      const void *e,
 			      void *targinfo,
 			      unsigned int targinfosize,
 			      unsigned int hook_mask)

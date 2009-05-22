@@ -34,7 +34,6 @@
 #include <asm/system.h>
 #include <asm/pci-bridge.h>
 #include <asm/irq.h>
-#include <asm/pmac_feature.h>
 #include <asm/dma.h>
 #include <asm/machdep.h>
 #include <asm/hw_irq.h>
@@ -58,7 +57,6 @@ extern void machine_check_exception(struct pt_regs *regs);
 extern void alignment_exception(struct pt_regs *regs);
 extern void program_check_exception(struct pt_regs *regs);
 extern void single_step_exception(struct pt_regs *regs);
-extern int pmac_newworld;
 extern int sys_sigreturn(struct pt_regs *regs);
 
 long long __ashrdi3(long long, int);
@@ -82,10 +80,6 @@ EXPORT_SYMBOL(ppc_n_lost_interrupts);
 EXPORT_SYMBOL(ISA_DMA_THRESHOLD);
 EXPORT_SYMBOL(DMA_MODE_READ);
 EXPORT_SYMBOL(DMA_MODE_WRITE);
-#if defined(CONFIG_PPC_PREP)
-EXPORT_SYMBOL(_prep_type);
-EXPORT_SYMBOL(ucSystemType);
-#endif
 
 #if !defined(__INLINE_BITOPS)
 EXPORT_SYMBOL(set_bit);
@@ -99,15 +93,8 @@ EXPORT_SYMBOL(test_and_change_bit);
 EXPORT_SYMBOL(strcpy);
 EXPORT_SYMBOL(strncpy);
 EXPORT_SYMBOL(strcat);
-EXPORT_SYMBOL(strncat);
-EXPORT_SYMBOL(strchr);
-EXPORT_SYMBOL(strrchr);
-EXPORT_SYMBOL(strpbrk);
-EXPORT_SYMBOL(strstr);
 EXPORT_SYMBOL(strlen);
-EXPORT_SYMBOL(strnlen);
 EXPORT_SYMBOL(strcmp);
-EXPORT_SYMBOL(strncmp);
 EXPORT_SYMBOL(strcasecmp);
 EXPORT_SYMBOL(__div64_32);
 
@@ -192,11 +179,15 @@ EXPORT_SYMBOL(flush_tlb_kernel_range);
 EXPORT_SYMBOL(flush_tlb_page);
 EXPORT_SYMBOL(_tlbie);
 #ifdef CONFIG_ALTIVEC
+#ifndef CONFIG_SMP
 EXPORT_SYMBOL(last_task_used_altivec);
+#endif
 EXPORT_SYMBOL(giveup_altivec);
 #endif /* CONFIG_ALTIVEC */
 #ifdef CONFIG_SPE
+#ifndef CONFIG_SMP
 EXPORT_SYMBOL(last_task_used_spe);
+#endif
 EXPORT_SYMBOL(giveup_spe);
 #endif /* CONFIG_SPE */
 #ifdef CONFIG_SMP
@@ -217,10 +208,6 @@ EXPORT_SYMBOL(adb_try_handler_change);
 EXPORT_SYMBOL(cuda_request);
 EXPORT_SYMBOL(cuda_poll);
 #endif /* CONFIG_ADB_CUDA */
-#ifdef CONFIG_PPC_PMAC
-EXPORT_SYMBOL(sys_ctrler);
-EXPORT_SYMBOL(pmac_newworld);
-#endif
 #ifdef CONFIG_PPC_OF
 EXPORT_SYMBOL(find_devices);
 EXPORT_SYMBOL(find_type_devices);
@@ -245,9 +232,6 @@ EXPORT_SYMBOL(of_node_put);
 #if defined(CONFIG_BOOTX_TEXT)
 EXPORT_SYMBOL(btext_update_display);
 #endif
-#if defined(CONFIG_SCSI) && defined(CONFIG_PPC_PMAC)
-EXPORT_SYMBOL(note_scsi_host);
-#endif
 #ifdef CONFIG_VT
 EXPORT_SYMBOL(kd_mksound);
 #endif
@@ -262,7 +246,6 @@ EXPORT_SYMBOL(memcpy);
 EXPORT_SYMBOL(cacheable_memcpy);
 EXPORT_SYMBOL(memset);
 EXPORT_SYMBOL(memmove);
-EXPORT_SYMBOL(memscan);
 EXPORT_SYMBOL(memcmp);
 EXPORT_SYMBOL(memchr);
 
@@ -274,7 +257,6 @@ EXPORT_SYMBOL(__delay);
 EXPORT_SYMBOL(timer_interrupt);
 EXPORT_SYMBOL(irq_desc);
 EXPORT_SYMBOL(tb_ticks_per_jiffy);
-EXPORT_SYMBOL(get_wchan);
 EXPORT_SYMBOL(console_drivers);
 #ifdef CONFIG_XMON
 EXPORT_SYMBOL(xmon);
@@ -311,7 +293,6 @@ EXPORT_SYMBOL(__res);
 
 EXPORT_SYMBOL(next_mmu_context);
 EXPORT_SYMBOL(set_context);
-EXPORT_SYMBOL_GPL(__handle_mm_fault); /* For MOL */
 EXPORT_SYMBOL(disarm_decr);
 #ifdef CONFIG_PPC_STD_MMU
 extern long mol_trampoline;

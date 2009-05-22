@@ -82,6 +82,16 @@ EXPORT_SYMBOL(num_physpages);
 EXPORT_SYMBOL(high_memory);
 EXPORT_SYMBOL(vmalloc_earlyreserve);
 
+int randomize_va_space __read_mostly = 1;
+
+static int __init disable_randmaps(char *s)
+{
+	randomize_va_space = 0;
+	return 0;
+}
+__setup("norandmaps", disable_randmaps);
+
+
 /*
  * If a p?d_bad entry is found while walking page tables, report
  * the error, before resetting entry to p?d_none.  Usually (but
@@ -613,10 +623,11 @@ static unsigned long zap_pte_range(struct mmu_gather *tlb,
 			(*zap_work)--;
 			continue;
 		}
+
+		(*zap_work) -= PAGE_SIZE;
+
 		if (pte_present(ptent)) {
 			struct page *page;
-
-			(*zap_work) -= PAGE_SIZE;
 
 			page = vm_normal_page(vma, addr, ptent);
 			if (unlikely(details) && page) {
@@ -1498,7 +1509,7 @@ gotten:
 		update_mmu_cache(vma, address, entry);
 		lazy_mmu_prot_update(entry);
 		lru_cache_add_active(new_page);
-		page_add_anon_rmap(new_page, vma, address);
+		page_add_new_anon_rmap(new_page, vma, address);
 
 		/* Free the old page.. */
 		new_page = old_page;
@@ -1770,8 +1781,31 @@ out_big:
 out_busy:
 	return -ETXTBSY;
 }
-
 EXPORT_SYMBOL(vmtruncate);
+
+int vmtruncate_range(struct inode *inode, loff_t offset, loff_t end)
+{
+	struct address_space *mapping = inode->i_mapping;
+
+	/*
+	 * If the underlying filesystem is not going to provide
+	 * a way to truncate a range of blocks (punch a hole) -
+	 * we should return failure right now.
+	 */
+	if (!inode->i_op || !inode->i_op->truncate_range)
+		return -ENOSYS;
+
+	mutex_lock(&inode->i_mutex);
+	down_write(&inode->i_alloc_sem);
+	unmap_mapping_range(mapping, offset, (end - offset), 1);
+	truncate_inode_pages_range(mapping, offset, end);
+	inode->i_op->truncate_range(inode, offset, end);
+	up_write(&inode->i_alloc_sem);
+	mutex_unlock(&inode->i_mutex);
+
+	return 0;
+}
+EXPORT_SYMBOL(vmtruncate_range);
 
 /* 
  * Primitive swap readahead code. We simply read an aligned block of
@@ -1848,6 +1882,7 @@ static int do_swap_page(struct mm_struct *mm, struct vm_area_struct *vma,
 		goto out;
 
 	entry = pte_to_swp_entry(orig_pte);
+again:
 	page = lookup_swap_cache(entry);
 	if (!page) {
  		swapin_readahead(entry, address, vma);
@@ -1871,6 +1906,12 @@ static int do_swap_page(struct mm_struct *mm, struct vm_area_struct *vma,
 
 	mark_page_accessed(page);
 	lock_page(page);
+	if (!PageSwapCache(page)) {
+		/* Page migration has occured */
+		unlock_page(page);
+		page_cache_release(page);
+		goto again;
+	}
 
 	/*
 	 * Back out if somebody else already faulted in this pte.
@@ -1954,8 +1995,7 @@ static int do_anonymous_page(struct mm_struct *mm, struct vm_area_struct *vma,
 			goto release;
 		inc_mm_counter(mm, anon_rss);
 		lru_cache_add_active(page);
-		SetPageReferenced(page);
-		page_add_anon_rmap(page, vma, address);
+		page_add_new_anon_rmap(page, vma, address);
 	} else {
 		/* Map the ZERO_PAGE - vm_page_prot is readonly */
 		page = ZERO_PAGE(address);
@@ -2086,7 +2126,7 @@ retry:
 		if (anon) {
 			inc_mm_counter(mm, anon_rss);
 			lru_cache_add_active(new_page);
-			page_add_anon_rmap(new_page, vma, address);
+			page_add_new_anon_rmap(new_page, vma, address);
 		} else {
 			inc_mm_counter(mm, file_rss);
 			page_add_file_rmap(new_page);
@@ -2244,6 +2284,8 @@ int __handle_mm_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 
 	return handle_pte_fault(mm, vma, address, pte, pmd, write_access);
 }
+
+EXPORT_SYMBOL_GPL(__handle_mm_fault);
 
 #ifndef __PAGETABLE_PUD_FOLDED
 /*

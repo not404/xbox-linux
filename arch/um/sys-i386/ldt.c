@@ -16,6 +16,7 @@
 #include "choose-mode.h"
 #include "kern.h"
 #include "mode_kern.h"
+#include "os.h"
 
 extern int modify_ldt(int func, void *ptr, unsigned long bytecount);
 
@@ -88,6 +89,7 @@ out:
 #include "skas.h"
 #include "skas_ptrace.h"
 #include "asm/mmu_context.h"
+#include "proc_mm.h"
 
 long write_ldt_entry(struct mm_id * mm_idp, int func, struct user_desc * desc,
 		     void **addr, int done)
@@ -105,7 +107,7 @@ long write_ldt_entry(struct mm_id * mm_idp, int func, struct user_desc * desc,
 		 * So we need to switch child's mm into our userspace, then
 		 * later switch back.
 		 *
-		 * Note: I'm unshure: should interrupts be disabled here?
+		 * Note: I'm unsure: should interrupts be disabled here?
 		 */
 		if(!current->active_mm || current->active_mm == &init_mm ||
 		   mm_idp != &current->active_mm->context.skas.id)
@@ -127,9 +129,7 @@ long write_ldt_entry(struct mm_id * mm_idp, int func, struct user_desc * desc,
 			pid = userspace_pid[cpu];
 		}
 
-		res = ptrace(PTRACE_LDT, pid, 0, (unsigned long) &ldt_op);
-		if(res)
-			res = errno;
+		res = os_ptrace_ldt(pid, 0, (unsigned long) &ldt_op);
 
 		if(proc_mm)
 			put_cpu();
@@ -179,8 +179,7 @@ static long read_ldt_from_host(void __user * ptr, unsigned long bytecount)
 	 */
 
 	cpu = get_cpu();
-	res = ptrace(PTRACE_LDT, userspace_pid[cpu], 0,
-		     (unsigned long) &ptrace_ldt);
+	res = os_ptrace_ldt(userspace_pid[cpu], 0, (unsigned long) &ptrace_ldt);
 	put_cpu();
 	if(res < 0)
 		goto out;
@@ -456,13 +455,14 @@ long init_new_ldt(struct mmu_context_skas * new_mm,
 	int i;
 	long page, err=0;
 	void *addr = NULL;
+	struct proc_mm_op copy;
 
-	memset(&desc, 0, sizeof(desc));
 
 	if(!ptrace_ldt)
 		init_MUTEX(&new_mm->ldt.semaphore);
 
 	if(!from_mm){
+		memset(&desc, 0, sizeof(desc));
 		/*
 		 * We have to initialize a clean ldt.
 		 */
@@ -494,8 +494,26 @@ long init_new_ldt(struct mmu_context_skas * new_mm,
 			}
 		}
 		new_mm->ldt.entry_count = 0;
+
+		goto out;
 	}
-	else if (!ptrace_ldt) {
+
+	if(proc_mm){
+		/* We have a valid from_mm, so we now have to copy the LDT of
+		 * from_mm to new_mm, because using proc_mm an new mm with
+		 * an empty/default LDT was created in new_mm()
+		 */
+		copy = ((struct proc_mm_op) { .op 	= MM_COPY_SEGMENTS,
+					      .u 	=
+					      { .copy_segments =
+							from_mm->id.u.mm_fd } } );
+		i = os_write_file(new_mm->id.u.mm_fd, &copy, sizeof(copy));
+		if(i != sizeof(copy))
+			printk("new_mm : /proc/mm copy_segments failed, "
+			       "err = %d\n", -i);
+	}
+
+	if(!ptrace_ldt) {
 		/* Our local LDT is used to supply the data for
 		 * modify_ldt(READLDT), if PTRACE_LDT isn't available,
 		 * i.e., we have to use the stub for modify_ldt, which
@@ -524,6 +542,7 @@ long init_new_ldt(struct mmu_context_skas * new_mm,
 		up(&from_mm->ldt.semaphore);
 	}
 
+    out:
 	return err;
 }
 

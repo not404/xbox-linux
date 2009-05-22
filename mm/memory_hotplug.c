@@ -42,7 +42,6 @@ extern int sparse_add_one_section(struct zone *zone, unsigned long start_pfn,
 				  int nr_pages);
 static int __add_section(struct zone *zone, unsigned long phys_start_pfn)
 {
-	struct pglist_data *pgdat = zone->zone_pgdat;
 	int nr_pages = PAGES_PER_SECTION;
 	int ret;
 
@@ -131,6 +130,7 @@ int online_pages(unsigned long pfn, unsigned long nr_pages)
 		onlined_pages++;
 	}
 	zone->present_pages += onlined_pages;
+	zone->zone_pgdat->node_present_pages += onlined_pages;
 
 	setup_per_zone_pages_min();
 

@@ -40,15 +40,15 @@ MODULE_LICENSE("GPL");
 #endif
 
 static int xres = CONFIG_INPUT_MOUSEDEV_SCREEN_X;
-module_param(xres, uint, 0);
+module_param(xres, uint, 0644);
 MODULE_PARM_DESC(xres, "Horizontal screen resolution");
 
 static int yres = CONFIG_INPUT_MOUSEDEV_SCREEN_Y;
-module_param(yres, uint, 0);
+module_param(yres, uint, 0644);
 MODULE_PARM_DESC(yres, "Vertical screen resolution");
 
 static unsigned tap_time = 200;
-module_param(tap_time, uint, 0);
+module_param(tap_time, uint, 0644);
 MODULE_PARM_DESC(tap_time, "Tap time for touchpads in absolute mode (msecs)");
 
 struct mousedev_hw_data {
@@ -155,7 +155,7 @@ static void mousedev_abs_event(struct input_dev *dev, struct mousedev *mousedev,
 	switch (code) {
 		case ABS_X:
 			size = dev->absmax[ABS_X] - dev->absmin[ABS_X];
-			if (size == 0) size = xres;
+			if (size == 0) size = xres ? : 1;
 			if (value > dev->absmax[ABS_X]) value = dev->absmax[ABS_X];
 			if (value < dev->absmin[ABS_X]) value = dev->absmin[ABS_X];
 			mousedev->packet.x = ((value - dev->absmin[ABS_X]) * xres) / size;
@@ -164,7 +164,7 @@ static void mousedev_abs_event(struct input_dev *dev, struct mousedev *mousedev,
 
 		case ABS_Y:
 			size = dev->absmax[ABS_Y] - dev->absmin[ABS_Y];
-			if (size == 0) size = yres;
+			if (size == 0) size = yres ? : 1;
 			if (value > dev->absmax[ABS_Y]) value = dev->absmax[ABS_Y];
 			if (value < dev->absmin[ABS_Y]) value = dev->absmin[ABS_Y];
 			mousedev->packet.y = yres - ((value - dev->absmin[ABS_Y]) * yres) / size;
@@ -356,7 +356,7 @@ static void mousedev_free(struct mousedev *mousedev)
 	kfree(mousedev);
 }
 
-static int mixdev_release(void)
+static void mixdev_release(void)
 {
 	struct input_handle *handle;
 
@@ -370,8 +370,6 @@ static int mixdev_release(void)
 				mousedev_free(mousedev);
 		}
 	}
-
-	return 0;
 }
 
 static int mousedev_release(struct inode * inode, struct file * file)
@@ -384,9 +382,8 @@ static int mousedev_release(struct inode * inode, struct file * file)
 
 	if (!--list->mousedev->open) {
 		if (list->mousedev->minor == MOUSEDEV_MIX)
-			return mixdev_release();
-
-		if (!mousedev_mix.open) {
+			mixdev_release();
+		else if (!mousedev_mix.open) {
 			if (list->mousedev->exist)
 				input_close_device(&list->mousedev->handle);
 			else

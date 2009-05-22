@@ -114,7 +114,7 @@ int __cpuinit __cpu_up(unsigned int cpu)
 	 * We need to tell the secondary core where to find
 	 * its stack and the page tables.
 	 */
-	secondary_data.stack = (void *)idle->thread_info + THREAD_START_SP;
+	secondary_data.stack = task_stack_page(idle) + THREAD_START_SP;
 	secondary_data.pgdir = virt_to_phys(pgd);
 	wmb();
 
@@ -245,7 +245,7 @@ void __cpuexit cpu_die(void)
 	__asm__("mov	sp, %0\n"
 	"	b	secondary_start_kernel"
 		:
-		: "r" ((void *)current->thread_info + THREAD_SIZE - 8));
+		: "r" (task_stack_page(current) + THREAD_SIZE - 8));
 }
 #endif /* CONFIG_HOTPLUG_CPU */
 
@@ -338,7 +338,6 @@ void __init smp_prepare_boot_cpu(void)
 
 	per_cpu(cpu_data, cpu).idle = current;
 
-	cpu_set(cpu, cpu_possible_map);
 	cpu_set(cpu, cpu_present_map);
 	cpu_set(cpu, cpu_online_map);
 }

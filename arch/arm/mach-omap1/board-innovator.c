@@ -181,6 +181,7 @@ static void __init innovator_init_smc91x(void)
 
 void innovator_init_irq(void)
 {
+	omap1_init_common_hw();
 	omap_init_irq();
 	omap_gpio_init();
 #ifdef CONFIG_ARCH_OMAP15XX
@@ -285,7 +286,7 @@ static void __init innovator_init(void)
 
 static void __init innovator_map_io(void)
 {
-	omap_map_common_io();
+	omap1_map_common_io();
 
 #ifdef CONFIG_ARCH_OMAP15XX
 	if (cpu_is_omap1510()) {
@@ -303,7 +304,6 @@ static void __init innovator_map_io(void)
 
 MACHINE_START(OMAP_INNOVATOR, "TI-Innovator")
 	/* Maintainer: MontaVista Software, Inc. */
-	.phys_ram	= 0x10000000,
 	.phys_io	= 0xfff00000,
 	.io_pg_offst	= ((0xfef00000) >> 18) & 0xfffc,
 	.boot_params	= 0x10000100,
