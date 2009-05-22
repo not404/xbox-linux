@@ -27,6 +27,7 @@
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/proc_fs.h>
+#include <net/netlink.h>
 #include <net/sock.h>
 #include <net/pkt_sched.h>
 #include <linux/tc_act/tc_pedit.h>
@@ -136,7 +137,7 @@ static int tcf_pedit(struct sk_buff *skb, struct tc_action *a,
 		}
 	}
 
-	pptr = skb->nh.raw;
+	pptr = skb_network_header(skb);
 
 	spin_lock(&p->tcf_lock);
 
@@ -163,8 +164,7 @@ static int tcf_pedit(struct sk_buff *skb, struct tc_action *a,
 				printk("offset must be on 32 bit boundaries\n");
 				goto bad;
 			}
-			if (skb->len < 0 ||
-			    (offset > 0 && offset > skb->len)) {
+			if (offset > 0 && offset > skb->len) {
 				printk("offset %d cant exceed pkt length %d\n",
 				       offset, skb->len);
 				goto bad;
@@ -195,7 +195,7 @@ done:
 static int tcf_pedit_dump(struct sk_buff *skb, struct tc_action *a,
 			  int bind, int ref)
 {
-	unsigned char *b = skb->tail;
+	unsigned char *b = skb_tail_pointer(skb);
 	struct tcf_pedit *p = a->priv;
 	struct tc_pedit *opt;
 	struct tcf_t t;
@@ -226,7 +226,7 @@ static int tcf_pedit_dump(struct sk_buff *skb, struct tc_action *a,
 	return skb->len;
 
 rtattr_failure:
-	skb_trim(skb, b - skb->data);
+	nlmsg_trim(skb, b);
 	kfree(opt);
 	return -1;
 }

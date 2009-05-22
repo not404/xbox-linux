@@ -3,6 +3,7 @@
  * Licensed under the GPL
  */
 
+#include "linux/kernel.h"
 #include "linux/sched.h"
 #include "linux/slab.h"
 #include "linux/list.h"
@@ -13,7 +14,6 @@
 #include "irq_user.h"
 #include "line.h"
 #include "kern.h"
-#include "user_util.h"
 #include "kern_util.h"
 #include "os.h"
 #include "irq_kern.h"

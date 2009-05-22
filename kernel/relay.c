@@ -310,16 +310,13 @@ static struct rchan_callbacks default_channel_callbacks = {
 
 /**
  *	wakeup_readers - wake up readers waiting on a channel
- *	@work: work struct that contains the the channel buffer
+ *	@data: contains the channel buffer
  *
- *	This is the work function used to defer reader waking.  The
- *	reason waking is deferred is that calling directly from write
- *	causes problems if you're writing from say the scheduler.
+ *	This is the timer function used to defer reader waking.
  */
-static void wakeup_readers(struct work_struct *work)
+static void wakeup_readers(unsigned long data)
 {
-	struct rchan_buf *buf =
-		container_of(work, struct rchan_buf, wake_readers.work);
+	struct rchan_buf *buf = (struct rchan_buf *)data;
 	wake_up_interruptible(&buf->read_wait);
 }
 
@@ -337,11 +334,9 @@ static void __relay_reset(struct rchan_buf *buf, unsigned int init)
 	if (init) {
 		init_waitqueue_head(&buf->read_wait);
 		kref_init(&buf->kref);
-		INIT_DELAYED_WORK(&buf->wake_readers, NULL);
-	} else {
-		cancel_delayed_work(&buf->wake_readers);
-		flush_scheduled_work();
-	}
+		setup_timer(&buf->timer, wakeup_readers, (unsigned long)buf);
+	} else
+		del_timer_sync(&buf->timer);
 
 	buf->subbufs_produced = 0;
 	buf->subbufs_consumed = 0;
@@ -447,8 +442,7 @@ end:
 static void relay_close_buf(struct rchan_buf *buf)
 {
 	buf->finalized = 1;
-	cancel_delayed_work(&buf->wake_readers);
-	flush_scheduled_work();
+	del_timer_sync(&buf->timer);
 	kref_put(&buf->kref, relay_remove_buf);
 }
 
@@ -490,6 +484,7 @@ static int __cpuinit relay_hotcpu_callback(struct notifier_block *nb,
 
 	switch(action) {
 	case CPU_UP_PREPARE:
+	case CPU_UP_PREPARE_FROZEN:
 		mutex_lock(&relay_channels_mutex);
 		list_for_each_entry(chan, &relay_channels, list) {
 			if (chan->buf[hotcpu])
@@ -506,6 +501,7 @@ static int __cpuinit relay_hotcpu_callback(struct notifier_block *nb,
 		mutex_unlock(&relay_channels_mutex);
 		break;
 	case CPU_DEAD:
+	case CPU_DEAD_FROZEN:
 		/* No need to flush the cpu : will be flushed upon
 		 * final relay_flush() call. */
 		break;
@@ -608,11 +604,14 @@ size_t relay_switch_subbuf(struct rchan_buf *buf, size_t length)
 		buf->dentry->d_inode->i_size += buf->chan->subbuf_size -
 			buf->padding[old_subbuf];
 		smp_mb();
-		if (waitqueue_active(&buf->read_wait)) {
-			PREPARE_DELAYED_WORK(&buf->wake_readers,
-					     wakeup_readers);
-			schedule_delayed_work(&buf->wake_readers, 1);
-		}
+		if (waitqueue_active(&buf->read_wait))
+			/*
+			 * Calling wake_up_interruptible() from here
+			 * will deadlock if we happen to be logging
+			 * from the scheduler (trying to re-grab
+			 * rq->lock), so defer it.
+			 */
+			__mod_timer(&buf->timer, jiffies + 1);
 	}
 
 	old = buf->data;
@@ -813,7 +812,10 @@ static void relay_file_read_consume(struct rchan_buf *buf,
 	}
 
 	buf->bytes_consumed += bytes_consumed;
-	read_subbuf = read_pos / buf->chan->subbuf_size;
+	if (!read_pos)
+		read_subbuf = buf->subbufs_consumed % n_subbufs;
+	else
+		read_subbuf = read_pos / buf->chan->subbuf_size;
 	if (buf->bytes_consumed + buf->padding[read_subbuf] == subbuf_size) {
 		if ((read_subbuf == buf->subbufs_produced % n_subbufs) &&
 		    (buf->offset == subbuf_size))
@@ -842,8 +844,9 @@ static int relay_file_read_avail(struct rchan_buf *buf, size_t read_pos)
 	}
 
 	if (unlikely(produced - consumed >= n_subbufs)) {
-		consumed = (produced / n_subbufs) * n_subbufs;
+		consumed = produced - n_subbufs + 1;
 		buf->subbufs_consumed = consumed;
+		buf->bytes_consumed = 0;
 	}
 	
 	produced = (produced % n_subbufs) * subbuf_size + buf->offset;
@@ -900,7 +903,10 @@ static size_t relay_file_read_start_pos(size_t read_pos,
 	size_t read_subbuf, padding, padding_start, padding_end;
 	size_t subbuf_size = buf->chan->subbuf_size;
 	size_t n_subbufs = buf->chan->n_subbufs;
+	size_t consumed = buf->subbufs_consumed % n_subbufs;
 
+	if (!read_pos)
+		read_pos = consumed * subbuf_size + buf->bytes_consumed;
 	read_subbuf = read_pos / subbuf_size;
 	padding = buf->padding[read_subbuf];
 	padding_start = (read_subbuf + 1) * subbuf_size - padding;

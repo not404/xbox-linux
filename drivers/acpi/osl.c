@@ -30,10 +30,10 @@
 #include <linux/slab.h>
 #include <linux/mm.h>
 #include <linux/pci.h>
-#include <linux/smp_lock.h>
 #include <linux/interrupt.h>
 #include <linux/kmod.h>
 #include <linux/delay.h>
+#include <linux/dmi.h>
 #include <linux/workqueue.h>
 #include <linux/nmi.h>
 #include <linux/acpi.h>
@@ -72,6 +72,22 @@ static unsigned int acpi_irq_irq;
 static acpi_osd_handler acpi_irq_handler;
 static void *acpi_irq_context;
 static struct workqueue_struct *kacpid_wq;
+static struct workqueue_struct *kacpi_notify_wq;
+
+#define	OSI_STRING_LENGTH_MAX 64	/* arbitrary */
+static char osi_additional_string[OSI_STRING_LENGTH_MAX];
+
+#define OSI_LINUX_ENABLED
+#ifdef	OSI_LINUX_ENABLED
+int osi_linux = 1;	/* enable _OSI(Linux) by default */
+#else
+int osi_linux;		/* disable _OSI(Linux) by default */
+#endif
+
+
+#ifdef CONFIG_DMI
+static struct __initdata dmi_system_id acpi_osl_dmi_table[];
+#endif
 
 static void __init acpi_request_region (struct acpi_generic_address *addr,
 	unsigned int length, char *desc)
@@ -121,8 +137,9 @@ static int __init acpi_reserve_resources(void)
 }
 device_initcall(acpi_reserve_resources);
 
-acpi_status acpi_os_initialize(void)
+acpi_status __init acpi_os_initialize(void)
 {
+	dmi_check_system(acpi_osl_dmi_table);
 	return AE_OK;
 }
 
@@ -138,8 +155,9 @@ acpi_status acpi_os_initialize1(void)
 		return AE_NULL_ENTRY;
 	}
 	kacpid_wq = create_singlethread_workqueue("kacpid");
+	kacpi_notify_wq = create_singlethread_workqueue("kacpi_notify");
 	BUG_ON(!kacpid_wq);
-
+	BUG_ON(!kacpi_notify_wq);
 	return AE_OK;
 }
 
@@ -151,6 +169,7 @@ acpi_status acpi_os_terminate(void)
 	}
 
 	destroy_workqueue(kacpid_wq);
+	destroy_workqueue(kacpi_notify_wq);
 
 	return AE_OK;
 }
@@ -604,6 +623,23 @@ void acpi_os_derive_pci_id(acpi_handle rhandle,	/* upper bound  */
 static void acpi_os_execute_deferred(struct work_struct *work)
 {
 	struct acpi_os_dpc *dpc = container_of(work, struct acpi_os_dpc, work);
+	if (!dpc) {
+		printk(KERN_ERR PREFIX "Invalid (NULL) context\n");
+		return;
+	}
+
+	dpc->function(dpc->context);
+	kfree(dpc);
+
+	/* Yield cpu to notify thread */
+	cond_resched();
+
+	return;
+}
+
+static void acpi_os_execute_notify(struct work_struct *work)
+{
+	struct acpi_os_dpc *dpc = container_of(work, struct acpi_os_dpc, work);
 
 	if (!dpc) {
 		printk(KERN_ERR PREFIX "Invalid (NULL) context\n");
@@ -638,14 +674,12 @@ acpi_status acpi_os_execute(acpi_execute_type type,
 	acpi_status status = AE_OK;
 	struct acpi_os_dpc *dpc;
 
-	ACPI_FUNCTION_TRACE("os_queue_for_execution");
-
 	ACPI_DEBUG_PRINT((ACPI_DB_EXEC,
 			  "Scheduling function [%p(%p)] for deferred execution.\n",
 			  function, context));
 
 	if (!function)
-		return_ACPI_STATUS(AE_BAD_PARAMETER);
+		return AE_BAD_PARAMETER;
 
 	/*
 	 * Allocate/initialize DPC structure.  Note that this memory will be
@@ -663,14 +697,21 @@ acpi_status acpi_os_execute(acpi_execute_type type,
 	dpc->function = function;
 	dpc->context = context;
 
-	INIT_WORK(&dpc->work, acpi_os_execute_deferred);
-	if (!queue_work(kacpid_wq, &dpc->work)) {
-		ACPI_DEBUG_PRINT((ACPI_DB_ERROR,
+	if (type == OSL_NOTIFY_HANDLER) {
+		INIT_WORK(&dpc->work, acpi_os_execute_notify);
+		if (!queue_work(kacpi_notify_wq, &dpc->work)) {
+			status = AE_ERROR;
+			kfree(dpc);
+		}
+	} else {
+		INIT_WORK(&dpc->work, acpi_os_execute_deferred);
+		if (!queue_work(kacpid_wq, &dpc->work)) {
+			ACPI_DEBUG_PRINT((ACPI_DB_ERROR,
 				  "Call to queue_work() failed.\n"));
-		kfree(dpc);
-		status = AE_ERROR;
+			status = AE_ERROR;
+			kfree(dpc);
+		}
 	}
-
 	return_ACPI_STATUS(status);
 }
 
@@ -936,20 +977,38 @@ static int __init acpi_os_name_setup(char *str)
 
 __setup("acpi_os_name=", acpi_os_name_setup);
 
+static void enable_osi_linux(int enable) {
+
+	if (osi_linux != enable)
+		printk(KERN_INFO PREFIX "%sabled _OSI(Linux)\n",
+			enable ? "En": "Dis");
+
+	osi_linux = enable;
+	return;
+}
+
 /*
- * _OSI control
+ * Modify the list of "OS Interfaces" reported to BIOS via _OSI
+ *
  * empty string disables _OSI
- * TBD additional string adds to _OSI
+ * string starting with '!' disables that string
+ * otherwise string is added to list, augmenting built-in strings
  */
 static int __init acpi_osi_setup(char *str)
 {
 	if (str == NULL || *str == '\0') {
 		printk(KERN_INFO PREFIX "_OSI method disabled\n");
 		acpi_gbl_create_osi_method = FALSE;
-	} else {
-		/* TBD */
-		printk(KERN_ERR PREFIX "_OSI additional string ignored -- %s\n",
-		       str);
+	} else if (!strcmp("!Linux", str)) {
+		enable_osi_linux(0);
+	} else if (*str == '!') {
+		if (acpi_osi_invalidate(++str) == AE_OK)
+			printk(KERN_INFO PREFIX "Deleted _OSI(%s)\n", str);
+	} else if (!strcmp("Linux", str)) {
+		enable_osi_linux(1);
+	} else if (*osi_additional_string == '\0') {
+		strncpy(osi_additional_string, str, OSI_STRING_LENGTH_MAX);
+		printk(KERN_INFO PREFIX "Added _OSI(%s)\n", str);
 	}
 
 	return 1;
@@ -1119,10 +1178,27 @@ acpi_status acpi_os_release_object(acpi_cache_t * cache, void *object)
 acpi_status
 acpi_os_validate_interface (char *interface)
 {
-
-    return AE_SUPPORT;
+	if (!strncmp(osi_additional_string, interface, OSI_STRING_LENGTH_MAX))
+		return AE_OK;
+	if (!strcmp("Linux", interface)) {
+		printk(KERN_WARNING PREFIX
+			"System BIOS is requesting _OSI(Linux)\n");
+#ifdef	OSI_LINUX_ENABLED
+		printk(KERN_WARNING PREFIX
+			"Please test with \"acpi_osi=!Linux\"\n"
+			"Please send dmidecode "
+			"to linux-acpi@vger.kernel.org\n");
+#else
+		printk(KERN_WARNING PREFIX
+			"If \"acpi_osi=Linux\" works better,\n"
+			"Please send dmidecode "
+			"to linux-acpi@vger.kernel.org\n");
+#endif
+		if(osi_linux)
+			return AE_OK;
+	}
+	return AE_SUPPORT;
 }
-
 
 /******************************************************************************
  *
@@ -1150,5 +1226,51 @@ acpi_os_validate_address (
     return AE_OK;
 }
 
+#ifdef CONFIG_DMI
+#ifdef	OSI_LINUX_ENABLED
+static int dmi_osi_not_linux(struct dmi_system_id *d)
+{
+	printk(KERN_NOTICE "%s detected: requires not _OSI(Linux)\n", d->ident);
+	enable_osi_linux(0);
+	return 0;
+}
+#else
+static int dmi_osi_linux(struct dmi_system_id *d)
+{
+	printk(KERN_NOTICE "%s detected: requires _OSI(Linux)\n", d->ident);
+	enable_osi_linux(1);
+	return 0;
+}
+#endif
+
+static struct dmi_system_id acpi_osl_dmi_table[] __initdata = {
+#ifdef	OSI_LINUX_ENABLED
+	/*
+	 * Boxes that need NOT _OSI(Linux)
+	 */
+	{
+	 .callback = dmi_osi_not_linux,
+	 .ident = "Toshiba Satellite P100",
+	 .matches = {
+		     DMI_MATCH(DMI_BOARD_VENDOR, "TOSHIBA"),
+		     DMI_MATCH(DMI_BOARD_NAME, "Satellite P100"),
+		     },
+	 },
+#else
+	/*
+	 * Boxes that need _OSI(Linux)
+	 */
+	{
+	 .callback = dmi_osi_linux,
+	 .ident = "Intel Napa CRB",
+	 .matches = {
+		     DMI_MATCH(DMI_BOARD_VENDOR, "Intel Corporation"),
+		     DMI_MATCH(DMI_BOARD_NAME, "MPAD-MSAE Customer Reference Boards"),
+		     },
+	 },
+#endif
+	{}
+};
+#endif /* CONFIG_DMI */
 
 #endif

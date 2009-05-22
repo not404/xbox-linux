@@ -7,13 +7,6 @@
  *
  * Author:
  *	Yasuyuki Kozakai @USAGI <yasuyuki.kozakai@toshiba.co.jp>
- *
- * 16 Dec 2003: Yasuyuki Kozakai @USAGI <yasuyuki.kozakai@toshiba.co.jp>
- *	- ICMPv6 tracking support. Derived from the original ip_conntrack code
- *	  net/ipv4/netfilter/ip_conntrack_proto_icmp.c which had the following
- *	  copyright information:
- *		(C) 1999-2001 Paul `Rusty' Russell
- *		(C) 2002-2004 Netfilter Core Team <coreteam@netfilter.org>
  */
 
 #include <linux/types.h>
@@ -175,8 +168,7 @@ icmpv6_error_message(struct sk_buff *skb,
 					   skb->len - inip6off
 						    - sizeof(struct ipv6hdr));
 
-	if ((inprotoff < 0) || (inprotoff > skb->len) ||
-	    (inprotonum == NEXTHDR_FRAGMENT)) {
+	if ((inprotoff > skb->len) || (inprotonum == NEXTHDR_FRAGMENT)) {
 		DEBUGP("icmpv6_error: Can't get protocol header in ICMPv6 payload.\n");
 		return -NF_ACCEPT;
 	}

@@ -539,6 +539,18 @@ static inline void i2c_pxa_start_message(struct pxa_i2c *i2c)
 	writel(icr | ICR_START | ICR_TB, _ICR(i2c));
 }
 
+static inline void i2c_pxa_stop_message(struct pxa_i2c *i2c)
+{
+	u32 icr;
+
+	/*
+	 * Clear the STOP and ACK flags
+	 */
+	icr = readl(_ICR(i2c));
+	icr &= ~(ICR_STOP | ICR_ACKNAK);
+	writel(icr, _ICR(i2c));
+}
+
 /*
  * We are protected by the adapter bus mutex.
  */
@@ -581,6 +593,7 @@ static int i2c_pxa_do_xfer(struct pxa_i2c *i2c, struct i2c_msg *msg, int num)
 	 * The rest of the processing occurs in the interrupt handler.
 	 */
 	timeout = wait_event_timeout(i2c->wait, i2c->msg_num == 0, HZ * 5);
+	i2c_pxa_stop_message(i2c);
 
 	/*
 	 * We place the return code in i2c->msg_idx.
@@ -824,24 +837,12 @@ static const struct i2c_algorithm i2c_pxa_algorithm = {
 	.functionality	= i2c_pxa_functionality,
 };
 
-static struct pxa_i2c i2c_pxa = {
-	.lock	= SPIN_LOCK_UNLOCKED,
-	.adap	= {
-		.owner		= THIS_MODULE,
-		.algo		= &i2c_pxa_algorithm,
-		.name		= "pxa2xx-i2c.0",
-		.retries	= 5,
-	},
-};
-
 #define res_len(r)		((r)->end - (r)->start + 1)
 static int i2c_pxa_probe(struct platform_device *dev)
 {
-	struct pxa_i2c *i2c = &i2c_pxa;
+	struct pxa_i2c *i2c;
 	struct resource *res;
-#ifdef CONFIG_I2C_PXA_SLAVE
 	struct i2c_pxa_platform_data *plat = dev->dev.platform_data;
-#endif
 	int ret;
 	int irq;
 
@@ -853,15 +854,20 @@ static int i2c_pxa_probe(struct platform_device *dev)
 	if (!request_mem_region(res->start, res_len(res), res->name))
 		return -ENOMEM;
 
-	i2c = kmalloc(sizeof(struct pxa_i2c), GFP_KERNEL);
+	i2c = kzalloc(sizeof(struct pxa_i2c), GFP_KERNEL);
 	if (!i2c) {
 		ret = -ENOMEM;
 		goto emalloc;
 	}
 
-	memcpy(i2c, &i2c_pxa, sizeof(struct pxa_i2c));
+	i2c->adap.owner   = THIS_MODULE;
+	i2c->adap.algo    = &i2c_pxa_algorithm;
+	i2c->adap.retries = 5;
+
+	spin_lock_init(&i2c->lock);
 	init_waitqueue_head(&i2c->wait);
-	i2c->adap.name[strlen(i2c->adap.name) - 1] = '0' + dev->id % 10;
+
+	sprintf(i2c->adap.name, "pxa_i2c-i2c.%u", dev->id);
 
 	i2c->reg_base = ioremap(res->start, res_len(res));
 	if (!i2c->reg_base) {
@@ -889,14 +895,14 @@ static int i2c_pxa_probe(struct platform_device *dev)
 		pxa_gpio_mode(GPIO117_I2CSCL_MD);
 		pxa_gpio_mode(GPIO118_I2CSDA_MD);
 #endif
-		pxa_set_cken(CKEN14_I2C, 1);
+		pxa_set_cken(CKEN_I2C, 1);
 		break;
 #ifdef CONFIG_PXA27x
 	case 1:
 		local_irq_disable();
 		PCFR |= PCFR_PI2CEN;
 		local_irq_enable();
-		pxa_set_cken(CKEN15_PWRI2C, 1);
+		pxa_set_cken(CKEN_PWRI2C, 1);
 #endif
 	}
 
@@ -910,6 +916,10 @@ static int i2c_pxa_probe(struct platform_device *dev)
 
 	i2c->adap.algo_data = i2c;
 	i2c->adap.dev.parent = &dev->dev;
+
+	if (plat) {
+		i2c->adap.class = plat->class;
+	}
 
 	ret = i2c_add_adapter(&i2c->adap);
 	if (ret < 0) {
@@ -933,11 +943,11 @@ eadapt:
 ereqirq:
 	switch (dev->id) {
 	case 0:
-		pxa_set_cken(CKEN14_I2C, 0);
+		pxa_set_cken(CKEN_I2C, 0);
 		break;
 #ifdef CONFIG_PXA27x
 	case 1:
-		pxa_set_cken(CKEN15_PWRI2C, 0);
+		pxa_set_cken(CKEN_PWRI2C, 0);
 		local_irq_disable();
 		PCFR &= ~PCFR_PI2CEN;
 		local_irq_enable();
@@ -960,11 +970,11 @@ static int i2c_pxa_remove(struct platform_device *dev)
 	free_irq(i2c->irq, i2c);
 	switch (dev->id) {
 	case 0:
-		pxa_set_cken(CKEN14_I2C, 0);
+		pxa_set_cken(CKEN_I2C, 0);
 		break;
 #ifdef CONFIG_PXA27x
 	case 1:
-		pxa_set_cken(CKEN15_PWRI2C, 0);
+		pxa_set_cken(CKEN_PWRI2C, 0);
 		local_irq_disable();
 		PCFR &= ~PCFR_PI2CEN;
 		local_irq_enable();

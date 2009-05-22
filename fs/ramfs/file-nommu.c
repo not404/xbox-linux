@@ -16,7 +16,6 @@
 #include <linux/highmem.h>
 #include <linux/init.h>
 #include <linux/string.h>
-#include <linux/smp_lock.h>
 #include <linux/backing-dev.h>
 #include <linux/ramfs.h>
 #include <linux/quotaops.h>
@@ -180,7 +179,7 @@ static int ramfs_nommu_resize(struct inode *inode, loff_t newsize, loff_t size)
 			return ret;
 	}
 
-	ret = vmtruncate(inode, size);
+	ret = vmtruncate(inode, newsize);
 
 	return ret;
 }
@@ -195,6 +194,11 @@ static int ramfs_nommu_setattr(struct dentry *dentry, struct iattr *ia)
 	struct inode *inode = dentry->d_inode;
 	unsigned int old_ia_valid = ia->ia_valid;
 	int ret = 0;
+
+	/* POSIX UID/GID verification for setting inode attributes */
+	ret = inode_change_ok(inode, ia);
+	if (ret)
+		return ret;
 
 	/* by providing our own setattr() method, we skip this quotaism */
 	if ((old_ia_valid & ATTR_UID && ia->ia_uid != inode->i_uid) ||

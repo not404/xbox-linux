@@ -17,7 +17,8 @@
 #include <asm/apic.h>
 #include <asm/desc.h>
 #include "mach_reboot.h"
-#include <linux/reboot_fixups.h>
+#include <asm/reboot_fixups.h>
+#include <asm/reboot.h>
 
 /*
  * Power off function, if any
@@ -88,6 +89,14 @@ static int __init set_bios_reboot(struct dmi_system_id *d)
 }
 
 static struct dmi_system_id __initdata reboot_dmi_table[] = {
+	{	/* Handle problems with rebooting on Dell E520's */
+		.callback = set_bios_reboot,
+		.ident = "Dell E520",
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "Dell Inc."),
+			DMI_MATCH(DMI_PRODUCT_NAME, "Dell DM061"),
+		},
+	},
 	{	/* Handle problems with rebooting on Dell 1300's */
 		.callback = set_bios_reboot,
 		.ident = "Dell PowerEdge 1300",
@@ -197,8 +206,6 @@ static unsigned char jump_to_bios [] =
  */
 void machine_real_restart(unsigned char *code, int length)
 {
-	unsigned long flags;
-
 	local_irq_disable();
 
 	/* Write zero to CMOS register number 0x0f, which the BIOS POST
@@ -211,9 +218,9 @@ void machine_real_restart(unsigned char *code, int length)
 	   safe side.  (Yes, CMOS_WRITE does outb_p's. -  Paul G.)
 	 */
 
-	spin_lock_irqsave(&rtc_lock, flags);
+	spin_lock(&rtc_lock);
 	CMOS_WRITE(0x00, 0x8f);
-	spin_unlock_irqrestore(&rtc_lock, flags);
+	spin_unlock(&rtc_lock);
 
 	/* Remap the kernel at virtual address zero, as well as offset zero
 	   from the kernel segment.  This assumes the kernel segment starts at
@@ -280,7 +287,7 @@ void machine_real_restart(unsigned char *code, int length)
 EXPORT_SYMBOL(machine_real_restart);
 #endif
 
-void machine_shutdown(void)
+static void native_machine_shutdown(void)
 {
 #ifdef CONFIG_SMP
 	int reboot_cpu_id;
@@ -316,7 +323,11 @@ void machine_shutdown(void)
 #endif
 }
 
-void machine_emergency_restart(void)
+void __attribute__((weak)) mach_reboot_fixups(void)
+{
+}
+
+static void native_machine_emergency_restart(void)
 {
 	if (!reboot_thru_bios) {
 		if (efi_enabled) {
@@ -340,17 +351,17 @@ void machine_emergency_restart(void)
 	machine_real_restart(jump_to_bios, sizeof(jump_to_bios));
 }
 
-void machine_restart(char * __unused)
+static void native_machine_restart(char * __unused)
 {
 	machine_shutdown();
 	machine_emergency_restart();
 }
 
-void machine_halt(void)
+static void native_machine_halt(void)
 {
 }
 
-void machine_power_off(void)
+static void native_machine_power_off(void)
 {
 	if (pm_power_off) {
 		machine_shutdown();
@@ -359,3 +370,35 @@ void machine_power_off(void)
 }
 
 
+struct machine_ops machine_ops = {
+	.power_off = native_machine_power_off,
+	.shutdown = native_machine_shutdown,
+	.emergency_restart = native_machine_emergency_restart,
+	.restart = native_machine_restart,
+	.halt = native_machine_halt,
+};
+
+void machine_power_off(void)
+{
+	machine_ops.power_off();
+}
+
+void machine_shutdown(void)
+{
+	machine_ops.shutdown();
+}
+
+void machine_emergency_restart(void)
+{
+	machine_ops.emergency_restart();
+}
+
+void machine_restart(char *cmd)
+{
+	machine_ops.restart(cmd);
+}
+
+void machine_halt(void)
+{
+	machine_ops.halt();
+}

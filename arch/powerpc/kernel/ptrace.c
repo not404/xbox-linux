@@ -19,7 +19,6 @@
 #include <linux/sched.h>
 #include <linux/mm.h>
 #include <linux/smp.h>
-#include <linux/smp_lock.h>
 #include <linux/errno.h>
 #include <linux/ptrace.h>
 #include <linux/user.h>
@@ -219,6 +218,7 @@ set_single_step(struct task_struct *task)
 		regs->msr |= MSR_SE;
 #endif
 	}
+	set_tsk_thread_flag(task, TIF_SINGLESTEP);
 }
 
 static inline void
@@ -234,6 +234,7 @@ clear_single_step(struct task_struct *task)
 		regs->msr &= ~MSR_SE;
 #endif
 	}
+	clear_tsk_thread_flag(task, TIF_SINGLESTEP);
 }
 #endif /* CONFIG_PPC32 */
 

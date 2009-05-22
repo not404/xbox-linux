@@ -6,6 +6,7 @@
 #
 
 menu "Auxiliary Display support"
+	depends on PARPORT
 
 config KS0108
 	tristate "KS0108 LCD Controller"
@@ -67,6 +68,10 @@ config CFAG12864B
 	depends on X86
 	depends on FB
 	depends on KS0108
+	select FB_SYS_FILLRECT
+	select FB_SYS_COPYAREA
+	select FB_SYS_IMAGEBLIT
+	select FB_SYS_FOPS
 	default n
 	---help---
 	  If you have a Crystalfontz 128x64 2-color LCD, cfag12864b Series,

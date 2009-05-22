@@ -74,10 +74,11 @@ static void flush_kernel_map(void *arg)
 	struct page *pg;
 
 	/* When clflush is available always use it because it is
-	   much cheaper than WBINVD */
-	if (!cpu_has_clflush)
+	   much cheaper than WBINVD. Disable clflush for now because
+	   the high level code is not ready yet */
+	if (1 || !cpu_has_clflush)
 		asm volatile("wbinvd" ::: "memory");
-	list_for_each_entry(pg, l, lru) {
+	else list_for_each_entry(pg, l, lru) {
 		void *adr = page_address(pg);
 		if (cpu_has_clflush)
 			cache_flush_page(adr);
@@ -180,16 +181,24 @@ __change_page_attr(unsigned long address, unsigned long pfn, pgprot_t prot,
  */
 int change_page_attr_addr(unsigned long address, int numpages, pgprot_t prot)
 {
-	int err = 0; 
+	int err = 0, kernel_map = 0;
 	int i; 
+
+	if (address >= __START_KERNEL_map
+	    && address < __START_KERNEL_map + KERNEL_TEXT_SIZE) {
+		address = (unsigned long)__va(__pa(address));
+		kernel_map = 1;
+	}
 
 	down_write(&init_mm.mmap_sem);
 	for (i = 0; i < numpages; i++, address += PAGE_SIZE) {
 		unsigned long pfn = __pa(address) >> PAGE_SHIFT;
 
-		err = __change_page_attr(address, pfn, prot, PAGE_KERNEL);
-		if (err) 
-			break; 
+		if (!kernel_map || pte_present(pfn_pte(0, prot))) {
+			err = __change_page_attr(address, pfn, prot, PAGE_KERNEL);
+			if (err)
+				break;
+		}
 		/* Handle kernel mapping too which aliases part of the
 		 * lowmem */
 		if (__pa(address) < KERNEL_TEXT_SIZE) {

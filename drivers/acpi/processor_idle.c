@@ -51,14 +51,6 @@
 #include <asm/apic.h>
 #endif
 
-/*
- * Include the apic definitions for x86 to have the APIC timer related defines
- * available also for UP (on SMP it gets magically included via linux/smp.h).
- */
-#ifdef CONFIG_X86
-#include <asm/apic.h>
-#endif
-
 #include <asm/io.h>
 #include <asm/uaccess.h>
 
@@ -340,15 +332,17 @@ static void acpi_processor_idle(void)
 	int sleep_ticks = 0;
 	u32 t1, t2 = 0;
 
-	pr = processors[smp_processor_id()];
-	if (!pr)
-		return;
-
 	/*
 	 * Interrupts must be disabled during bus mastering calculations and
 	 * for C2/C3 transitions.
 	 */
 	local_irq_disable();
+
+	pr = processors[smp_processor_id()];
+	if (!pr) {
+		local_irq_enable();
+		return;
+	}
 
 	/*
 	 * Check whether we truly need to go idle, or should
@@ -483,7 +477,7 @@ static void acpi_processor_idle(void)
 
 #ifdef CONFIG_GENERIC_TIME
 		/* TSC halts in C2, so notify users */
-		mark_tsc_unstable();
+		mark_tsc_unstable("possible TSC halt in C2");
 #endif
 		/* Re-enable interrupts */
 		local_irq_enable();
@@ -525,7 +519,7 @@ static void acpi_processor_idle(void)
 
 #ifdef CONFIG_GENERIC_TIME
 		/* TSC halts in C3, so notify users */
-		mark_tsc_unstable();
+		mark_tsc_unstable("TSC halts in C3");
 #endif
 		/* Re-enable interrupts */
 		local_irq_enable();

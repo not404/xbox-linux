@@ -15,8 +15,7 @@
 
 DECLARE_RWSEM(pci_bus_sem);
 
-static struct pci_bus *
-pci_do_find_bus(struct pci_bus* bus, unsigned char busnr)
+static struct pci_bus *pci_do_find_bus(struct pci_bus *bus, unsigned char busnr)
 {
 	struct pci_bus* child;
 	struct list_head *tmp;
@@ -404,10 +403,11 @@ const struct pci_device_id *pci_find_present(const struct pci_device_id *ids)
 	while (ids->vendor || ids->subvendor || ids->class_mask) {
 		list_for_each_entry(dev, &pci_devices, global_list) {
 			if ((found = pci_match_one_device(ids, dev)) != NULL)
-				break;
+				goto exit;
 		}
 		ids++;
 	}
+exit:
 	up_read(&pci_bus_sem);
 	return found;
 }

@@ -117,8 +117,7 @@ static void __exit vlan_cleanup_devices(void)
 	struct net_device *dev, *nxt;
 
 	rtnl_lock();
-	for (dev = dev_base; dev; dev = nxt) {
-		nxt = dev->next;
+	for_each_netdev_safe(dev, nxt) {
 		if (dev->priv_flags & IFF_802_1Q_VLAN) {
 			unregister_vlan_dev(VLAN_DEV_INFO(dev)->real_dev,
 					    VLAN_DEV_INFO(dev)->vlan_id);
@@ -241,10 +240,8 @@ static int unregister_vlan_dev(struct net_device *real_dev,
 			 * interlock with HW accelerating devices or SW vlan
 			 * input packet processing.
 			 */
-			if (real_dev->features &
-			    (NETIF_F_HW_VLAN_RX | NETIF_F_HW_VLAN_FILTER)) {
+			if (real_dev->features & NETIF_F_HW_VLAN_FILTER)
 				real_dev->vlan_rx_kill_vid(real_dev, vlan_id);
-			}
 
 			vlan_group_set_device(grp, vlan_id, NULL);
 			synchronize_net();
@@ -410,16 +407,14 @@ static struct net_device *register_vlan_device(const char *eth_IF_name,
 	}
 
 	if ((real_dev->features & NETIF_F_HW_VLAN_RX) &&
-	    (real_dev->vlan_rx_register == NULL ||
-	     real_dev->vlan_rx_kill_vid == NULL)) {
+	    !real_dev->vlan_rx_register) {
 		printk(VLAN_DBG "%s: Device %s has buggy VLAN hw accel.\n",
 			__FUNCTION__, real_dev->name);
 		goto out_put_dev;
 	}
 
 	if ((real_dev->features & NETIF_F_HW_VLAN_FILTER) &&
-	    (real_dev->vlan_rx_add_vid == NULL ||
-	     real_dev->vlan_rx_kill_vid == NULL)) {
+	    (!real_dev->vlan_rx_add_vid || !real_dev->vlan_rx_kill_vid)) {
 		printk(VLAN_DBG "%s: Device %s has buggy VLAN hw accel.\n",
 			__FUNCTION__, real_dev->name);
 		goto out_put_dev;
@@ -470,7 +465,7 @@ static struct net_device *register_vlan_device(const char *eth_IF_name,
 		 */
 	default:
 		snprintf(name, IFNAMSIZ, "vlan%.4i", VLAN_ID);
-	};
+	}
 
 	new_dev = alloc_netdev(sizeof(struct vlan_dev_info), name,
 			       vlan_setup);
@@ -685,7 +680,7 @@ static int vlan_device_event(struct notifier_block *unused, unsigned long event,
 				break;
 		}
 		break;
-	};
+	}
 
 out:
 	return NOTIFY_DONE;
@@ -741,8 +736,7 @@ static int vlan_ioctl_handler(void __user *arg)
 	case SET_VLAN_NAME_TYPE_CMD:
 		if (!capable(CAP_NET_ADMIN))
 			return -EPERM;
-		if ((args.u.name_type >= 0) &&
-		    (args.u.name_type < VLAN_NAME_TYPE_HIGHEST)) {
+		if (args.u.name_type < VLAN_NAME_TYPE_HIGHEST) {
 			vlan_name_type = args.u.name_type;
 			err = 0;
 		} else {
@@ -819,7 +813,7 @@ static int vlan_ioctl_handler(void __user *arg)
 		printk(VLAN_DBG "%s: Unknown VLAN CMD: %x \n",
 			__FUNCTION__, args.cmd);
 		return -EINVAL;
-	};
+	}
 out:
 	return err;
 }

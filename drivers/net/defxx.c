@@ -566,6 +566,7 @@ static int __devinit dfx_register(struct device *bdev)
 		bp->base.mem = ioremap_nocache(bar_start, bar_len);
 		if (!bp->base.mem) {
 			printk(KERN_ERR "%s: Cannot map MMIO\n", print_name);
+			err = -ENOMEM;
 			goto err_out_region;
 		}
 	} else {
@@ -3091,13 +3092,13 @@ static void dfx_rcv_queue_process(
 					{
 						/* Receive buffer allocated, pass receive packet up */
 
-						memcpy(skb->data, p_buff + RCV_BUFF_K_PADDING, pkt_len+3);
+						skb_copy_to_linear_data(skb,
+							       p_buff + RCV_BUFF_K_PADDING,
+							       pkt_len + 3);
 					}
 
 					skb_reserve(skb,3);		/* adjust data field so that it points to FC byte */
 					skb_put(skb, pkt_len);		/* pass up packet length, NOT including CRC */
-					skb->dev = bp->dev;		/* pass up device pointer */
-
 					skb->protocol = fddi_type_trans(skb, bp->dev);
 					bp->rcv_total_bytes += skb->len;
 					netif_rx(skb);
