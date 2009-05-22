@@ -126,8 +126,6 @@ static int xbox_transaction(void);
 static u32 xbox_func(struct i2c_adapter *adapter);
 
 static struct i2c_algorithm smbus_algorithm = {
-	/* name */ "Non-I2C SMBus adapter",
-	/* id */ I2C_ALGO_SMBUS,
 	/* master_xfer */ NULL,
 	/* smbus_access */ xbox_access,
 	/* slave;_send */ NULL,

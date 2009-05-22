@@ -3,10 +3,10 @@
  */
 
 #include <linux/config.h>
-#include <linux/smp.h>
 #include <linux/init.h>
 #include <linux/irq.h>
 #include <linux/interrupt.h>
+#include <asm/acpi.h>
 #include <asm/arch_hooks.h>
 
 /**
@@ -47,8 +47,8 @@ void __init intr_init_hook(void)
 #ifdef CONFIG_X86_LOCAL_APIC
 	apic_intr_init();
 #endif
-
-	setup_irq(2, &irq2);
+	if (!acpi_ioapic)
+		setup_irq(2, &irq2);
 }
 
 /**

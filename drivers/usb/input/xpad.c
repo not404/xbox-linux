@@ -91,6 +91,7 @@ static struct xpad_device xpad_device[] = {
 	{ 0x0e6f, 0x0003, 0, "Logic3 Freebird wireless Controller" },
 	{ 0x0e6f, 0x0005, 0, "Eclipse wireless Controller" },
 	{ 0x0e6f, 0x0006, 0, "Edge wireless Controller" },
+	{ 0x0e8f, 0x0201, 0, "SmartJoy Frag Xpad/PS2 adaptor" },
 	{ 0x0f30, 0x0202, 0, "Joytech Advanced Controller" },
 	{ 0x102c, 0xff0c, 0, "Joytech Wireless Advanced Controller" },
 	{ 0x12ab, 0x8809, 1, "Xbox DDR dancepad" },
@@ -373,8 +374,8 @@ static int xpad_probe(struct usb_interface *intf, const struct usb_device_id *id
 
 	/* try to detect the device we are called for */
 	for (i = 0; xpad_device[i].idVendor; ++i) {
-		if ((udev->descriptor.idVendor == xpad_device[i].idVendor) &&
-		    (udev->descriptor.idProduct == xpad_device[i].idProduct)) {
+		if ((le16_to_cpu(udev->descriptor.idVendor) == xpad_device[i].idVendor) &&
+		    (le16_to_cpu(udev->descriptor.idProduct) == xpad_device[i].idProduct)) {
 			probedDevNum = i;
 			break;
 		}
@@ -408,7 +409,7 @@ static int xpad_probe(struct usb_interface *intf, const struct usb_device_id *id
                 return -ENOMEM;
 	}
 
-	ep_irq_in = &intf->altsetting[0].endpoint[0].desc;
+	ep_irq_in = &intf->cur_altsetting->endpoint[0].desc;
 
 	xpad->udev = udev;
 	xpad->isMat = xpad_device[probedDevNum].isMat;
