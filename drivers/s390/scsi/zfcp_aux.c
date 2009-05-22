@@ -97,11 +97,6 @@ MODULE_PARM_DESC(loglevel,
 		 "FC ERP QDIO CIO Config FSF SCSI Other, "
 		 "levels: 0=none 1=normal 2=devel 3=trace");
 
-#ifdef ZFCP_PRINT_FLAGS
-u32 flags_dump = 0;
-module_param(flags_dump, uint, 0);
-#endif
-
 /****************************************************************/
 /************** Functions without logging ***********************/
 /****************************************************************/
@@ -223,12 +218,19 @@ zfcp_in_els_dbf_event(struct zfcp_adapter *adapter, const char *text,
  * Parse "device=..." parameter string.
  */
 static int __init
-zfcp_device_setup(char *str)
+zfcp_device_setup(char *devstr)
 {
-	char *tmp;
+	char *tmp, *str;
+	size_t len;
 
-	if (!str)
+	if (!devstr)
 		return 0;
+
+	len = strlen(devstr) + 1;
+	str = (char *) kmalloc(len, GFP_KERNEL);
+	if (!str)
+		goto err_out;
+	memcpy(str, devstr, len);
 
 	tmp = strchr(str, ',');
 	if (!tmp)
@@ -246,10 +248,12 @@ zfcp_device_setup(char *str)
 	zfcp_data.init_fcp_lun = simple_strtoull(tmp, &tmp, 0);
 	if (*tmp != '\0')
 		goto err_out;
+	kfree(str);
 	return 1;
 
  err_out:
 	ZFCP_LOG_NORMAL("Parse error for device parameter string %s\n", str);
+	kfree(str);
 	return 0;
 }
 
@@ -525,7 +529,7 @@ zfcp_cfdc_dev_ioctl(struct file *file, unsigned int command,
 
  out:
 	if (fsf_req != NULL)
-		zfcp_fsf_req_cleanup(fsf_req);
+		zfcp_fsf_req_free(fsf_req);
 
 	if ((adapter != NULL) && (retval != -ENXIO))
 		zfcp_adapter_put(adapter);
@@ -1154,7 +1158,7 @@ zfcp_adapter_enqueue(struct ccw_device *ccw_device)
 	INIT_LIST_HEAD(&adapter->port_remove_lh);
 
 	/* initialize list of fsf requests */
-	rwlock_init(&adapter->fsf_req_list_lock);
+	spin_lock_init(&adapter->fsf_req_list_lock);
 	INIT_LIST_HEAD(&adapter->fsf_req_list_head);
 
 	/* initialize abort lock */
@@ -1239,9 +1243,9 @@ zfcp_adapter_dequeue(struct zfcp_adapter *adapter)
 	zfcp_sysfs_adapter_remove_files(&adapter->ccw_device->dev);
 	dev_set_drvdata(&adapter->ccw_device->dev, NULL);
 	/* sanity check: no pending FSF requests */
-	read_lock_irqsave(&adapter->fsf_req_list_lock, flags);
+	spin_lock_irqsave(&adapter->fsf_req_list_lock, flags);
 	retval = !list_empty(&adapter->fsf_req_list_head);
-	read_unlock_irqrestore(&adapter->fsf_req_list_lock, flags);
+	spin_unlock_irqrestore(&adapter->fsf_req_list_lock, flags);
 	if (retval) {
 		ZFCP_LOG_NORMAL("bug: adapter %s (%p) still in use, "
 				"%i requests outstanding\n",
@@ -1295,13 +1299,10 @@ struct zfcp_port *
 zfcp_port_enqueue(struct zfcp_adapter *adapter, wwn_t wwpn, u32 status,
 		  u32 d_id)
 {
-	struct zfcp_port *port, *tmp_port;
+	struct zfcp_port *port;
 	int check_wwpn;
-	scsi_id_t scsi_id;
-	int found;
 
 	check_wwpn = !(status & ZFCP_STATUS_PORT_NO_WWPN);
-
 	/*
 	 * check that there is no port with this WWPN already in list
 	 */
@@ -1364,7 +1365,7 @@ zfcp_port_enqueue(struct zfcp_adapter *adapter, wwn_t wwpn, u32 status,
 	} else {
 		snprintf(port->sysfs_device.bus_id,
 			 BUS_ID_SIZE, "0x%016llx", wwpn);
-	port->sysfs_device.parent = &adapter->ccw_device->dev;
+		port->sysfs_device.parent = &adapter->ccw_device->dev;
 	}
 	port->sysfs_device.release = zfcp_sysfs_port_release;
 	dev_set_drvdata(&port->sysfs_device, port);
@@ -1384,24 +1385,8 @@ zfcp_port_enqueue(struct zfcp_adapter *adapter, wwn_t wwpn, u32 status,
 
 	zfcp_port_get(port);
 
-	scsi_id = 1;
-	found = 0;
 	write_lock_irq(&zfcp_data.config_lock);
-	list_for_each_entry(tmp_port, &adapter->port_list_head, list) {
-		if (atomic_test_mask(ZFCP_STATUS_PORT_NO_SCSI_ID,
-				     &tmp_port->status))
-			continue;
-		if (tmp_port->scsi_id != scsi_id) {
-			found = 1;
-			break;
-		}
-		scsi_id++;
-	}
-	port->scsi_id = scsi_id;
-	if (found)
-		list_add_tail(&port->list, &tmp_port->list);
-	else
-		list_add_tail(&port->list, &adapter->port_list_head);
+	list_add_tail(&port->list, &adapter->port_list_head);
 	atomic_clear_mask(ZFCP_STATUS_COMMON_REMOVE, &port->status);
 	atomic_set_mask(ZFCP_STATUS_COMMON_RUNNING, &port->status);
 	if (d_id == ZFCP_DID_DIRECTORY_SERVICE)
@@ -1423,6 +1408,9 @@ zfcp_port_dequeue(struct zfcp_port *port)
 	list_del(&port->list);
 	port->adapter->ports--;
 	write_unlock_irq(&zfcp_data.config_lock);
+	if (port->rport)
+		fc_remote_port_delete(port->rport);
+	port->rport = NULL;
 	zfcp_adapter_put(port->adapter);
 	zfcp_sysfs_port_remove_files(&port->sysfs_device,
 				     atomic_read(&port->status));
@@ -1483,19 +1471,15 @@ zfcp_fsf_incoming_els_rscn(struct zfcp_adapter *adapter,
 		fcp_rscn_element++;
 		switch (fcp_rscn_element->addr_format) {
 		case ZFCP_PORT_ADDRESS:
-			ZFCP_LOG_FLAGS(1, "ZFCP_PORT_ADDRESS\n");
 			range_mask = ZFCP_PORTS_RANGE_PORT;
 			break;
 		case ZFCP_AREA_ADDRESS:
-			ZFCP_LOG_FLAGS(1, "ZFCP_AREA_ADDRESS\n");
 			range_mask = ZFCP_PORTS_RANGE_AREA;
 			break;
 		case ZFCP_DOMAIN_ADDRESS:
-			ZFCP_LOG_FLAGS(1, "ZFCP_DOMAIN_ADDRESS\n");
 			range_mask = ZFCP_PORTS_RANGE_DOMAIN;
 			break;
 		case ZFCP_FABRIC_ADDRESS:
-			ZFCP_LOG_FLAGS(1, "ZFCP_FABRIC_ADDRESS\n");
 			range_mask = ZFCP_PORTS_RANGE_FABRIC;
 			break;
 		default:
@@ -1762,7 +1746,10 @@ static void zfcp_ns_gid_pn_handler(unsigned long data)
 	ct_iu_req = zfcp_sg_to_address(ct->req);
 	ct_iu_resp = zfcp_sg_to_address(ct->resp);
 
-	if ((ct->status != 0) || zfcp_check_ct_response(&ct_iu_resp->header)) {
+	if (ct->status != 0)
+		goto failed;
+
+	if (zfcp_check_ct_response(&ct_iu_resp->header)) {
 		/* FIXME: do we need some specific erp entry points */
 		atomic_set_mask(ZFCP_STATUS_PORT_INVALID_WWPN, &port->status);
 		goto failed;
