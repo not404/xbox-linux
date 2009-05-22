@@ -25,6 +25,8 @@ int is_hugepage_mem_enough(size_t);
 unsigned long hugetlb_total_pages(void);
 struct page *alloc_huge_page(void);
 void free_huge_page(struct page *);
+int hugetlb_fault(struct mm_struct *mm, struct vm_area_struct *vma,
+			unsigned long address, int write_access);
 
 extern unsigned long max_huge_pages;
 extern const unsigned long hugetlb_zero, hugetlb_infinity;
@@ -70,12 +72,6 @@ pte_t huge_ptep_get_and_clear(struct mm_struct *mm, unsigned long addr,
 void hugetlb_prefault_arch_hook(struct mm_struct *mm);
 #endif
 
-#ifndef ARCH_HAS_HUGETLB_CLEAN_STALE_PGTABLE
-#define hugetlb_clean_stale_pgtable(pte)	BUG()
-#else
-void hugetlb_clean_stale_pgtable(pte_t *pte);
-#endif
-
 #else /* !CONFIG_HUGETLB_PAGE */
 
 static inline int is_vm_hugetlb_page(struct vm_area_struct *vma)
@@ -105,6 +101,7 @@ static inline unsigned long hugetlb_total_pages(void)
 						do { } while (0)
 #define alloc_huge_page()			({ NULL; })
 #define free_huge_page(p)			({ (void)(p); BUG(); })
+#define hugetlb_fault(mm, vma, addr, write)	({ BUG(); 0; })
 
 #ifndef HPAGE_MASK
 #define HPAGE_MASK	0		/* Keep the compiler happy */

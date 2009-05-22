@@ -40,6 +40,7 @@ struct vm_area_struct;
 #define __GFP_ZERO	0x8000u	/* Return zeroed page on success */
 #define __GFP_NOMEMALLOC 0x10000u /* Don't use emergency reserves */
 #define __GFP_NORECLAIM  0x20000u /* No realy zone reclaim during allocation */
+#define __GFP_HARDWALL   0x40000u /* Enforce hardwall cpuset memory allocs */
 
 #define __GFP_BITS_SHIFT 20	/* Room for 20 __GFP_FOO bits */
 #define __GFP_BITS_MASK ((1 << __GFP_BITS_SHIFT) - 1)
@@ -48,14 +49,15 @@ struct vm_area_struct;
 #define GFP_LEVEL_MASK (__GFP_WAIT|__GFP_HIGH|__GFP_IO|__GFP_FS| \
 			__GFP_COLD|__GFP_NOWARN|__GFP_REPEAT| \
 			__GFP_NOFAIL|__GFP_NORETRY|__GFP_NO_GROW|__GFP_COMP| \
-			__GFP_NOMEMALLOC|__GFP_NORECLAIM)
+			__GFP_NOMEMALLOC|__GFP_NORECLAIM|__GFP_HARDWALL)
 
 #define GFP_ATOMIC	(__GFP_HIGH)
 #define GFP_NOIO	(__GFP_WAIT)
 #define GFP_NOFS	(__GFP_WAIT | __GFP_IO)
 #define GFP_KERNEL	(__GFP_WAIT | __GFP_IO | __GFP_FS)
-#define GFP_USER	(__GFP_WAIT | __GFP_IO | __GFP_FS)
-#define GFP_HIGHUSER	(__GFP_WAIT | __GFP_IO | __GFP_FS | __GFP_HIGHMEM)
+#define GFP_USER	(__GFP_WAIT | __GFP_IO | __GFP_FS | __GFP_HARDWALL)
+#define GFP_HIGHUSER	(__GFP_WAIT | __GFP_IO | __GFP_FS | __GFP_HARDWALL | \
+			 __GFP_HIGHMEM)
 
 /* Flag - indicates that the buffer will be suitable for DMA.  Ignored on some
    platforms, used as appropriate on others */
@@ -83,9 +85,9 @@ static inline void arch_free_page(struct page *page, int order) { }
 #endif
 
 extern struct page *
-FASTCALL(__alloc_pages(unsigned int, unsigned int, struct zonelist *));
+FASTCALL(__alloc_pages(gfp_t, unsigned int, struct zonelist *));
 
-static inline struct page *alloc_pages_node(int nid, unsigned int __nocast gfp_mask,
+static inline struct page *alloc_pages_node(int nid, gfp_t gfp_mask,
 						unsigned int order)
 {
 	if (unlikely(order >= MAX_ORDER))
@@ -96,17 +98,17 @@ static inline struct page *alloc_pages_node(int nid, unsigned int __nocast gfp_m
 }
 
 #ifdef CONFIG_NUMA
-extern struct page *alloc_pages_current(unsigned int __nocast gfp_mask, unsigned order);
+extern struct page *alloc_pages_current(gfp_t gfp_mask, unsigned order);
 
 static inline struct page *
-alloc_pages(unsigned int __nocast gfp_mask, unsigned int order)
+alloc_pages(gfp_t gfp_mask, unsigned int order)
 {
 	if (unlikely(order >= MAX_ORDER))
 		return NULL;
 
 	return alloc_pages_current(gfp_mask, order);
 }
-extern struct page *alloc_page_vma(unsigned __nocast gfp_mask,
+extern struct page *alloc_page_vma(gfp_t gfp_mask,
 			struct vm_area_struct *vma, unsigned long addr);
 #else
 #define alloc_pages(gfp_mask, order) \
@@ -115,8 +117,8 @@ extern struct page *alloc_page_vma(unsigned __nocast gfp_mask,
 #endif
 #define alloc_page(gfp_mask) alloc_pages(gfp_mask, 0)
 
-extern unsigned long FASTCALL(__get_free_pages(unsigned int __nocast gfp_mask, unsigned int order));
-extern unsigned long FASTCALL(get_zeroed_page(unsigned int __nocast gfp_mask));
+extern unsigned long FASTCALL(__get_free_pages(gfp_t gfp_mask, unsigned int order));
+extern unsigned long FASTCALL(get_zeroed_page(gfp_t gfp_mask));
 
 #define __get_free_page(gfp_mask) \
 		__get_free_pages((gfp_mask),0)

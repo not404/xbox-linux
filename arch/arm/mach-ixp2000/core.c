@@ -30,7 +30,6 @@
 #include <asm/setup.h>
 #include <asm/memory.h>
 #include <asm/hardware.h>
-#include <asm/mach-types.h>
 #include <asm/irq.h>
 #include <asm/system.h>
 #include <asm/tlbflush.h>
@@ -168,13 +167,13 @@ static struct plat_serial8250_port ixp2000_serial_port[] = {
 
 static struct resource ixp2000_uart_resource = {
 	.start		= IXP2000_UART_PHYS_BASE,
-	.end		= IXP2000_UART_PHYS_BASE + 0xffff,
+	.end		= IXP2000_UART_PHYS_BASE + 0x1f,
 	.flags		= IORESOURCE_MEM,
 };
 
 static struct platform_device ixp2000_serial_device = {
 	.name		= "serial8250",
-	.id		= 0,
+	.id		= PLAT8250_DEV_PLATFORM,
 	.dev		= {
 		.platform_data		= ixp2000_serial_port,
 	},
@@ -317,7 +316,7 @@ static void ixp2000_GPIO_irq_handler(unsigned int irq, struct irqdesc *desc, str
 	for (i = 0; i <= 7; i++) {
 		if (status & (1<<i)) {
 			desc = irq_desc + i + IRQ_IXP2000_GPIO0;
-			desc->handle(i + IRQ_IXP2000_GPIO0, desc, regs);
+			desc_handle_irq(i + IRQ_IXP2000_GPIO0, desc, regs);
 		}
 	}
 }
@@ -380,10 +379,10 @@ static void ixp2000_GPIO_irq_unmask(unsigned int irq)
 }
 
 static struct irqchip ixp2000_GPIO_irq_chip = {
-	.type	= ixp2000_GPIO_irq_type,
-	.ack	= ixp2000_GPIO_irq_mask_ack,
-	.mask	= ixp2000_GPIO_irq_mask,
-	.unmask	= ixp2000_GPIO_irq_unmask
+	.ack		= ixp2000_GPIO_irq_mask_ack,
+	.mask		= ixp2000_GPIO_irq_mask,
+	.unmask		= ixp2000_GPIO_irq_unmask,
+	.set_type	= ixp2000_GPIO_irq_type,
 };
 
 static void ixp2000_pci_irq_mask(unsigned int irq)

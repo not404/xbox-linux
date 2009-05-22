@@ -713,7 +713,7 @@ void usbfs_remove_device(struct usb_device *dev)
 			sinfo.si_errno = EPIPE;
 			sinfo.si_code = SI_ASYNCIO;
 			sinfo.si_addr = ds->disccontext;
-			send_sig_info(ds->discsignr, &sinfo, ds->disctask);
+			kill_proc_info_as_uid(ds->discsignr, &sinfo, ds->disc_pid, ds->disc_uid, ds->disc_euid);
 		}
 	}
 	usbfs_update_special();
@@ -728,15 +728,9 @@ int __init usbfs_init(void)
 {
 	int retval;
 
-	retval = usb_register(&usbfs_driver);
+	retval = register_filesystem(&usb_fs_type);
 	if (retval)
 		return retval;
-
-	retval = register_filesystem(&usb_fs_type);
-	if (retval) {
-		usb_deregister(&usbfs_driver);
-		return retval;
-	}
 
 	/* create mount point for usbfs */
 	usbdir = proc_mkdir("usb", proc_bus);
@@ -746,7 +740,6 @@ int __init usbfs_init(void)
 
 void usbfs_cleanup(void)
 {
-	usb_deregister(&usbfs_driver);
 	unregister_filesystem(&usb_fs_type);
 	if (usbdir)
 		remove_proc_entry("usb", proc_bus);

@@ -511,10 +511,11 @@ static int shrink_list(struct list_head *page_list, struct scan_control *sc)
 		 * PageDirty _after_ making sure that the page is freeable and
 		 * not in use by anybody. 	(pagecache + us == 2)
 		 */
-		if (page_count(page) != 2 || PageDirty(page)) {
-			write_unlock_irq(&mapping->tree_lock);
-			goto keep_locked;
-		}
+		if (unlikely(page_count(page) != 2))
+			goto cannot_free;
+		smp_rmb();
+		if (unlikely(PageDirty(page)))
+			goto cannot_free;
 
 #ifdef CONFIG_SWAP
 		if (PageSwapCache(page)) {
@@ -537,6 +538,10 @@ free_it:
 		if (!pagevec_add(&freed_pvec, page))
 			__pagevec_release_nonlru(&freed_pvec);
 		continue;
+
+cannot_free:
+		write_unlock_irq(&mapping->tree_lock);
+		goto keep_locked;
 
 activate_locked:
 		SetPageActive(page);
@@ -822,6 +827,8 @@ shrink_zone(struct zone *zone, struct scan_control *sc)
 	unsigned long nr_active;
 	unsigned long nr_inactive;
 
+	atomic_inc(&zone->reclaim_in_progress);
+
 	/*
 	 * Add one to `nr_to_scan' just to make sure that the kernel will
 	 * slowly sift through the active list.
@@ -861,6 +868,8 @@ shrink_zone(struct zone *zone, struct scan_control *sc)
 	}
 
 	throttle_vm_writeout();
+
+	atomic_dec(&zone->reclaim_in_progress);
 }
 
 /*
@@ -890,7 +899,7 @@ shrink_caches(struct zone **zones, struct scan_control *sc)
 		if (zone->present_pages == 0)
 			continue;
 
-		if (!cpuset_zone_allowed(zone))
+		if (!cpuset_zone_allowed(zone, __GFP_HARDWALL))
 			continue;
 
 		zone->temp_priority = sc->priority;
@@ -900,9 +909,7 @@ shrink_caches(struct zone **zones, struct scan_control *sc)
 		if (zone->all_unreclaimable && sc->priority != DEF_PRIORITY)
 			continue;	/* Let kswapd poll it */
 
-		atomic_inc(&zone->reclaim_in_progress);
 		shrink_zone(zone, sc);
-		atomic_dec(&zone->reclaim_in_progress);
 	}
 }
  
@@ -938,7 +945,7 @@ int try_to_free_pages(struct zone **zones, unsigned int gfp_mask)
 	for (i = 0; zones[i] != NULL; i++) {
 		struct zone *zone = zones[i];
 
-		if (!cpuset_zone_allowed(zone))
+		if (!cpuset_zone_allowed(zone, __GFP_HARDWALL))
 			continue;
 
 		zone->temp_priority = DEF_PRIORITY;
@@ -984,7 +991,7 @@ out:
 	for (i = 0; zones[i] != 0; i++) {
 		struct zone *zone = zones[i];
 
-		if (!cpuset_zone_allowed(zone))
+		if (!cpuset_zone_allowed(zone, __GFP_HARDWALL))
 			continue;
 
 		zone->prev_priority = zone->temp_priority;
@@ -1254,11 +1261,11 @@ void wakeup_kswapd(struct zone *zone, int order)
 		return;
 	if (pgdat->kswapd_max_order < order)
 		pgdat->kswapd_max_order = order;
-	if (!cpuset_zone_allowed(zone))
+	if (!cpuset_zone_allowed(zone, __GFP_HARDWALL))
 		return;
-	if (!waitqueue_active(&zone->zone_pgdat->kswapd_wait))
+	if (!waitqueue_active(&pgdat->kswapd_wait))
 		return;
-	wake_up_interruptible(&zone->zone_pgdat->kswapd_wait);
+	wake_up_interruptible(&pgdat->kswapd_wait);
 }
 
 #ifdef CONFIG_PM
@@ -1358,14 +1365,13 @@ int zone_reclaim(struct zone *zone, unsigned int gfp_mask, unsigned int order)
 		sc.swap_cluster_max = SWAP_CLUSTER_MAX;
 
 	/* Don't reclaim the zone if there are other reclaimers active */
-	if (!atomic_inc_and_test(&zone->reclaim_in_progress))
+	if (atomic_read(&zone->reclaim_in_progress) > 0)
 		goto out;
 
 	shrink_zone(zone, &sc);
 	total_reclaimed = sc.nr_reclaimed;
 
  out:
-	atomic_dec(&zone->reclaim_in_progress);
 	return total_reclaimed;
 }
 
@@ -1374,6 +1380,9 @@ asmlinkage long sys_set_zone_reclaim(unsigned int node, unsigned int zone,
 {
 	struct zone *z;
 	int i;
+
+	if (!capable(CAP_SYS_ADMIN))
+		return -EACCES;
 
 	if (node >= MAX_NUMNODES || !node_online(node))
 		return -EINVAL;

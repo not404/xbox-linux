@@ -393,7 +393,7 @@ EXPORT_SYMBOL(__dma_sync);
  * __dma_sync_page() implementation for systems using highmem.
  * In this case, each page of a buffer must be kmapped/kunmapped
  * in order to have a virtual address for __dma_sync(). This must
- * not sleep so kmap_atmomic()/kunmap_atomic() are used.
+ * not sleep so kmap_atomic()/kunmap_atomic() are used.
  *
  * Note: yes, it is possible and correct to have a buffer extend
  * beyond the first page.
@@ -401,10 +401,10 @@ EXPORT_SYMBOL(__dma_sync);
 static inline void __dma_sync_page_highmem(struct page *page,
 		unsigned long offset, size_t size, int direction)
 {
-	size_t seg_size = min((size_t)PAGE_SIZE, size) - offset;
+	size_t seg_size = min((size_t)(PAGE_SIZE - offset), size);
 	size_t cur_size = seg_size;
 	unsigned long flags, start, seg_offset = offset;
-	int nr_segs = PAGE_ALIGN(size + (PAGE_SIZE - offset))/PAGE_SIZE;
+	int nr_segs = 1 + ((size - seg_size) + PAGE_SIZE - 1)/PAGE_SIZE;
 	int seg_nr = 0;
 
 	local_irq_save(flags);

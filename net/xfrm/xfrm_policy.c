@@ -37,7 +37,7 @@ EXPORT_SYMBOL(xfrm_policy_list);
 static DEFINE_RWLOCK(xfrm_policy_afinfo_lock);
 static struct xfrm_policy_afinfo *xfrm_policy_afinfo[NPROTO];
 
-static kmem_cache_t *xfrm_dst_cache;
+static kmem_cache_t *xfrm_dst_cache __read_mostly;
 
 static struct work_struct xfrm_policy_gc_work;
 static struct list_head xfrm_policy_gc_list =
@@ -163,7 +163,7 @@ static void xfrm_policy_timer(unsigned long data)
 	if (xp->dead)
 		goto out;
 
-	dir = xp->index & 7;
+	dir = xfrm_policy_id2dir(xp->index);
 
 	if (xp->lft.hard_add_expires_seconds) {
 		long tmo = xp->lft.hard_add_expires_seconds +
@@ -225,7 +225,7 @@ expired:
  * SPD calls.
  */
 
-struct xfrm_policy *xfrm_policy_alloc(int gfp)
+struct xfrm_policy *xfrm_policy_alloc(gfp_t gfp)
 {
 	struct xfrm_policy *policy;
 
@@ -417,7 +417,7 @@ struct xfrm_policy *xfrm_policy_byid(int dir, u32 id, int delete)
 	struct xfrm_policy *pol, **p;
 
 	write_lock_bh(&xfrm_policy_lock);
-	for (p = &xfrm_policy_list[id & 7]; (pol=*p)!=NULL; p = &pol->next) {
+	for (p = &xfrm_policy_list[dir]; (pol=*p)!=NULL; p = &pol->next) {
 		if (pol->index == id) {
 			xfrm_pol_hold(pol);
 			if (delete)
@@ -765,8 +765,8 @@ restart:
 	switch (policy->action) {
 	case XFRM_POLICY_BLOCK:
 		/* Prohibit the flow */
-		xfrm_pol_put(policy);
-		return -EPERM;
+		err = -EPERM;
+		goto error;
 
 	case XFRM_POLICY_ALLOW:
 		if (policy->xfrm_nr == 0) {
@@ -782,8 +782,8 @@ restart:
 		 */
 		dst = xfrm_find_bundle(fl, policy, family);
 		if (IS_ERR(dst)) {
-			xfrm_pol_put(policy);
-			return PTR_ERR(dst);
+			err = PTR_ERR(dst);
+			goto error;
 		}
 
 		if (dst)

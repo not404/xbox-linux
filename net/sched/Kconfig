@@ -72,9 +72,11 @@ config NET_SCH_CLK_GETTIMEOFDAY
 	  Choose this if you need a high resolution clock source but can't use
 	  the CPU's cycle counter.
 
+# don't allow on SMP x86 because they can have unsynchronized TSCs.
+# gettimeofday is a good alternative
 config NET_SCH_CLK_CPU
 	bool "CPU cycle counter"
-	depends on X86_TSC || X86_64 || ALPHA || SPARC64 || PPC64 || IA64
+	depends on ((X86_TSC || X86_64) && !SMP) || ALPHA || SPARC64 || PPC64 || IA64
 	help
 	  Say Y here if you want to use the CPU's cycle counter as clock source.
 	  This is a cheap and high resolution clock source, but on some
@@ -491,6 +493,7 @@ config NET_EMATCH_TEXT
 	depends on NET_EMATCH
 	select TEXTSEARCH
 	select TEXTSEARCH_KMP
+	select TEXTSEARCH_BM
 	select TEXTSEARCH_FSM
 	---help---
 	  Say Y here if you want to be ablt to classify packets based on

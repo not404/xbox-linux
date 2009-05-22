@@ -31,6 +31,7 @@
  *     17-Jul-2005 BJD  Changed to platform device for SuperIO 16550s
  *     25-Jul-2005 BJD  Removed ASIX static mappings
  *     27-Jul-2005 BJD  Ensure maximum frequency of i2c bus
+ *     20-Sep-2005 BJD  Added static to non-exported items
 */
 
 #include <linux/kernel.h>
@@ -229,7 +230,7 @@ static int chip0_map[] = { 1 };
 static int chip1_map[] = { 2 };
 static int chip2_map[] = { 3 };
 
-struct mtd_partition bast_default_nand_part[] = {
+static struct mtd_partition bast_default_nand_part[] = {
 	[0] = {
 		.name	= "Boot Agent",
 		.size	= SZ_16K,
@@ -306,9 +307,9 @@ static void bast_nand_select(struct s3c2410_nand_set *set, int slot)
 }
 
 static struct s3c2410_platform_nand bast_nand_info = {
-	.tacls		= 40,
-	.twrph0		= 80,
-	.twrph1		= 80,
+	.tacls		= 30,
+	.twrph0		= 60,
+	.twrph1		= 60,
 	.nr_sets	= ARRAY_SIZE(bast_nand_sets),
 	.sets		= bast_nand_sets,
 	.select_chip	= bast_nand_select,
@@ -339,7 +340,7 @@ static struct resource bast_dm9k_resource[] = {
  * better IO routines can be written and tested
 */
 
-struct dm9000_plat_data bast_dm9k_platdata = {
+static struct dm9000_plat_data bast_dm9k_platdata = {
 	.flags		= DM9000_PLATF_16BITONLY
 };
 
@@ -381,7 +382,7 @@ static struct plat_serial8250_port bast_sio_data[] = {
 
 static struct platform_device bast_sio = {
 	.name			= "serial8250",
-	.id			= 0,
+	.id			= PLAT8250_DEV_PLATFORM,
 	.dev			= {
 		.platform_data	= &bast_sio_data,
 	},
@@ -428,7 +429,7 @@ static struct s3c24xx_board bast_board __initdata = {
 	.clocks_count  = ARRAY_SIZE(bast_clocks)
 };
 
-void __init bast_map_io(void)
+static void __init bast_map_io(void)
 {
 	/* initialise the clocks */
 
