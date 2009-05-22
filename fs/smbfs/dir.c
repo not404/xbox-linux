@@ -34,7 +34,7 @@ static int smb_rename(struct inode *, struct dentry *,
 static int smb_make_node(struct inode *,struct dentry *,int,dev_t);
 static int smb_link(struct dentry *, struct inode *, struct dentry *);
 
-struct file_operations smb_dir_operations =
+const struct file_operations smb_dir_operations =
 {
 	.read		= generic_read_dir,
 	.readdir	= smb_readdir,
@@ -432,6 +432,11 @@ smb_lookup(struct inode *dir, struct dentry *dentry, struct nameidata *nd)
 
 	error = -ENAMETOOLONG;
 	if (dentry->d_name.len > SMB_MAXNAMELEN)
+		goto out;
+
+	/* Do not allow lookup of names with backslashes in */
+	error = -EINVAL;
+	if (memchr(dentry->d_name.name, '\\', dentry->d_name.len))
 		goto out;
 
 	lock_kernel();

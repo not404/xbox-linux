@@ -103,8 +103,8 @@ static ssize_t read_vmcore(struct file *file, char __user *buffer,
 				size_t buflen, loff_t *fpos)
 {
 	ssize_t acc = 0, tmp;
-	size_t tsz, nr_bytes;
-	u64 start;
+	size_t tsz;
+	u64 start, nr_bytes;
 	struct vmcore *curr_m = NULL;
 
 	if (buflen == 0 || *fpos >= vmcore_size)
@@ -172,7 +172,7 @@ static int open_vmcore(struct inode *inode, struct file *filp)
 	return 0;
 }
 
-struct file_operations proc_vmcore_operations = {
+const struct file_operations proc_vmcore_operations = {
 	.read		= read_vmcore,
 	.open		= open_vmcore,
 };

@@ -86,8 +86,6 @@
 
 int sysctl_ip_default_ttl = IPDEFTTL;
 
-static int ip_fragment(struct sk_buff *skb, int (*output)(struct sk_buff*));
-
 /* Generate a checksum for an outgoing IP datagram. */
 __inline__ void ip_send_check(struct iphdr *iph)
 {
@@ -421,7 +419,7 @@ static void ip_copy_metadata(struct sk_buff *to, struct sk_buff *from)
  *	single device frame, and queue such a frame for sending.
  */
 
-static int ip_fragment(struct sk_buff *skb, int (*output)(struct sk_buff*))
+int ip_fragment(struct sk_buff *skb, int (*output)(struct sk_buff*))
 {
 	struct iphdr *iph;
 	int raw = 0;
@@ -673,6 +671,8 @@ fail:
 	return err;
 }
 
+EXPORT_SYMBOL(ip_fragment);
+
 int
 ip_generic_getfrag(void *from, char *to, int offset, int len, int odd, struct sk_buff *skb)
 {
@@ -904,7 +904,7 @@ alloc_new_skb:
 			 * because we have no idea what fragment will be
 			 * the last.
 			 */
-			if (datalen == length)
+			if (datalen == length + fraggap)
 				alloclen += rt->u.dst.trailer_len;
 
 			if (transhdrlen) {
@@ -1249,11 +1249,7 @@ int ip_push_pending_frames(struct sock *sk)
 	iph->tos = inet->tos;
 	iph->tot_len = htons(skb->len);
 	iph->frag_off = df;
-	if (!df) {
-		__ip_select_ident(iph, &rt->u.dst, 0);
-	} else {
-		iph->id = htons(inet->id++);
-	}
+	ip_select_ident(iph, &rt->u.dst, sk);
 	iph->ttl = ttl;
 	iph->protocol = sk->sk_protocol;
 	iph->saddr = rt->rt_src;

@@ -27,6 +27,7 @@
 #include <linux/pagemap.h>
 #include <linux/syscalls.h>
 #include <linux/rcupdate.h>
+#include <linux/audit.h>
 
 #include <asm/unistd.h>
 
@@ -330,7 +331,10 @@ out:
 
 asmlinkage long sys_ftruncate(unsigned int fd, unsigned long length)
 {
-	return do_sys_ftruncate(fd, length, 1);
+	long ret = do_sys_ftruncate(fd, length, 1);
+	/* avoid REGPARM breakage on x86: */
+	prevent_tail_call(ret);
+	return ret;
 }
 
 /* LFS versions of truncate are only needed on 32 bit machines */
@@ -342,7 +346,10 @@ asmlinkage long sys_truncate64(const char __user * path, loff_t length)
 
 asmlinkage long sys_ftruncate64(unsigned int fd, loff_t length)
 {
-	return do_sys_ftruncate(fd, length, 0);
+	long ret = do_sys_ftruncate(fd, length, 0);
+	/* avoid REGPARM breakage on x86: */
+	prevent_tail_call(ret);
+	return ret;
 }
 #endif
 
@@ -626,6 +633,8 @@ asmlinkage long sys_fchmod(unsigned int fd, mode_t mode)
 	dentry = file->f_dentry;
 	inode = dentry->d_inode;
 
+	audit_inode(NULL, inode, 0);
+
 	err = -EROFS;
 	if (IS_RDONLY(inode))
 		goto out_putf;
@@ -775,7 +784,10 @@ asmlinkage long sys_fchown(unsigned int fd, uid_t user, gid_t group)
 
 	file = fget(fd);
 	if (file) {
-		error = chown_common(file->f_dentry, user, group);
+		struct dentry * dentry;
+		dentry = file->f_dentry;
+		audit_inode(NULL, dentry->d_inode, 0);
+		error = chown_common(dentry, user, group);
 		fput(file);
 	}
 	return error;
@@ -890,6 +902,10 @@ EXPORT_SYMBOL(filp_open);
  * a fully instantiated struct file to the caller.
  * This function is meant to be called from within a filesystem's
  * lookup method.
+ * Beware of calling it for non-regular files! Those ->open methods might block
+ * (e.g. in fifo_open), leaving you with parent locked (and in case of fifo,
+ * leading to a deadlock, as nobody can open that fifo anymore, because
+ * another process to open fifo will block on locked parent when doing lookup).
  * Note that in case of error, nd->intent.open.file is destroyed, but the
  * path information remains valid.
  * If the open callback is set to NULL, then the standard f_op->open()
@@ -973,7 +989,7 @@ repeat:
 	fdt = files_fdtable(files);
  	fd = find_next_zero_bit(fdt->open_fds->fds_bits,
 				fdt->max_fdset,
-				fdt->next_fd);
+				files->next_fd);
 
 	/*
 	 * N.B. For clone tasks sharing a files structure, this test
@@ -998,7 +1014,7 @@ repeat:
 
 	FD_SET(fd, fdt->open_fds);
 	FD_CLR(fd, fdt->close_on_exec);
-	fdt->next_fd = fd + 1;
+	files->next_fd = fd + 1;
 #if 1
 	/* Sanity check */
 	if (fdt->fd[fd] != NULL) {
@@ -1019,8 +1035,8 @@ static void __put_unused_fd(struct files_struct *files, unsigned int fd)
 {
 	struct fdtable *fdt = files_fdtable(files);
 	__FD_CLR(fd, fdt->open_fds);
-	if (fd < fdt->next_fd)
-		fdt->next_fd = fd;
+	if (fd < files->next_fd)
+		files->next_fd = fd;
 }
 
 void fastcall put_unused_fd(unsigned int fd)
@@ -1083,22 +1099,31 @@ long do_sys_open(int dfd, const char __user *filename, int flags, int mode)
 
 asmlinkage long sys_open(const char __user *filename, int flags, int mode)
 {
+	long ret;
+
 	if (force_o_largefile())
 		flags |= O_LARGEFILE;
 
-	return do_sys_open(AT_FDCWD, filename, flags, mode);
+	ret = do_sys_open(AT_FDCWD, filename, flags, mode);
+	/* avoid REGPARM breakage on x86: */
+	prevent_tail_call(ret);
+	return ret;
 }
 EXPORT_SYMBOL_GPL(sys_open);
 
 asmlinkage long sys_openat(int dfd, const char __user *filename, int flags,
 			   int mode)
 {
+	long ret;
+
 	if (force_o_largefile())
 		flags |= O_LARGEFILE;
 
-	return do_sys_open(dfd, filename, flags, mode);
+	ret = do_sys_open(dfd, filename, flags, mode);
+	/* avoid REGPARM breakage on x86: */
+	prevent_tail_call(ret);
+	return ret;
 }
-EXPORT_SYMBOL_GPL(sys_openat);
 
 #ifndef __alpha__
 

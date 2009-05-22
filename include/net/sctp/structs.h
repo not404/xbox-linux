@@ -514,6 +514,16 @@ struct sctp_af {
 					 int optname,
 					 char __user *optval,
 					 int __user *optlen);
+	int		(*compat_setsockopt)	(struct sock *sk,
+					 int level,
+					 int optname,
+					 char __user *optval,
+					 int optlen);
+	int		(*compat_getsockopt)	(struct sock *sk,
+					 int level,
+					 int optname,
+					 char __user *optval,
+					 int __user *optlen);
 	struct dst_entry *(*get_dst)	(struct sctp_association *asoc,
 					 union sctp_addr *daddr,
 					 union sctp_addr *saddr);
@@ -702,6 +712,7 @@ struct sctp_chunk {
 	__u8 tsn_gap_acked;	/* Is this chunk acked by a GAP ACK? */
 	__s8 fast_retransmit;	 /* Is this chunk fast retransmitted? */
 	__u8 tsn_missing_report; /* Data chunk missing counter. */
+	__u8 data_accepted; 	/* At least 1 chunk in this packet accepted */
 };
 
 void sctp_chunk_hold(struct sctp_chunk *);
