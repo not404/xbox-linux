@@ -207,19 +207,28 @@ config USB_EGALAX
 	  module will be called touchkitusb.
 
 config USB_XPAD
-	tristate "X-Box gamepad support"
+	tristate "Xbox controller (gamepad) support"
 	depends on USB && INPUT
 	---help---
-	  Say Y here if you want to use the X-Box pad with your computer.
+	  Say Y here if you want to use Xbox controllers with your computer.
 	  Make sure to say Y to "Joystick support" (CONFIG_INPUT_JOYDEV)
 	  and/or "Event interface support" (CONFIG_INPUT_EVDEV) as well.
 
-	  For information about how to connect the X-Box pad to USB, see
+	  For information about how to connect an Xbox controller to USB, see
 	  <file:Documentation/input/xpad.txt>.
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called xpad.
 	  
+config USB_XPAD_MOUSE
+ 	bool "Mouse emulation for Xbox controller"
+ 	depends on USB_XPAD
+ 	---help---
+ 	  Say Y here if you want to enable mouse emulation for your Xbox
+ 	  controller.
+ 	  Make sure to say Y to "Mouse support" (CONFIG_INPUT_MOUSEDEV)
+ 	  and/or "Event interface support" (CONFIG_INPUT_EVDEV) as well.
+
 config USB_ATI_REMOTE
 	tristate "ATI / X10 USB RF remote control"
 	depends on USB && INPUT

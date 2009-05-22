@@ -5,6 +5,17 @@
 #
 
 targets		:= vmlinux vmlinux.bin vmlinux.bin.gz head.o misc.o piggy.o
+
+#
+# There is some strange interaction when paging is off, that makes
+# newer v1.1+ Xboxen (manufactured August 2002 or later) crash while
+# decrompressing the kernel. Compiling the decrompressor without any
+# optimization reliably works around this problem.
+#
+ifeq ($(CONFIG_X86_XBOX),y)
+CFLAGS_misc.o	:= -O0
+endif
+
 EXTRA_AFLAGS	:= -traditional
 
 LDFLAGS_vmlinux := -Ttext $(IMAGE_OFFSET) -e startup_32

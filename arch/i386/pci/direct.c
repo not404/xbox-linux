@@ -4,6 +4,7 @@
 
 #include <linux/pci.h>
 #include <linux/init.h>
+#include "mach_pci_blacklist.h"
 #include "pci.h"
 
 /*
@@ -19,6 +20,9 @@ static int pci_conf1_read(unsigned int seg, unsigned int bus,
 	unsigned long flags;
 
 	if (!value || (bus > 255) || (devfn > 255) || (reg > 255))
+		return -EINVAL;
+
+	if (mach_pci_is_blacklisted(bus, PCI_SLOT(devfn), PCI_FUNC(devfn)))
 		return -EINVAL;
 
 	spin_lock_irqsave(&pci_config_lock, flags);

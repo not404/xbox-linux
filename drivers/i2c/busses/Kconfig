@@ -64,6 +64,10 @@ config I2C_AMD756_S4882
 	  This driver can also be built as a module.  If so, the module
 	  will be called i2c-amd756-s4882.
 
+config I2C_XBOX
+	tristate "XBOX I2C"
+	depends on X86_XBOX && I2C && PCI && EXPERIMENTAL
+
 config I2C_AMD8111
 	tristate "AMD 8111"
 	depends on I2C && PCI && EXPERIMENTAL

@@ -35,6 +35,9 @@
 #include "ibm.h"
 #include "ultrix.h"
 #include "efi.h"
+#ifdef CONFIG_XBOX_PARTITION
+#include "xbox.h"
+#endif
 
 #ifdef CONFIG_BLK_DEV_MD
 extern void md_autodetect_dev(dev_t dev);
@@ -178,6 +181,14 @@ check_partition(struct gendisk *hd, struct block_device *bdev)
 		memset(&state->parts, 0, sizeof(state->parts));
 		res = check_part[i++](state, bdev);
 	}
+#ifdef CONFIG_XBOX_PARTITION
+	{
+		int xbox;
+
+		xbox = xbox_partition(state, bdev);
+		if(!res) res = xbox;
+	}
+#endif
 	if (res > 0)
 		return state;
 	if (!res)

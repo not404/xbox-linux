@@ -695,6 +695,21 @@ config FB_RIVA_DEBUG
 	  of debugging informations to provide to the maintainer when
 	  something goes wrong.
 
+config FB_XBOX
+	tristate "nVidia Xbox support"
+	depends on FB && PCI && I2C_XBOX && EXPERIMENTAL
+	select FB_MODE_HELPERS
+	select FB_CFB_FILLRECT
+	select FB_CFB_COPYAREA
+	select FB_CFB_IMAGEBLIT
+	select FB_SOFT_CURSOR
+	help
+	  This driver supports the graphics chip of the Microsoft Xbox. 
+	  Say Y if you have an Xbox, N otherwise
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called xboxfb.
+
 config FB_I810
 	tristate "Intel 810/815 support (EXPERIMENTAL)"
 	depends on FB && EXPERIMENTAL && PCI && X86 && !X86_64

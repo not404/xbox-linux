@@ -352,6 +352,14 @@ static void ide_cd_put(struct cdrom_info *cd)
 	up(&idecd_ref_sem);
 }
 
+#ifdef CONFIG_X86_XBOX
+#include <linux/xbox.h>
+/* Global flag indicating whether to simulate Xbox drive locking in
+ * software.  There should only be one Xbox drive in a system!  This
+ * variable is externally referenced by arch/i386/kernel/xboxejectfix.c. */
+volatile int Xbox_simulate_drive_locked = 0;
+#endif /* CONFIG_X86_XBOX */
+ 
 /****************************************************************************
  * Generic packet command support and error handling routines.
  */
@@ -2083,6 +2091,16 @@ cdrom_lockdoor(ide_drive_t *drive, int lockflag, struct request_sense *sense)
 	if (sense == NULL)
 		sense = &my_sense;
 
+#ifdef CONFIG_X86_XBOX
+	/* If we're on an Xbox and this is an Xbox drive, simulate the lock
+	   request in software.  (See arch/i386/kernel/xboxejectfix.c) */
+	if (CDROM_CONFIG_FLAGS(drive)->xbox_drive && machine_is_xbox) {
+		CDROM_STATE_FLAGS(drive)->door_locked = lockflag;
+		Xbox_simulate_drive_locked = lockflag;
+		return 0;
+	}
+#endif /* CONFIG_X86_XBOX */
+		
 	/* If the drive cannot lock the door, just pretend. */
 	if (CDROM_CONFIG_FLAGS(drive)->no_doorlock) {
 		stat = 0;
@@ -2131,6 +2149,22 @@ static int cdrom_eject(ide_drive_t *drive, int ejectflag,
 	if (CDROM_STATE_FLAGS(drive)->door_locked && ejectflag)
 		return 0;
 
+#ifdef CONFIG_X86_XBOX
+        /* Older Xbox DVD drives don't understand the ATAPI command, but the SMC
+	   can do the eject.  Note that some Xbox drives support the eject
+	   command, namely the Samsung, so for that drive we do a regular eject
+	   sequence. */
+	if (machine_is_xbox && CDROM_CONFIG_FLAGS(drive)->xbox_drive &&
+		CDROM_CONFIG_FLAGS(drive)->xbox_eject) {
+		if (ejectflag) {
+			Xbox_tray_load();
+		} else {
+			Xbox_simulate_drive_locked = 0;
+			Xbox_tray_eject();
+		}
+		return 0;
+	}
+#endif
 	cdrom_prepare_request(drive, &req);
 
 	/* only tell drive to close tray if open, if it can do that */
@@ -3209,6 +3243,62 @@ int ide_cdrom_setup (ide_drive_t *drive)
                  /* uses CD in slot 0 when value is set to 3 */
                  cdi->sanyo_slot = 3;
         }
+#ifdef CONFIG_X86_XBOX
+	/* THOMSON DVD drives in the Xbox report incorrect capabilities
+	   and do not understand the ATAPI eject command, but the SMC
+	   can do the eject. */
+	else if ((strcmp(drive->id->model, "THOMSON-DVD") == 0)) {
+		CDROM_CONFIG_FLAGS(drive)->audio_play = 1;
+		CDROM_CONFIG_FLAGS(drive)->dvd = 1;
+		CDROM_CONFIG_FLAGS(drive)->xbox_drive = 1;
+		CDROM_CONFIG_FLAGS(drive)->xbox_eject = 1;
+	}
+	/* PHILIPS drives in Xboxen manufactured pre September 2003,
+	   report correct capabilities, but do not understand the ATAPI
+	   eject command, hence require the SMC to do so. */
+	else if ((strcmp(drive->id->model, "PHILIPS XBOX DVD DRIVE") == 0)) {
+		CDROM_CONFIG_FLAGS(drive)->xbox_drive = 1;
+		CDROM_CONFIG_FLAGS(drive)->xbox_eject = 1;
+	}
+	/* PHILIPS drives in Xboxen manufactured post September 2003,
+	   report incorrect capabilities, but understand the ATAPI
+	   eject command. */
+	else if ((strcmp(drive->id->model, "PHILIPS J5 3235C") == 0)) {
+		CDROM_CONFIG_FLAGS(drive)->audio_play = 1;
+		CDROM_CONFIG_FLAGS(drive)->dvd = 1;
+		CDROM_CONFIG_FLAGS(drive)->xbox_drive = 1;
+		CDROM_CONFIG_FLAGS(drive)->xbox_eject = 0;
+	}
+	/* SAMSUNG drives in the Xbox report correct capabilities
+	   and understand the ATAPI eject command. */
+	else if (strcmp(drive->id->model, "SAMSUNG DVD-ROM SDG-605B") == 0) {
+		CDROM_CONFIG_FLAGS(drive)->xbox_drive = 1;
+		CDROM_CONFIG_FLAGS(drive)->xbox_eject = 0;
+	}
+#endif
+
+	/* Is an Xbox drive detected? */
+#ifdef CONFIG_X86_XBOX
+	if (CDROM_CONFIG_FLAGS(drive)->xbox_drive) {
+		/* If an Xbox drive is present in a regular PC, we can't eject.
+		   Act like the drive cannot eject, unless the ATAPI eject command
+		   is supported by the drive.  If the drive doesn't support ATAPI
+		   ejecting, act like door locking is impossible as well. */
+		if (!machine_is_xbox) {
+			CDROM_CONFIG_FLAGS(drive)->no_doorlock = CDROM_CONFIG_FLAGS
+				(drive)->xbox_eject;
+			CDROM_CONFIG_FLAGS(drive)->no_eject = CDROM_CONFIG_FLAGS(drive)
+				->xbox_eject;
+		} else {
+			/* An Xbox drive in an Xbox.  We can support ejecting through
+			   the SMC and support drive locking in software by ignoring
+			   the eject interrupt (see arch/i386/kernel/xboxejectfix.c). */
+			CDROM_CONFIG_FLAGS(drive)->no_doorlock = 0;
+			CDROM_CONFIG_FLAGS(drive)->no_eject = 0;
+			Xbox_simulate_drive_locked = 0;
+		}
+	}
+#endif
 #endif /* not STANDARD_ATAPI */
 
 	info->toc		= NULL;

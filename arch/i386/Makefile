@@ -22,7 +22,7 @@ OBJCOPYFLAGS	:= -O binary -R .note -R .comment -S
 LDFLAGS_vmlinux :=
 CHECKFLAGS	+= -D__i386__
 
-CFLAGS += -pipe -msoft-float
+CFLAGS += -pipe
 
 # prevent gcc from keeping the stack 16 byte aligned
 CFLAGS += $(call cc-option,-mpreferred-stack-boundary=2)
@@ -78,6 +78,10 @@ mcore-$(CONFIG_X86_VOYAGER)	:= mach-voyager
 # VISWS subarch support
 mflags-$(CONFIG_X86_VISWS)	:= -Iinclude/asm-i386/mach-visws
 mcore-$(CONFIG_X86_VISWS)	:= mach-visws
+
+# Xbox subarch support
+mflags-$(CONFIG_X86_XBOX)	:= -Iinclude/asm-i386/mach-xbox
+mcore-$(CONFIG_X86_XBOX)	:= mach-xbox
 
 # NUMAQ subarch support
 mflags-$(CONFIG_X86_NUMAQ)	:= -Iinclude/asm-i386/mach-numaq

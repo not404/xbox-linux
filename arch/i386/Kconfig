@@ -106,6 +106,15 @@ config X86_VISWS
 	  A kernel compiled for the Visual Workstation will not run on PCs
 	  and vice versa. See <file:Documentation/sgi-visws.txt> for details.
 
+config X86_XBOX
+	bool "Xbox (Microsoft)"
+	help
+	  Xbox is a standard PC from Microsoft minus some legacy hardware.
+	  More info may be gleaned from <http://xbox-linux.sourceforge.net/>.
+
+	  Only choose this option if you are building a kernel for such a
+	  machine, otherwise choose "PC-compatible".
+
 config X86_GENERICARCH
        bool "Generic architecture (Summit, bigsmp, ES7000, default)"
        depends on SMP
@@ -1177,7 +1186,7 @@ config ISA_DMA_API
 
 config ISA
 	bool "ISA support"
-	depends on !(X86_VOYAGER || X86_VISWS)
+	depends on !(X86_VOYAGER || X86_VISWS || X86_XBOX)
 	help
 	  Find out whether you have ISA slots on your motherboard.  ISA is the
 	  name of a bus system, i.e. the way the CPU talks to the other stuff
@@ -1204,7 +1213,7 @@ config EISA
 source "drivers/eisa/Kconfig"
 
 config MCA
-	bool "MCA support" if !(X86_VISWS || X86_VOYAGER)
+	bool "MCA support" if !(X86_VISWS || X86_VOYAGER || X86_XBOX)
 	default y if X86_VOYAGER
 	help
 	  MicroChannel Architecture is found in some IBM PS/2 machines and
@@ -1265,17 +1274,17 @@ config GENERIC_IRQ_PROBE
 
 config X86_SMP
 	bool
-	depends on SMP && !X86_VOYAGER
+	depends on SMP && !(X86_VOYAGER || X86_XBOX)
 	default y
 
 config X86_HT
 	bool
-	depends on SMP && !(X86_VISWS || X86_VOYAGER)
+	depends on SMP && !(X86_VISWS || X86_VOYAGER || X86_XBOX)
 	default y
 
 config X86_BIOS_REBOOT
 	bool
-	depends on !(X86_VISWS || X86_VOYAGER)
+	depends on !(X86_VISWS || X86_VOYAGER || X86_XBOX)
 	default y
 
 config X86_TRAMPOLINE
