@@ -39,6 +39,7 @@ config GENERIC_IOMAP
 
 config ARCH_MAY_HAVE_PC_FDC
 	bool
+	depends on !X86_XBOX
 	default y
 
 config DMI

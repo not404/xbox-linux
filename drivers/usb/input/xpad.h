@@ -44,7 +44,7 @@
 #include <linux/circ_buf.h>
 
 /****************** driver description and version ********************/
-#define DRIVER_VERSION		"v0.1.6"
+#define DRIVER_VERSION		"v0.1.7"
 #define DRIVER_AUTHOR		"Marko Friedemann <mfr@bmx-chemnitz.de>,\
  Oliver Schwartz <Oliver.Schwartz@gmx.de>, Georg Lukas <georg@op-co.de>,\
  Thomas Pedley <Gentoox@shallax.com>, Edgar Hucek <hostmaster@ed-soft.at>"
@@ -77,6 +77,9 @@ struct usb_xpad {
 
 	int isMat;				/* is this a dancepad/mat? */
 	int is360;				/* is this a Xbox 360 Controller */
+	int isWireless;			/* is this a Xbox 360 _Wireless_ Controller
+						   NOTE: if this is set, is360 should be also */
+	int isConnected;			/* is this controller connected */
 
 #ifdef CONFIG_USB_XPAD_RUMBLE
 	int rumble_enabled;			/* ioctl can toggle rumble */
@@ -99,10 +102,15 @@ struct usb_xpad {
 struct xpad_device {
 	u16 idVendor;
 	u16 idProduct;
-	u8  isMat;
 	char *name;
-	u8  is360;
+	u8  type;
 };
+
+/* gamepad type */
+#define GAMEPAD_XBOX			0
+#define GAMEPAD_XBOX_MAT		1
+#define GAMEPAD_XBOX360			2
+#define GAMEPAD_XBOX360_WIRELESS	3
 
 
 /************************ rumble function stubs ***********************/
