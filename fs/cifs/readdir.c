@@ -3,7 +3,7 @@
  *
  *   Directory search handling
  * 
- *   Copyright (C) International Business Machines  Corp., 2004, 2005
+ *   Copyright (C) International Business Machines  Corp., 2004, 2007
  *   Author(s): Steve French (sfrench@us.ibm.com)
  *
  *   This library is free software; you can redistribute it and/or modify
@@ -83,6 +83,8 @@ static int construct_dentry(struct qstr *qstring, struct file *file,
 				return rc;
 			rc = 1;
 		}
+		if(file->f_path.dentry->d_sb->s_flags & MS_NOATIME)
+			(*ptmp_inode)->i_flags |= S_NOATIME | S_NOCMTIME;
 	} else {
 		tmp_dentry = d_alloc(file->f_path.dentry, qstring);
 		if(tmp_dentry == NULL) {
@@ -98,6 +100,8 @@ static int construct_dentry(struct qstr *qstring, struct file *file,
 			tmp_dentry->d_op = &cifs_dentry_ops;
 		if(*ptmp_inode == NULL)
 			return rc;
+		if(file->f_path.dentry->d_sb->s_flags & MS_NOATIME)
+			(*ptmp_inode)->i_flags |= S_NOATIME | S_NOCMTIME;			
 		rc = 2;
 	}
 
@@ -156,9 +160,9 @@ static void fill_in_inode(struct inode *tmp_inode, int new_buf_type,
 		tmp_inode->i_atime = cnvrtDosUnixTm(
 				le16_to_cpu(pfindData->LastAccessDate),
 				le16_to_cpu(pfindData->LastAccessTime));
-                tmp_inode->i_ctime = cnvrtDosUnixTm(
-                                le16_to_cpu(pfindData->LastWriteDate),
-                                le16_to_cpu(pfindData->LastWriteTime));
+		tmp_inode->i_ctime = cnvrtDosUnixTm(
+				le16_to_cpu(pfindData->LastWriteDate),
+				le16_to_cpu(pfindData->LastWriteTime));
 		AdjustForTZ(cifs_sb->tcon, tmp_inode);
 		attr = le16_to_cpu(pfindData->Attributes);
 		allocation_size = le32_to_cpu(pfindData->AllocationSize);
@@ -215,6 +219,10 @@ static void fill_in_inode(struct inode *tmp_inode, int new_buf_type,
 		tmp_inode->i_mode |= S_IFREG;
 		if (attr & ATTR_READONLY)
 			tmp_inode->i_mode &= ~(S_IWUGO);
+		else if ((tmp_inode->i_mode & S_IWUGO) == 0)
+			/* the ATTR_READONLY flag may have been changed on   */
+		   	/* server -- set any w bits allowed by mnt_file_mode */
+			tmp_inode->i_mode |= (S_IWUGO & cifs_sb->mnt_file_mode);
 	} /* could add code here - to validate if device or weird share type? */
 
 	/* can not fill in nlink here as in qpathinfo version and Unx search */
@@ -222,7 +230,8 @@ static void fill_in_inode(struct inode *tmp_inode, int new_buf_type,
 		atomic_set(&cifsInfo->inUse, 1);
 	}
 
-	if (is_size_safe_to_change(cifsInfo)) {
+	spin_lock(&tmp_inode->i_lock);
+	if (is_size_safe_to_change(cifsInfo, end_of_file)) {
 		/* can not safely change the file size here if the 
 		client is writing to it due to potential races */
 		i_size_write(tmp_inode, end_of_file);
@@ -231,6 +240,7 @@ static void fill_in_inode(struct inode *tmp_inode, int new_buf_type,
 	/* for this calculation, even though the reported blocksize is larger */
 		tmp_inode->i_blocks = (512 - 1 + allocation_size) >> 9;
 	}
+	spin_unlock(&tmp_inode->i_lock);
 
 	if (allocation_size < end_of_file)
 		cFYI(1, ("May be sparse file, allocation less than file size"));
@@ -351,15 +361,17 @@ static void unix_fill_in_inode(struct inode *tmp_inode,
 	tmp_inode->i_gid = le64_to_cpu(pfindData->Gid);
 	tmp_inode->i_nlink = le64_to_cpu(pfindData->Nlinks);
 
-	if (is_size_safe_to_change(cifsInfo)) {
+	spin_lock(&tmp_inode->i_lock);
+	if (is_size_safe_to_change(cifsInfo, end_of_file)) {
 		/* can not safely change the file size here if the 
 		client is writing to it due to potential races */
-		i_size_write(tmp_inode,end_of_file);
+		i_size_write(tmp_inode, end_of_file);
 
 	/* 512 bytes (2**9) is the fake blocksize that must be used */
 	/* for this calculation, not the real blocksize */
 		tmp_inode->i_blocks = (512 - 1 + num_of_bytes) >> 9;
 	}
+	spin_unlock(&tmp_inode->i_lock);
 
 	if (S_ISREG(tmp_inode->i_mode)) {
 		cFYI(1, ("File inode"));

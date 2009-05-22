@@ -37,6 +37,7 @@
 #include <asm/idle.h>
 #include <asm/proto.h>
 #include <asm/timex.h>
+#include <asm/hpet.h>
 #include <asm/apic.h>
 
 int apic_mapped;
@@ -45,6 +46,10 @@ int apic_runs_main_timer;
 int apic_calibrate_pmtmr __initdata;
 
 int disable_apic_timer __initdata;
+
+/* Local APIC timer works in C2? */
+int local_apic_timer_c2_ok;
+EXPORT_SYMBOL_GPL(local_apic_timer_c2_ok);
 
 static struct resource *ioapic_resources;
 static struct resource lapic_resource = {
@@ -763,7 +768,7 @@ static void setup_APIC_timer(unsigned int clocks)
 	local_irq_save(flags);
 
 	/* wait for irq slice */
- 	if (vxtime.hpet_address && hpet_use_timer) {
+ 	if (hpet_address && hpet_use_timer) {
  		int trigger = hpet_readl(HPET_T0_CMP);
  		while (hpet_readl(HPET_COUNTER) >= trigger)
  			/* do nothing */ ;
@@ -785,7 +790,7 @@ static void setup_APIC_timer(unsigned int clocks)
 	/* Turn off PIT interrupt if we use APIC timer as main timer.
 	   Only works with the PM timer right now
 	   TBD fix it for HPET too. */
-	if (vxtime.mode == VXTIME_PMTMR &&
+	if ((pmtmr_ioport != 0) &&
 		smp_processor_id() == boot_cpu_id &&
 		apic_runs_main_timer == 1 &&
 		!cpu_isset(boot_cpu_id, timer_interrupt_broadcast_ipi_mask)) {
@@ -929,9 +934,17 @@ EXPORT_SYMBOL(switch_APIC_timer_to_ipi);
 
 void smp_send_timer_broadcast_ipi(void)
 {
+	int cpu = smp_processor_id();
 	cpumask_t mask;
 
 	cpus_and(mask, cpu_online_map, timer_interrupt_broadcast_ipi_mask);
+
+	if (cpu_isset(cpu, mask)) {
+		cpu_clear(cpu, mask);
+		add_pda(apic_timer_irqs, 1);
+		smp_local_timer_interrupt();
+	}
+
 	if (!cpus_empty(mask)) {
 		send_IPI_mask(mask, LOCAL_TIMER_VECTOR);
 	}
@@ -1190,6 +1203,13 @@ static __init int setup_nolapic(char *str)
 	return setup_disableapic(str);
 } 
 early_param("nolapic", setup_nolapic);
+
+static int __init parse_lapic_timer_c2_ok(char *arg)
+{
+	local_apic_timer_c2_ok = 1;
+	return 0;
+}
+early_param("lapic_timer_c2_ok", parse_lapic_timer_c2_ok);
 
 static __init int setup_noapictimer(char *str) 
 { 

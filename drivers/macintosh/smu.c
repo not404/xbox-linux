@@ -1259,9 +1259,9 @@ static int smu_release(struct inode *inode, struct file *file)
 			set_current_state(TASK_UNINTERRUPTIBLE);
 			if (pp->cmd.status != 1)
 				break;
-			spin_lock_irqsave(&pp->lock, flags);
-			schedule();
 			spin_unlock_irqrestore(&pp->lock, flags);
+			schedule();
+			spin_lock_irqsave(&pp->lock, flags);
 		}
 		set_current_state(TASK_RUNNING);
 		remove_wait_queue(&pp->wait, &wait);
@@ -1277,7 +1277,7 @@ static int smu_release(struct inode *inode, struct file *file)
 }
 
 
-static struct file_operations smu_device_fops = {
+static const struct file_operations smu_device_fops = {
 	.llseek		= no_llseek,
 	.read		= smu_read,
 	.write		= smu_write,

@@ -16,7 +16,7 @@
  */
 
 /* Changes:
- *	yoshfuji		: ensure not to overrun while parsing 
+ *	yoshfuji		: ensure not to overrun while parsing
  *				  tlv options.
  *	Mitsuru KANDA @USAGI and: Remove ipv6_parse_exthdrs().
  *	YOSHIFUJI Hideaki @USAGI  Register inbound extension header
@@ -27,7 +27,6 @@
 #include <linux/types.h>
 #include <linux/socket.h>
 #include <linux/sockios.h>
-#include <linux/sched.h>
 #include <linux/net.h>
 #include <linux/netdevice.h>
 #include <linux/in6.h>
@@ -167,8 +166,8 @@ static int ip6_parse_tlv(struct tlvtype_proc *procs, struct sk_buff **skbp)
 				goto bad;
 			for (curr=procs; curr->type >= 0; curr++) {
 				if (curr->type == skb->nh.raw[off]) {
-					/* type specific length/alignment 
-					   checks will be performed in the 
+					/* type specific length/alignment
+					   checks will be performed in the
 					   func(). */
 					if (curr->func(skbp, off) == 0)
 						return 0;
@@ -363,10 +362,27 @@ static int ipv6_rthdr_rcv(struct sk_buff **skbp)
 	struct inet6_skb_parm *opt = IP6CB(skb);
 	struct in6_addr *addr = NULL;
 	struct in6_addr daddr;
+	struct inet6_dev *idev;
 	int n, i;
-
 	struct ipv6_rt_hdr *hdr;
 	struct rt0_hdr *rthdr;
+	int accept_source_route = ipv6_devconf.accept_source_route;
+
+	if (accept_source_route < 0 ||
+	    ((idev = in6_dev_get(skb->dev)) == NULL)) {
+		kfree_skb(skb);
+		return -1;
+	}
+	if (idev->cnf.accept_source_route < 0) {
+		in6_dev_put(idev);
+		kfree_skb(skb);
+		return -1;
+	}
+
+	if (accept_source_route > idev->cnf.accept_source_route)
+		accept_source_route = idev->cnf.accept_source_route;
+
+	in6_dev_put(idev);
 
 	if (!pskb_may_pull(skb, (skb->h.raw-skb->data)+8) ||
 	    !pskb_may_pull(skb, (skb->h.raw-skb->data)+((skb->h.raw[1]+1)<<3))) {
@@ -377,6 +393,22 @@ static int ipv6_rthdr_rcv(struct sk_buff **skbp)
 	}
 
 	hdr = (struct ipv6_rt_hdr *) skb->h.raw;
+
+	switch (hdr->type) {
+#ifdef CONFIG_IPV6_MIP6
+		break;
+#endif
+	case IPV6_SRCRT_TYPE_0:
+		if (accept_source_route > 0)
+			break;
+		kfree_skb(skb);
+		return -1;
+	default:
+		IP6_INC_STATS_BH(ip6_dst_idev(skb->dst),
+				 IPSTATS_MIB_INHDRERRORS);
+		icmpv6_param_prob(skb, ICMPV6_HDR_FIELD, (&hdr->type) - skb->nh.raw);
+		return -1;
+	}
 
 	if (ipv6_addr_is_multicast(&skb->nh.ipv6h->daddr) ||
 	    skb->pkt_type != PACKET_HOST) {
@@ -435,11 +467,6 @@ looped_back:
 		}
 		break;
 #endif
-	default:
-		IP6_INC_STATS_BH(ip6_dst_idev(skb->dst),
-				 IPSTATS_MIB_INHDRERRORS);
-		icmpv6_param_prob(skb, ICMPV6_HDR_FIELD, (&hdr->type) - skb->nh.raw);
-		return -1;
 	}
 
 	/*
@@ -572,7 +599,7 @@ void __init ipv6_rthdr_init(void)
    For now we need to test the engine, so that I created
    temporary (or permanent) backdoor.
    If listening socket set IPV6_RTHDR to 2, then we invert header.
-                                                   --ANK (980729)
+						   --ANK (980729)
  */
 
 struct ipv6_txoptions *
@@ -635,7 +662,7 @@ static int ipv6_hop_ra(struct sk_buff **skbp, int optoff)
 		return 1;
 	}
 	LIMIT_NETDEBUG(KERN_DEBUG "ipv6_hop_ra: wrong RA length %d\n",
-	               skb->nh.raw[optoff+1]);
+		       skb->nh.raw[optoff+1]);
 	kfree_skb(skb);
 	return 0;
 }
@@ -649,7 +676,7 @@ static int ipv6_hop_jumbo(struct sk_buff **skbp, int optoff)
 
 	if (skb->nh.raw[optoff+1] != 4 || (optoff&3) != 2) {
 		LIMIT_NETDEBUG(KERN_DEBUG "ipv6_hop_jumbo: wrong jumbo opt length/alignment %d\n",
-		               skb->nh.raw[optoff+1]);
+			       skb->nh.raw[optoff+1]);
 		IP6_INC_STATS_BH(ip6_dst_idev(skb->dst),
 				 IPSTATS_MIB_INHDRERRORS);
 		goto drop;
@@ -740,7 +767,7 @@ static void ipv6_push_rthdr(struct sk_buff *skb, u8 *proto,
 	int hops;
 
 	ihdr = (struct rt0_hdr *) opt;
-	
+
 	phdr = (struct rt0_hdr *) skb_push(skb, (ihdr->rt_hdr.hdrlen + 1) << 3);
 	memcpy(phdr, ihdr, sizeof(struct rt0_hdr));
 

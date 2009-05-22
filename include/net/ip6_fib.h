@@ -58,6 +58,7 @@ struct fib6_node
 	__u16			fn_bit;		/* bit key */
 	__u16			fn_flags;
 	__u32			fn_sernum;
+	struct rt6_info		*rr_ptr;
 };
 
 #ifndef CONFIG_IPV6_SUBTREES
@@ -83,7 +84,6 @@ struct rt6_info
 {
 	union {
 		struct dst_entry	dst;
-		struct rt6_info		*next;
 	} u;
 
 	struct inet6_dev		*rt6i_idev;

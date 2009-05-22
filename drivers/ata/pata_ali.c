@@ -34,7 +34,7 @@
 #include <linux/dmi.h>
 
 #define DRV_NAME "pata_ali"
-#define DRV_VERSION "0.7.2"
+#define DRV_VERSION "0.7.3"
 
 /*
  *	Cable special cases
@@ -153,11 +153,11 @@ static void ali_early_error_handler(struct ata_port *ap)
 
 static unsigned long ali_20_filter(const struct ata_port *ap, struct ata_device *adev, unsigned long mask)
 {
-	char model_num[40];
+	char model_num[ATA_ID_PROD_LEN + 1];
 	/* No DMA on anything but a disk for now */
 	if (adev->class != ATA_DEV_ATA)
 		mask &= ~(ATA_MASK_MWDMA | ATA_MASK_UDMA);
-	ata_id_string(adev->id, model_num, ATA_ID_PROD_OFS, sizeof(model_num));
+	ata_id_c_string(adev->id, model_num, ATA_ID_PROD, sizeof(model_num));
 	if (strstr(model_num, "WDC"))
 		return mask &= ~ATA_MASK_UDMA;
 	return ata_pci_default_filter(ap, adev, mask);
@@ -345,8 +345,10 @@ static struct scsi_host_template ali_sht = {
 	.slave_configure	= ata_scsi_slave_config,
 	.slave_destroy		= ata_scsi_slave_destroy,
 	.bios_param		= ata_std_bios_param,
+#ifdef CONFIG_PM
 	.resume			= ata_scsi_device_resume,
 	.suspend		= ata_scsi_device_suspend,
+#endif
 };
 
 /*
@@ -370,14 +372,14 @@ static struct ata_port_operations ali_early_port_ops = {
 	.qc_prep 	= ata_qc_prep,
 	.qc_issue	= ata_qc_issue_prot,
 
-	.data_xfer	= ata_pio_data_xfer,
+	.data_xfer	= ata_data_xfer,
 
 	.irq_handler	= ata_interrupt,
 	.irq_clear	= ata_bmdma_irq_clear,
+	.irq_on		= ata_irq_on,
+	.irq_ack	= ata_irq_ack,
 
 	.port_start	= ata_port_start,
-	.port_stop	= ata_port_stop,
-	.host_stop	= ata_host_stop
 };
 
 /*
@@ -411,14 +413,14 @@ static struct ata_port_operations ali_20_port_ops = {
 	.qc_prep 	= ata_qc_prep,
 	.qc_issue	= ata_qc_issue_prot,
 
-	.data_xfer	= ata_pio_data_xfer,
+	.data_xfer	= ata_data_xfer,
 
 	.irq_handler	= ata_interrupt,
 	.irq_clear	= ata_bmdma_irq_clear,
+	.irq_on		= ata_irq_on,
+	.irq_ack	= ata_irq_ack,
 
 	.port_start	= ata_port_start,
-	.port_stop	= ata_port_stop,
-	.host_stop	= ata_host_stop
 };
 
 /*
@@ -449,14 +451,14 @@ static struct ata_port_operations ali_c2_port_ops = {
 	.qc_prep 	= ata_qc_prep,
 	.qc_issue	= ata_qc_issue_prot,
 
-	.data_xfer	= ata_pio_data_xfer,
+	.data_xfer	= ata_data_xfer,
 
 	.irq_handler	= ata_interrupt,
 	.irq_clear	= ata_bmdma_irq_clear,
+	.irq_on		= ata_irq_on,
+	.irq_ack	= ata_irq_ack,
 
 	.port_start	= ata_port_start,
-	.port_stop	= ata_port_stop,
-	.host_stop	= ata_host_stop
 };
 
 /*
@@ -486,14 +488,14 @@ static struct ata_port_operations ali_c5_port_ops = {
 	.qc_prep 	= ata_qc_prep,
 	.qc_issue	= ata_qc_issue_prot,
 
-	.data_xfer	= ata_pio_data_xfer,
+	.data_xfer	= ata_data_xfer,
 
 	.irq_handler	= ata_interrupt,
 	.irq_clear	= ata_bmdma_irq_clear,
+	.irq_on		= ata_irq_on,
+	.irq_ack	= ata_irq_ack,
 
 	.port_start	= ata_port_start,
-	.port_stop	= ata_port_stop,
-	.host_stop	= ata_host_stop
 };
 
 
@@ -504,7 +506,7 @@ static struct ata_port_operations ali_c5_port_ops = {
  *	Perform the setup on the device that must be done both at boot
  *	and at resume time.
  */
- 
+
 static void ali_init_chipset(struct pci_dev *pdev)
 {
 	u8 rev, tmp;
@@ -655,7 +657,7 @@ static int ali_init_one(struct pci_dev *pdev, const struct pci_device_id *id)
         	port_info[0] = port_info[1] = &info_c5;
 
 	ali_init_chipset(pdev);
-	
+
 	isa_bridge = pci_get_device(PCI_VENDOR_ID_AL, PCI_DEVICE_ID_AL_M1533, NULL);
 	if (isa_bridge && rev >= 0x20 && rev < 0xC2) {
 		/* Are we paired with a UDMA capable chip */
@@ -667,11 +669,13 @@ static int ali_init_one(struct pci_dev *pdev, const struct pci_device_id *id)
 	return ata_pci_init_one(pdev, port_info, 2);
 }
 
+#ifdef CONFIG_PM
 static int ali_reinit_one(struct pci_dev *pdev)
 {
 	ali_init_chipset(pdev);
 	return ata_pci_device_resume(pdev);
 }
+#endif
 
 static const struct pci_device_id ali[] = {
 	{ PCI_VDEVICE(AL, PCI_DEVICE_ID_AL_M5228), },
@@ -685,8 +689,10 @@ static struct pci_driver ali_pci_driver = {
 	.id_table	= ali,
 	.probe 		= ali_init_one,
 	.remove		= ata_pci_remove_one,
+#ifdef CONFIG_PM
 	.suspend	= ata_pci_device_suspend,
 	.resume		= ali_reinit_one,
+#endif
 };
 
 static int __init ali_init(void)

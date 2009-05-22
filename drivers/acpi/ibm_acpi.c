@@ -86,6 +86,7 @@
 
 #include <linux/proc_fs.h>
 #include <linux/backlight.h>
+#include <linux/fb.h>
 #include <asm/uaccess.h>
 
 #include <linux/dmi.h>
@@ -157,6 +158,7 @@ IBM_HANDLE(dock, root, "\\_SB.GDCK",	/* X30, X31, X40 */
 	   "\\_SB.PCI.ISA.SLCE",	/* 570 */
     );				/* A21e,G4x,R30,R31,R32,R40,R40e,R50e */
 #endif
+#ifdef CONFIG_ACPI_IBM_BAY
 IBM_HANDLE(bay, root, "\\_SB.PCI.IDE.SECN.MAST",	/* 570 */
 	   "\\_SB.PCI0.IDE0.IDES.IDSM",	/* 600e/x, 770e, 770x */
 	   "\\_SB.PCI0.SATA.SCND.MSTR",	/* T60, X60, Z60 */ 
@@ -174,6 +176,7 @@ IBM_HANDLE(bay2, root, "\\_SB.PCI0.IDE0.PRIM.SLAV",	/* A3x, R32 */
 IBM_HANDLE(bay2_ej, bay2, "_EJ3",	/* 600e/x, 770e, A3x */
 	   "_EJ0",		/* 770x */
     );				/* all others */
+#endif /* CONFIG_ACPI_IBM_BAY */
 
 /* don't list other alternatives as we install a notify handler on the 570 */
 IBM_HANDLE(pci, root, "\\_SB.PCI");	/* 570 */
@@ -495,6 +498,10 @@ static int ibm_acpi_driver_init(void)
 {
 	printk(IBM_INFO "%s v%s\n", IBM_DESC, IBM_VERSION);
 	printk(IBM_INFO "%s\n", IBM_URL);
+
+	if (ibm_thinkpad_ec_found)
+		printk(IBM_INFO "ThinkPad EC firmware %s\n",
+		       ibm_thinkpad_ec_found);
 
 	return 0;
 }
@@ -1040,6 +1047,7 @@ static int light_write(char *buf)
 	return 0;
 }
 
+#if defined(CONFIG_ACPI_IBM_DOCK) || defined(CONFIG_ACPI_IBM_BAY)
 static int _sta(acpi_handle handle)
 {
 	int status;
@@ -1049,6 +1057,7 @@ static int _sta(acpi_handle handle)
 
 	return status;
 }
+#endif
 
 #ifdef CONFIG_ACPI_IBM_DOCK
 #define dock_docked() (_sta(dock_handle) & 1)
@@ -1115,6 +1124,7 @@ static void dock_notify(struct ibm_struct *ibm, u32 event)
 }
 #endif
 
+#ifdef CONFIG_ACPI_IBM_BAY
 static int bay_status_supported;
 static int bay_status2_supported;
 static int bay_eject_supported;
@@ -1190,6 +1200,7 @@ static void bay_notify(struct ibm_struct *ibm, u32 event)
 {
 	acpi_bus_generate_event(ibm->device, event, 0);
 }
+#endif /* CONFIG_ACPI_IBM_BAY */
 
 static int cmos_read(char *p)
 {
@@ -1697,24 +1708,35 @@ static int brightness_write(char *buf)
 
 static int brightness_update_status(struct backlight_device *bd)
 {
-	return brightness_set(bd->props->brightness);
+	return brightness_set(
+		(bd->props.fb_blank == FB_BLANK_UNBLANK &&
+		 bd->props.power == FB_BLANK_UNBLANK) ?
+				bd->props.brightness : 0);
 }
 
-static struct backlight_properties ibm_backlight_data = {
-        .owner          = THIS_MODULE,
+static struct backlight_ops ibm_backlight_data = {
         .get_brightness = brightness_get,
         .update_status  = brightness_update_status,
-        .max_brightness = 7,
 };
 
 static int brightness_init(void)
 {
+	int b;
+
+	b = brightness_get(NULL);
+	if (b < 0)
+		return b;
+
 	ibm_backlight_device = backlight_device_register("ibm", NULL, NULL,
 							 &ibm_backlight_data);
 	if (IS_ERR(ibm_backlight_device)) {
 		printk(IBM_ERR "Could not register backlight device\n");
 		return PTR_ERR(ibm_backlight_device);
 	}
+
+	ibm_backlight_device->props.max_brightness = 7;
+	ibm_backlight_device->props.brightness = b;
+	backlight_update_status(ibm_backlight_device);
 
 	return 0;
 }
@@ -2349,6 +2371,7 @@ static struct ibm_struct ibms[] = {
 	 .type = ACPI_SYSTEM_NOTIFY,
 	 },
 #endif
+#ifdef CONFIG_ACPI_IBM_BAY
 	{
 	 .name = "bay",
 	 .init = bay_init,
@@ -2358,6 +2381,7 @@ static struct ibm_struct ibms[] = {
 	 .handle = &bay_handle,
 	 .type = ACPI_SYSTEM_NOTIFY,
 	 },
+#endif /* CONFIG_ACPI_IBM_BAY */
 	{
 	 .name = "cmos",
 	 .read = cmos_read,
@@ -2483,7 +2507,7 @@ static int __init setup_notify(struct ibm_struct *ibm)
 	ret = acpi_bus_get_device(*ibm->handle, &ibm->device);
 	if (ret < 0) {
 		printk(IBM_ERR "%s device not present\n", ibm->name);
-		return 0;
+		return -ENODEV;
 	}
 
 	acpi_driver_data(ibm->device) = ibm;
@@ -2492,8 +2516,13 @@ static int __init setup_notify(struct ibm_struct *ibm)
 	status = acpi_install_notify_handler(*ibm->handle, ibm->type,
 					     dispatch_notify, ibm);
 	if (ACPI_FAILURE(status)) {
-		printk(IBM_ERR "acpi_install_notify_handler(%s) failed: %d\n",
-		       ibm->name, status);
+		if (status == AE_ALREADY_EXISTS) {
+			printk(IBM_NOTICE "another device driver is already handling %s events\n",
+				ibm->name);
+		} else {
+			printk(IBM_ERR "acpi_install_notify_handler(%s) failed: %d\n",
+				ibm->name, status);
+		}
 		return -ENODEV;
 	}
 	ibm->notify_installed = 1;
@@ -2528,6 +2557,8 @@ static int __init register_driver(struct ibm_struct *ibm)
 
 	return ret;
 }
+
+static void ibm_exit(struct ibm_struct *ibm);
 
 static int __init ibm_init(struct ibm_struct *ibm)
 {
@@ -2570,6 +2601,12 @@ static int __init ibm_init(struct ibm_struct *ibm)
 
 	if (ibm->notify) {
 		ret = setup_notify(ibm);
+		if (ret == -ENODEV) {
+			printk(IBM_NOTICE "disabling subdriver %s\n",
+				ibm->name);
+			ibm_exit(ibm);
+			return 0;
+		}
 		if (ret < 0)
 			return ret;
 	}
@@ -2617,7 +2654,7 @@ static void __init ibm_handle_init(char *name,
 	ibm_handle_init(#object, &object##_handle, *object##_parent,	\
 		object##_paths, ARRAY_SIZE(object##_paths), &object##_path)
 
-static int set_ibm_param(const char *val, struct kernel_param *kp)
+static int __init set_ibm_param(const char *val, struct kernel_param *kp)
 {
 	unsigned int i;
 
@@ -2643,7 +2680,9 @@ IBM_PARAM(light);
 #ifdef CONFIG_ACPI_IBM_DOCK
 IBM_PARAM(dock);
 #endif
+#ifdef CONFIG_ACPI_IBM_BAY
 IBM_PARAM(bay);
+#endif /* CONFIG_ACPI_IBM_BAY */
 IBM_PARAM(cmos);
 IBM_PARAM(led);
 IBM_PARAM(beep);
@@ -2659,7 +2698,8 @@ static void acpi_ibm_exit(void)
 	for (i = ARRAY_SIZE(ibms) - 1; i >= 0; i--)
 		ibm_exit(&ibms[i]);
 
-	remove_proc_entry(IBM_DIR, acpi_root_dir);
+	if (proc_dir)
+		remove_proc_entry(IBM_DIR, acpi_root_dir);
 
 	if (ibm_thinkpad_ec_found)
 		kfree(ibm_thinkpad_ec_found);
@@ -2696,11 +2736,6 @@ static int __init acpi_ibm_init(void)
 	if (acpi_disabled)
 		return -ENODEV;
 
-	if (!acpi_specific_hotkey_enabled) {
-		printk(IBM_ERR "using generic hotkey driver\n");
-		return -ENODEV;
-	}
-
 	/* ec is required because many other handles are relative to it */
 	IBM_HANDLE_INIT(ec);
 	if (!ec_handle) {
@@ -2710,9 +2745,6 @@ static int __init acpi_ibm_init(void)
 
 	/* Models with newer firmware report the EC in DMI */
 	ibm_thinkpad_ec_found = check_dmi_for_ec();
-	if (ibm_thinkpad_ec_found)
-		printk(IBM_INFO "ThinkPad EC firmware %s\n",
-		       ibm_thinkpad_ec_found);
 
 	/* these handles are not required */
 	IBM_HANDLE_INIT(vid);
@@ -2726,12 +2758,14 @@ static int __init acpi_ibm_init(void)
 	IBM_HANDLE_INIT(dock);
 #endif
 	IBM_HANDLE_INIT(pci);
+#ifdef CONFIG_ACPI_IBM_BAY
 	IBM_HANDLE_INIT(bay);
 	if (bay_handle)
 		IBM_HANDLE_INIT(bay_ej);
 	IBM_HANDLE_INIT(bay2);
 	if (bay2_handle)
 		IBM_HANDLE_INIT(bay2_ej);
+#endif /* CONFIG_ACPI_IBM_BAY */
 	IBM_HANDLE_INIT(beep);
 	IBM_HANDLE_INIT(ecrd);
 	IBM_HANDLE_INIT(ecwr);
@@ -2742,6 +2776,7 @@ static int __init acpi_ibm_init(void)
 	proc_dir = proc_mkdir(IBM_DIR, acpi_root_dir);
 	if (!proc_dir) {
 		printk(IBM_ERR "unable to create proc dir %s", IBM_DIR);
+		acpi_ibm_exit();
 		return -ENODEV;
 	}
 	proc_dir->owner = THIS_MODULE;

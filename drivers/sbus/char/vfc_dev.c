@@ -19,7 +19,6 @@
 #include <linux/string.h>
 #include <linux/slab.h>
 #include <linux/errno.h>
-#include <linux/sched.h>
 #include <linux/fs.h>
 #include <linux/smp_lock.h>
 #include <linux/delay.h>
@@ -44,7 +43,7 @@
 #include "vfc.h"
 #include <asm/vfc_ioctls.h>
 
-static struct file_operations vfc_fops;
+static const struct file_operations vfc_fops;
 struct vfc_dev **vfc_dev_lst;
 static char vfcstr[]="vfc";
 static unsigned char saa9051_init_array[VFC_SAA9051_NR] = {
@@ -260,11 +259,10 @@ static int vfc_debug(struct vfc_dev *dev, int cmd, void __user *argp)
 		if (copy_from_user(&inout, argp, sizeof(inout)))
 			return -EFAULT;
 
-		buffer = kmalloc(inout.len, GFP_KERNEL);
+		buffer = kzalloc(inout.len, GFP_KERNEL);
 		if (buffer == NULL)
 			return -ENOMEM;
 
-		memset(buffer,0,inout.len);
 		vfc_lock_device(dev);
 		inout.ret=
 			vfc_i2c_recvbuf(dev,inout.addr & 0xff
@@ -633,7 +631,7 @@ static int vfc_mmap(struct file *file, struct vm_area_struct *vma)
 }
 
 
-static struct file_operations vfc_fops = {
+static const struct file_operations vfc_fops = {
 	.owner =	THIS_MODULE,
 	.llseek =	no_llseek,
 	.ioctl =	vfc_ioctl,

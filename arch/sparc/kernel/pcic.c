@@ -601,7 +601,7 @@ pcic_fill_irq(struct linux_pcic *pcic, struct pci_dev *dev, int node)
 /*
  * Normally called from {do_}pci_scan_bus...
  */
-void __init pcibios_fixup_bus(struct pci_bus *bus)
+void __devinit pcibios_fixup_bus(struct pci_bus *bus)
 {
 	struct pci_dev *dev;
 	int i, has_io, has_mem;
@@ -842,7 +842,7 @@ static void watchdog_reset() {
 /*
  * Other archs parse arguments here.
  */
-char * __init pcibios_setup(char *str)
+char * __devinit pcibios_setup(char *str)
 {
 	return str;
 }
@@ -943,6 +943,14 @@ int pcibios_assign_resource(struct pci_dev *pdev, int resource)
 {
 	return -ENXIO;
 }
+
+struct device_node *pci_device_to_OF_node(struct pci_dev *pdev)
+{
+	struct pcidev_cookie *pc = pdev->sysdata;
+
+	return pc->prom_node;
+}
+EXPORT_SYMBOL(pci_device_to_OF_node);
 
 /*
  * This probably belongs here rather than ioport.c because

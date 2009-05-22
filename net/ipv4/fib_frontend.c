@@ -22,7 +22,6 @@
 #include <linux/capability.h>
 #include <linux/types.h>
 #include <linux/kernel.h>
-#include <linux/sched.h>
 #include <linux/mm.h>
 #include <linux/string.h>
 #include <linux/socket.h>
@@ -160,7 +159,7 @@ unsigned inet_addr_type(__be32 addr)
 #ifdef CONFIG_IP_MULTIPLE_TABLES
 	res.r = NULL;
 #endif
-	
+
 	if (ip_fib_local_table) {
 		ret = RTN_UNICAST;
 		if (!ip_fib_local_table->tb_lookup(ip_fib_local_table,
@@ -378,7 +377,7 @@ static int rtentry_to_fib_config(int cmd, struct rtentry *rt,
 		int len = 0;
 
 		mx = kzalloc(3 * nla_total_size(4), GFP_KERNEL);
- 		if (mx == NULL)
+		if (mx == NULL)
 			return -ENOMEM;
 
 		if (rt->rt_flags & RTF_MTU)
@@ -400,7 +399,7 @@ static int rtentry_to_fib_config(int cmd, struct rtentry *rt,
 /*
  *	Handle IP routing ioctl calls. These are used to manipulate the routing tables
  */
- 
+
 int ip_rt_ioctl(unsigned int cmd, void __user *arg)
 {
 	struct fib_config cfg;
@@ -493,6 +492,11 @@ static int rtm_to_fib_config(struct sk_buff *skb, struct nlmsghdr *nlh,
 
 	cfg->fc_nlinfo.pid = NETLINK_CB(skb).pid;
 	cfg->fc_nlinfo.nlh = nlh;
+
+	if (cfg->fc_type > RTN_MAX) {
+		err = -EINVAL;
+		goto errout;
+	}
 
 	nlmsg_for_each_attr(attr, nlh, sizeof(struct rtmsg), remaining) {
 		switch (attr->nla_type) {
@@ -600,7 +604,7 @@ int inet_dump_fib(struct sk_buff *skb, struct netlink_callback *cb)
 				goto next;
 			if (dumped)
 				memset(&cb->args[2], 0, sizeof(cb->args) -
-				                 2 * sizeof(cb->args[0]));
+						 2 * sizeof(cb->args[0]));
 			if (tb->tb_dump(tb, skb, cb) < 0)
 				goto out;
 			dumped = 1;
@@ -766,12 +770,14 @@ static void fib_del_ifaddr(struct in_ifaddr *ifa)
 
 static void nl_fib_lookup(struct fib_result_nl *frn, struct fib_table *tb )
 {
-	
+
 	struct fib_result       res;
 	struct flowi            fl = { .mark = frn->fl_mark,
 				       .nl_u = { .ip4_u = { .daddr = frn->fl_addr,
 							    .tos = frn->fl_tos,
 							    .scope = frn->fl_scope } } };
+
+	frn->err = -ENOENT;
 	if (tb) {
 		local_bh_disable();
 
@@ -783,6 +789,7 @@ static void nl_fib_lookup(struct fib_result_nl *frn, struct fib_table *tb )
 			frn->nh_sel = res.nh_sel;
 			frn->type = res.type;
 			frn->scope = res.scope;
+			fib_res_put(&res);
 		}
 		local_bh_enable();
 	}
@@ -791,29 +798,32 @@ static void nl_fib_lookup(struct fib_result_nl *frn, struct fib_table *tb )
 static void nl_fib_input(struct sock *sk, int len)
 {
 	struct sk_buff *skb = NULL;
-        struct nlmsghdr *nlh = NULL;
+	struct nlmsghdr *nlh = NULL;
 	struct fib_result_nl *frn;
-	u32 pid;     
+	u32 pid;
 	struct fib_table *tb;
-	
+
 	skb = skb_dequeue(&sk->sk_receive_queue);
+	if (skb == NULL)
+		return;
+
 	nlh = (struct nlmsghdr *)skb->data;
 	if (skb->len < NLMSG_SPACE(0) || skb->len < nlh->nlmsg_len ||
 	    nlh->nlmsg_len < NLMSG_LENGTH(sizeof(*frn))) {
 		kfree_skb(skb);
 		return;
 	}
-	
+
 	frn = (struct fib_result_nl *) NLMSG_DATA(nlh);
 	tb = fib_get_table(frn->tb_id_in);
 
 	nl_fib_lookup(frn, tb);
-	
-	pid = nlh->nlmsg_pid;           /*pid of sending process */
+
+	pid = NETLINK_CB(skb).pid;       /* pid of sending process */
 	NETLINK_CB(skb).pid = 0;         /* from kernel */
 	NETLINK_CB(skb).dst_group = 0;  /* unicast */
 	netlink_unicast(sk, skb, pid, MSG_DONTWAIT);
-}    
+}
 
 static void nl_fib_lookup_init(void)
 {

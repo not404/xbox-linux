@@ -1660,6 +1660,7 @@
 
 #define MII_TG3_TEST1			0x1e
 #define MII_TG3_TEST1_TRIM_EN		0x0010
+#define MII_TG3_TEST1_CRC_EN		0x8000
 
 /* There are two ways to manage the TX descriptors on the tigon3.
  * Either the descriptors are in host DMA'able memory, or they
@@ -2222,11 +2223,11 @@ struct tg3 {
 #define TG3_FLAG_40BIT_DMA_BUG		0x08000000
 #define TG3_FLAG_BROKEN_CHECKSUMS	0x10000000
 #define TG3_FLAG_GOT_SERDES_FLOWCTL	0x20000000
-#define TG3_FLAG_SPLIT_MODE		0x40000000
+#define TG3_FLAG_CHIP_RESETTING		0x40000000
 #define TG3_FLAG_INIT_COMPLETE		0x80000000
 	u32				tg3_flags2;
 #define TG3_FLG2_RESTART_TIMER		0x00000001
-#define TG3_FLG2_HW_TSO_1_BUG		0x00000002
+#define TG3_FLG2_TSO_BUG		0x00000002
 #define TG3_FLG2_NO_ETH_WIRE_SPEED	0x00000004
 #define TG3_FLG2_IS_5788		0x00000008
 #define TG3_FLG2_MAX_RXPEND_64		0x00000010
@@ -2260,9 +2261,6 @@ struct tg3 {
 #define TG3_FLG2_PHY_JITTER_BUG		0x20000000
 #define TG3_FLG2_NO_FWARE_REPORTED	0x40000000
 #define TG3_FLG2_PHY_ADJUST_TRIM	0x80000000
-
-	u32				split_mode_max_reqs;
-#define SPLIT_MODE_5704_MAX_REQ		3
 
 	struct timer_list		timer;
 	u16				timer_counter;

@@ -7,7 +7,6 @@
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/kernel.h>
-#include <linux/sched.h>
 #include <linux/string.h>
 #include <linux/timer.h>
 #include <linux/delay.h>
@@ -805,9 +804,8 @@ static int tuner_command(struct i2c_client *client, unsigned int cmd, void *arg)
 	return 0;
 }
 
-static int tuner_suspend(struct device *dev, pm_message_t state)
+static int tuner_suspend(struct i2c_client *c, pm_message_t state)
 {
-	struct i2c_client *c = container_of (dev, struct i2c_client, dev);
 	struct tuner *t = i2c_get_clientdata (c);
 
 	tuner_dbg ("suspend\n");
@@ -815,9 +813,8 @@ static int tuner_suspend(struct device *dev, pm_message_t state)
 	return 0;
 }
 
-static int tuner_resume(struct device *dev)
+static int tuner_resume(struct i2c_client *c)
 {
-	struct i2c_client *c = container_of (dev, struct i2c_client, dev);
 	struct tuner *t = i2c_get_clientdata (c);
 
 	tuner_dbg ("resume\n");
@@ -838,10 +835,10 @@ static struct i2c_driver driver = {
 	.attach_adapter = tuner_probe,
 	.detach_client = tuner_detach,
 	.command = tuner_command,
+	.suspend = tuner_suspend,
+	.resume  = tuner_resume,
 	.driver = {
 		.name    = "tuner",
-		.suspend = tuner_suspend,
-		.resume  = tuner_resume,
 	},
 };
 static struct i2c_client client_template = {

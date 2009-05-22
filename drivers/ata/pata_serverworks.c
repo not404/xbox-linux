@@ -41,7 +41,7 @@
 #include <linux/libata.h>
 
 #define DRV_NAME "pata_serverworks"
-#define DRV_VERSION "0.3.9"
+#define DRV_VERSION "0.4.0"
 
 #define SVWKS_CSB5_REVISION_NEW	0x92 /* min PCI_REVISION_ID for UDMA5 (A2.0) */
 #define SVWKS_CSB6_REVISION	0xa0 /* min PCI_REVISION_ID for UDMA4 (A1.0) */
@@ -218,25 +218,18 @@ static unsigned long serverworks_osb4_filter(const struct ata_port *ap, struct a
 static unsigned long serverworks_csb_filter(const struct ata_port *ap, struct ata_device *adev, unsigned long mask)
 {
 	const char *p;
-	char model_num[40];
-	int len, i;
+	char model_num[ATA_ID_PROD_LEN + 1];
+	int i;
 
 	/* Disk, UDMA */
 	if (adev->class != ATA_DEV_ATA)
 		return ata_pci_default_filter(ap, adev, mask);
 
 	/* Actually do need to check */
-	ata_id_string(adev->id, model_num, ATA_ID_PROD_OFS, sizeof(model_num));
-	/* Precuationary - why not do this in the libata core ?? */
+	ata_id_c_string(adev->id, model_num, ATA_ID_PROD, sizeof(model_num));
 
-	len = strlen(model_num);
-	while ((len > 0) && (model_num[len - 1] == ' ')) {
-		len--;
-		model_num[len] = 0;
-	}
-
-	for(i = 0; (p = csb_bad_ata100[i]) != NULL; i++) {
-		if (!strncmp(p, model_num, len))
+	for (i = 0; (p = csb_bad_ata100[i]) != NULL; i++) {
+		if (!strcmp(p, model_num))
 			mask &= ~(0x1F << ATA_SHIFT_UDMA);
 	}
 	return ata_pci_default_filter(ap, adev, mask);
@@ -326,8 +319,10 @@ static struct scsi_host_template serverworks_sht = {
 	.slave_configure	= ata_scsi_slave_config,
 	.slave_destroy		= ata_scsi_slave_destroy,
 	.bios_param		= ata_std_bios_param,
+#ifdef CONFIG_PM
 	.resume			= ata_scsi_device_resume,
 	.suspend		= ata_scsi_device_suspend,
+#endif
 };
 
 static struct ata_port_operations serverworks_osb4_port_ops = {
@@ -355,14 +350,14 @@ static struct ata_port_operations serverworks_osb4_port_ops = {
 	.qc_prep 	= ata_qc_prep,
 	.qc_issue	= ata_qc_issue_prot,
 
-	.data_xfer	= ata_pio_data_xfer,
+	.data_xfer	= ata_data_xfer,
 
 	.irq_handler	= ata_interrupt,
 	.irq_clear	= ata_bmdma_irq_clear,
+	.irq_on		= ata_irq_on,
+	.irq_ack	= ata_irq_ack,
 
 	.port_start	= ata_port_start,
-	.port_stop	= ata_port_stop,
-	.host_stop	= ata_host_stop
 };
 
 static struct ata_port_operations serverworks_csb_port_ops = {
@@ -390,14 +385,14 @@ static struct ata_port_operations serverworks_csb_port_ops = {
 	.qc_prep 	= ata_qc_prep,
 	.qc_issue	= ata_qc_issue_prot,
 
-	.data_xfer	= ata_pio_data_xfer,
+	.data_xfer	= ata_data_xfer,
 
 	.irq_handler	= ata_interrupt,
 	.irq_clear	= ata_bmdma_irq_clear,
+	.irq_on		= ata_irq_on,
+	.irq_ack	= ata_irq_ack,
 
 	.port_start	= ata_port_start,
-	.port_stop	= ata_port_stop,
-	.host_stop	= ata_host_stop
 };
 
 static int serverworks_fixup_osb4(struct pci_dev *pdev)
@@ -555,11 +550,12 @@ static int serverworks_init_one(struct pci_dev *pdev, const struct pci_device_id
 	return ata_pci_init_one(pdev, port_info, ports);
 }
 
+#ifdef CONFIG_PM
 static int serverworks_reinit_one(struct pci_dev *pdev)
 {
 	/* Force master latency timer to 64 PCI clocks */
 	pci_write_config_byte(pdev, PCI_LATENCY_TIMER, 0x40);
-	
+
 	switch (pdev->device)
 	{
 		case PCI_DEVICE_ID_SERVERWORKS_OSB4IDE:
@@ -578,6 +574,7 @@ static int serverworks_reinit_one(struct pci_dev *pdev)
 	}
 	return ata_pci_device_resume(pdev);
 }
+#endif
 
 static const struct pci_device_id serverworks[] = {
 	{ PCI_VDEVICE(SERVERWORKS, PCI_DEVICE_ID_SERVERWORKS_OSB4IDE), 0},
@@ -594,8 +591,10 @@ static struct pci_driver serverworks_pci_driver = {
 	.id_table	= serverworks,
 	.probe 		= serverworks_init_one,
 	.remove		= ata_pci_remove_one,
+#ifdef CONFIG_PM
 	.suspend	= ata_pci_device_suspend,
 	.resume		= serverworks_reinit_one,
+#endif
 };
 
 static int __init serverworks_init(void)

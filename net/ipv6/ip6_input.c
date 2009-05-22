@@ -1,6 +1,6 @@
 /*
  *	IPv6 input
- *	Linux INET6 implementation 
+ *	Linux INET6 implementation
  *
  *	Authors:
  *	Pedro Roque		<roque@di.fc.ul.pt>
@@ -25,7 +25,6 @@
 #include <linux/types.h>
 #include <linux/socket.h>
 #include <linux/sockios.h>
-#include <linux/sched.h>
 #include <linux/net.h>
 #include <linux/netdevice.h>
 #include <linux/in6.h>
@@ -48,7 +47,7 @@
 
 
 
-inline int ip6_rcv_finish( struct sk_buff *skb) 
+inline int ip6_rcv_finish( struct sk_buff *skb)
 {
 	if (skb->dst == NULL)
 		ip6_route_input(skb);
@@ -109,8 +108,10 @@ int ipv6_rcv(struct sk_buff *skb, struct net_device *dev, struct packet_type *pt
 
 	/* pkt_len may be zero if Jumbo payload option is present */
 	if (pkt_len || hdr->nexthdr != NEXTHDR_HOP) {
-		if (pkt_len + sizeof(struct ipv6hdr) > skb->len)
-			goto truncated;
+		if (pkt_len + sizeof(struct ipv6hdr) > skb->len) {
+			IP6_INC_STATS_BH(idev, IPSTATS_MIB_INTRUNCATEDPKTS);
+			goto drop;
+		}
 		if (pskb_trim_rcsum(skb, pkt_len + sizeof(struct ipv6hdr))) {
 			IP6_INC_STATS_BH(idev, IPSTATS_MIB_INHDRERRORS);
 			goto drop;
@@ -129,8 +130,6 @@ int ipv6_rcv(struct sk_buff *skb, struct net_device *dev, struct packet_type *pt
 	rcu_read_unlock();
 
 	return NF_HOOK(PF_INET6,NF_IP6_PRE_ROUTING, skb, dev, NULL, ip6_rcv_finish);
-truncated:
-	IP6_INC_STATS_BH(idev, IPSTATS_MIB_INTRUNCATEDPKTS);
 err:
 	IP6_INC_STATS_BH(idev, IPSTATS_MIB_INHDRERRORS);
 drop:
@@ -173,9 +172,9 @@ resubmit:
 	hash = nexthdr & (MAX_INET_PROTOS - 1);
 	if ((ipprot = rcu_dereference(inet6_protos[hash])) != NULL) {
 		int ret;
-		
+
 		if (ipprot->flags & INET6_PROTO_FINAL) {
-			struct ipv6hdr *hdr;	
+			struct ipv6hdr *hdr;
 
 			/* Free reference early: we don't need it any more,
 			   and it may hold ip_conntrack module loaded
@@ -192,9 +191,9 @@ resubmit:
 				goto discard;
 		}
 		if (!(ipprot->flags & INET6_PROTO_NOPOLICY) &&
-		    !xfrm6_policy_check(NULL, XFRM_POLICY_IN, skb)) 
+		    !xfrm6_policy_check(NULL, XFRM_POLICY_IN, skb))
 			goto discard;
-		
+
 		ret = ipprot->handler(&skb);
 		if (ret > 0)
 			goto resubmit;
@@ -205,8 +204,8 @@ resubmit:
 			if (xfrm6_policy_check(NULL, XFRM_POLICY_IN, skb)) {
 				IP6_INC_STATS_BH(idev, IPSTATS_MIB_INUNKNOWNPROTOS);
 				icmpv6_send(skb, ICMPV6_PARAMPROB,
-				            ICMPV6_UNK_NEXTHDR, nhoff,
-				            skb->dev);
+					    ICMPV6_UNK_NEXTHDR, nhoff,
+					    skb->dev);
 			}
 		} else
 			IP6_INC_STATS_BH(idev, IPSTATS_MIB_INDELIVERS);
@@ -253,7 +252,7 @@ int ip6_mc_input(struct sk_buff *skb)
 			struct dst_entry *dst;
 
 			dst = skb->dst;
-			
+
 			if (deliver) {
 				skb2 = skb_clone(skb, GFP_ATOMIC);
 				dst_output(skb2);

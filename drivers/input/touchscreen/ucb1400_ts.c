@@ -83,7 +83,7 @@
 
 
 struct ucb1400 {
-	ac97_t			*ac97;
+	struct snd_ac97		*ac97;
 	struct input_dev	*ts_idev;
 
 	int			irq;
@@ -553,6 +553,7 @@ static int ucb1400_ts_remove(struct device *dev)
 }
 
 static struct device_driver ucb1400_ts_driver = {
+	.name		= "ucb1400_ts",
 	.owner		= THIS_MODULE,
 	.bus		= &ac97_bus_type,
 	.probe		= ucb1400_ts_probe,

@@ -170,7 +170,7 @@ static int via_pre_reset(struct ata_port *ap)
 		ap->cbl = ATA_CBL_PATA40;
 	else
 		ap->cbl = ATA_CBL_PATA_UNK;
-		
+
 
 	return ata_std_prereset(ap);
 }
@@ -305,8 +305,10 @@ static struct scsi_host_template via_sht = {
 	.slave_configure	= ata_scsi_slave_config,
 	.slave_destroy		= ata_scsi_slave_destroy,
 	.bios_param		= ata_std_bios_param,
+#ifdef CONFIG_PM
 	.resume			= ata_scsi_device_resume,
 	.suspend		= ata_scsi_device_suspend,
+#endif
 };
 
 static struct ata_port_operations via_port_ops = {
@@ -334,14 +336,14 @@ static struct ata_port_operations via_port_ops = {
 	.qc_prep 	= ata_qc_prep,
 	.qc_issue	= ata_qc_issue_prot,
 
-	.data_xfer	= ata_pio_data_xfer,
+	.data_xfer	= ata_data_xfer,
 
 	.irq_handler	= ata_interrupt,
 	.irq_clear	= ata_bmdma_irq_clear,
+	.irq_on		= ata_irq_on,
+	.irq_ack	= ata_irq_ack,
 
 	.port_start	= ata_port_start,
-	.port_stop	= ata_port_stop,
-	.host_stop	= ata_host_stop
 };
 
 static struct ata_port_operations via_port_ops_noirq = {
@@ -369,14 +371,14 @@ static struct ata_port_operations via_port_ops_noirq = {
 	.qc_prep 	= ata_qc_prep,
 	.qc_issue	= ata_qc_issue_prot,
 
-	.data_xfer	= ata_pio_data_xfer_noirq,
+	.data_xfer	= ata_data_xfer_noirq,
 
 	.irq_handler	= ata_interrupt,
 	.irq_clear	= ata_bmdma_irq_clear,
+	.irq_on		= ata_irq_on,
+	.irq_ack	= ata_irq_ack,
 
 	.port_start	= ata_port_start,
-	.port_stop	= ata_port_stop,
-	.host_stop	= ata_host_stop
 };
 
 /**
@@ -391,11 +393,11 @@ static struct ata_port_operations via_port_ops_noirq = {
 static void via_config_fifo(struct pci_dev *pdev, unsigned int flags)
 {
 	u8 enable;
-	
+
 	/* 0x40 low bits indicate enabled channels */
 	pci_read_config_byte(pdev, 0x40 , &enable);
 	enable &= 3;
-	
+
 	if (flags & VIA_SET_FIFO) {
 		static const u8 fifo_setting[4] = {0x00, 0x60, 0x00, 0x20};
 		u8 fifo;
@@ -516,7 +518,7 @@ static int via_init_one(struct pci_dev *pdev, const struct pci_device_id *id)
 
 	/* Initialise the FIFO for the enabled channels. */
 	via_config_fifo(pdev, config->flags);
-	
+
 	/* Clock set up */
 	switch(config->flags & VIA_UDMA) {
 		case VIA_UDMA_NONE:
@@ -560,6 +562,7 @@ static int via_init_one(struct pci_dev *pdev, const struct pci_device_id *id)
 	return ata_pci_init_one(pdev, port_info, 2);
 }
 
+#ifdef CONFIG_PM
 /**
  *	via_reinit_one		-	reinit after resume
  *	@pdev; PCI device
@@ -575,7 +578,7 @@ static int via_reinit_one(struct pci_dev *pdev)
 	u32 timing;
 	struct ata_host *host = dev_get_drvdata(&pdev->dev);
 	const struct via_isa_bridge *config = host->private_data;
-	
+
 	via_config_fifo(pdev, config->flags);
 
 	if ((config->flags & VIA_UDMA) == VIA_UDMA_66) {
@@ -590,8 +593,9 @@ static int via_reinit_one(struct pci_dev *pdev)
 		timing &= ~0x80008;
 		pci_write_config_dword(pdev, 0x50, timing);
 	}
-	return ata_pci_device_resume(pdev);	
+	return ata_pci_device_resume(pdev);
 }
+#endif
 
 static const struct pci_device_id via[] = {
 	{ PCI_VDEVICE(VIA, PCI_DEVICE_ID_VIA_82C576_1), },
@@ -607,8 +611,10 @@ static struct pci_driver via_pci_driver = {
 	.id_table	= via,
 	.probe 		= via_init_one,
 	.remove		= ata_pci_remove_one,
+#ifdef CONFIG_PM
 	.suspend	= ata_pci_device_suspend,
 	.resume		= via_reinit_one,
+#endif
 };
 
 static int __init via_init(void)

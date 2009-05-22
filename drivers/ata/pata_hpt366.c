@@ -27,7 +27,7 @@
 #include <linux/libata.h>
 
 #define DRV_NAME	"pata_hpt366"
-#define DRV_VERSION	"0.5.3"
+#define DRV_VERSION	"0.6.0"
 
 struct hpt_clock {
 	u8	xfer_speed;
@@ -151,23 +151,13 @@ static const char *bad_ata66_3[] = {
 
 static int hpt_dma_blacklisted(const struct ata_device *dev, char *modestr, const char *list[])
 {
-	unsigned char model_num[40];
-	char *s;
-	unsigned int len;
+	unsigned char model_num[ATA_ID_PROD_LEN + 1];
 	int i = 0;
 
-	ata_id_string(dev->id, model_num, ATA_ID_PROD_OFS, sizeof(model_num));
-	s = &model_num[0];
-	len = strnlen(s, sizeof(model_num));
+	ata_id_c_string(dev->id, model_num, ATA_ID_PROD, sizeof(model_num));
 
-	/* ATAPI specifies that empty space is blank-filled; remove blanks */
-	while ((len > 0) && (s[len - 1] == ' ')) {
-		len--;
-		s[len] = 0;
-	}
-
-	while(list[i] != NULL) {
-		if (!strncmp(list[i], s, len)) {
+	while (list[i] != NULL) {
+		if (!strcmp(list[i], model_num)) {
 			printk(KERN_WARNING DRV_NAME ": %s is not supported for %s.\n",
 				modestr, list[i]);
 			return 1;
@@ -232,7 +222,7 @@ static int hpt36x_pre_reset(struct ata_port *ap)
 
 	if (!pci_test_config_bits(pdev, &hpt36x_enable_bits[ap->port_no]))
 		return -ENOENT;
-		
+
 	pci_read_config_byte(pdev, 0x5A, &ata66);
 	if (ata66 & (1 << ap->port_no))
 		ap->cbl = ATA_CBL_PATA40;
@@ -338,8 +328,10 @@ static struct scsi_host_template hpt36x_sht = {
 	.slave_configure	= ata_scsi_slave_config,
 	.slave_destroy		= ata_scsi_slave_destroy,
 	.bios_param		= ata_std_bios_param,
+#ifdef CONFIG_PM
 	.resume			= ata_scsi_device_resume,
 	.suspend		= ata_scsi_device_suspend,
+#endif
 };
 
 /*
@@ -371,14 +363,14 @@ static struct ata_port_operations hpt366_port_ops = {
 	.qc_prep 	= ata_qc_prep,
 	.qc_issue	= ata_qc_issue_prot,
 
-	.data_xfer	= ata_pio_data_xfer,
+	.data_xfer	= ata_data_xfer,
 
 	.irq_handler	= ata_interrupt,
 	.irq_clear	= ata_bmdma_irq_clear,
+	.irq_on		= ata_irq_on,
+	.irq_ack	= ata_irq_ack,
 
 	.port_start	= ata_port_start,
-	.port_stop	= ata_port_stop,
-	.host_stop	= ata_host_stop
 };
 
 /**
@@ -467,12 +459,13 @@ static int hpt36x_init_one(struct pci_dev *dev, const struct pci_device_id *id)
 	return ata_pci_init_one(dev, port_info, 2);
 }
 
+#ifdef CONFIG_PM
 static int hpt36x_reinit_one(struct pci_dev *dev)
 {
 	hpt36x_init_chipset(dev);
 	return ata_pci_device_resume(dev);
 }
-
+#endif
 
 static const struct pci_device_id hpt36x[] = {
 	{ PCI_VDEVICE(TTI, PCI_DEVICE_ID_TTI_HPT366), },
@@ -484,8 +477,10 @@ static struct pci_driver hpt36x_pci_driver = {
 	.id_table	= hpt36x,
 	.probe 		= hpt36x_init_one,
 	.remove		= ata_pci_remove_one,
+#ifdef CONFIG_PM
 	.suspend	= ata_pci_device_suspend,
 	.resume		= hpt36x_reinit_one,
+#endif
 };
 
 static int __init hpt36x_init(void)

@@ -58,7 +58,7 @@ unsigned long acpi_wakeup_address = 0;
 unsigned long acpi_video_flags;
 extern char wakeup_start, wakeup_end;
 
-extern unsigned long FASTCALL(acpi_copy_wakeup_routine(unsigned long));
+extern unsigned long acpi_copy_wakeup_routine(unsigned long);
 
 static pgd_t low_ptr;
 
@@ -66,8 +66,10 @@ static void init_low_mapping(void)
 {
 	pgd_t *slot0 = pgd_offset(current->mm, 0UL);
 	low_ptr = *slot0;
+	/* FIXME: We're playing with the current task's page tables here, which
+	 * is potentially dangerous on SMP systems.
+	 */
 	set_pgd(slot0, *pgd_offset(current->mm, PAGE_OFFSET));
-	WARN_ON(num_online_cpus() != 1);
 	local_flush_tlb();
 }
 
