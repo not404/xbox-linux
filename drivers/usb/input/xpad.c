@@ -68,15 +68,15 @@ static unsigned long debug = 0;
 module_param(debug, ulong, 0444);
 MODULE_PARM_DESC(debug, "Debugging");
 
-static struct xpad_device xpad_device[] = {
+static const struct xpad_device xpad_device[] = {
 	/* please keep those ordered wrt. vendor/product ids
-	  vendor, product, isMat, name                              */
+	  vendor, product, isMat, name, is360                 */
 	{ 0x044f, 0x0f07, 0, "Thrustmaster, Inc. Controller", 0},
 	{ 0x045e, 0x0202, 0, "Microsoft Xbox Controller", 0},
 	{ 0x045e, 0x0285, 0, "Microsoft Xbox Controller S", 0},
 	{ 0x045e, 0x0287, 0, "Microsoft Xbox Controller S", 0},
 	{ 0x045e, 0x0289, 0, "Microsoft Xbox Controller S", 0}, /* microsoft is stupid */
-	{ 0x045e, 0x028e, 0, "Microsoft Xbox360 Controller", 1},
+	{ 0x045e, 0x028e, 0, "Microsoft Xbox 360 Controller", 1},
 	{ 0x046d, 0xca84, 0, "Logitech Xbox Cordless Controller", 0},
 	{ 0x046d, 0xca88, 0, "Logitech Compact Controller for Xbox", 0},
 	{ 0x05fd, 0x1007, 0, "???Mad Catz Controller???", 0}, /* CHECKME: this seems strange */
@@ -106,7 +106,7 @@ static struct xpad_device xpad_device[] = {
 	{ 0x0000, 0x0000, 0, "nothing detected - FAIL", 0}
 };
 
-static signed short xpad_btn[] = {
+static const signed short xpad_btn[] = {
 	BTN_A, BTN_B, BTN_C, BTN_X, BTN_Y, BTN_Z,	/* analogue buttons */
 	BTN_START, BTN_BACK, BTN_THUMBL, BTN_THUMBR,	/* start/back/sticks */
 	BTN_0, BTN_1, BTN_2, BTN_3,			/* d-pad as buttons */
@@ -115,14 +115,14 @@ static signed short xpad_btn[] = {
 	-1						/* terminating entry */
 };
 
-static signed short xpad_mat_btn[] = {
+static const signed short xpad_mat_btn[] = {
 	BTN_A, BTN_B, BTN_X, BTN_Y, 	/* A, B, X, Y */
 	BTN_START, BTN_BACK, 		/* start/back */
 	BTN_0, BTN_1, BTN_2, BTN_3,	/* directions */
 	-1				/* terminating entry */
 };
 
-static signed short xpad_abs[] = {
+static const signed short xpad_abs[] = {
 	ABS_X, ABS_Y,		/* left stick */
 	ABS_RX, ABS_RY,		/* right stick */
 	ABS_Z, ABS_RZ,		/* triggers left/right */
@@ -136,8 +136,6 @@ static signed short xpad_abs[] = {
 static struct usb_device_id xpad_table [] = {
 	{ USB_INTERFACE_INFO('X', 'B', 0) },	/* Xbox USB-IF not approved class */
 	{ USB_INTERFACE_INFO( 3 ,  0 , 0) },	/* for Joytech Advanced Controller */
-	{ USB_INTERFACE_INFO( 255 ,  93 , 3) },	/* Xbox 360 */
-	{ USB_INTERFACE_INFO( 255 ,  93 , 2) }, /* Xbox 360 */
 	{ USB_INTERFACE_INFO( 255 ,  93 , 1) }, /* Xbox 360 */
 	{ }
 };
@@ -497,7 +495,6 @@ static void xpad_disconnect(struct usb_interface *intf)
 /******************* Linux driver framework specific stuff ************/
 
 static struct usb_driver xpad_driver = {
-	.owner		= THIS_MODULE,
 	.name		= "xpad",
 	.probe		= xpad_probe,
 	.disconnect	= xpad_disconnect,
@@ -534,7 +531,7 @@ MODULE_LICENSE("GPL");
  *  driver history
  * ----------------
  *
- * 2005-11-25 - 0.1.6 : Added Xbox360 Controller support
+ * 2005-11-25 - 0.1.6 : Added Xbox 360 Controller support
  * 
  * 2005-03-15 - 0.1.5 : Mouse emulation removed.  Deadzones increased.
  *  - Flipped the Y axis of the left joystick (it was inverted, like on a 
