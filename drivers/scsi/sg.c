@@ -1430,7 +1430,7 @@ static struct file_operations sg_fops = {
 	.fasync = sg_fasync,
 };
 
-static struct class_simple * sg_sysfs_class;
+static struct class *sg_sysfs_class;
 
 static int sg_sysfs_valid = 0;
 
@@ -1551,13 +1551,13 @@ sg_add(struct class_device *cl_dev)
 	if (sg_sysfs_valid) {
 		struct class_device * sg_class_member;
 
-		sg_class_member = class_simple_device_add(sg_sysfs_class, 
+		sg_class_member = class_device_create(sg_sysfs_class,
 				MKDEV(SCSI_GENERIC_MAJOR, k), 
 				cl_dev->dev, "%s", 
 				disk->disk_name);
 		if (IS_ERR(sg_class_member))
 			printk(KERN_WARNING "sg_add: "
-				"class_simple_device_add failed\n");
+				"class_device_create failed\n");
 		class_set_devdata(sg_class_member, sdp);
 		error = sysfs_create_link(&scsidp->sdev_gendev.kobj, 
 					  &sg_class_member->kobj, "generic");
@@ -1636,7 +1636,7 @@ sg_remove(struct class_device *cl_dev)
 
 	if (sdp) {
 		sysfs_remove_link(&scsidp->sdev_gendev.kobj, "generic");
-		class_simple_device_remove(MKDEV(SCSI_GENERIC_MAJOR, k));
+		class_device_destroy(sg_sysfs_class, MKDEV(SCSI_GENERIC_MAJOR, k));
 		cdev_del(sdp->cdev);
 		sdp->cdev = NULL;
 		devfs_remove("%s/generic", scsidp->devfs_name);
@@ -1677,7 +1677,7 @@ init_sg(void)
 				    SG_MAX_DEVS, "sg");
 	if (rc)
 		return rc;
-        sg_sysfs_class = class_simple_create(THIS_MODULE, "scsi_generic");
+        sg_sysfs_class = class_create(THIS_MODULE, "scsi_generic");
         if ( IS_ERR(sg_sysfs_class) ) {
 		rc = PTR_ERR(sg_sysfs_class);
 		goto err_out;
@@ -1690,7 +1690,7 @@ init_sg(void)
 #endif				/* CONFIG_SCSI_PROC_FS */
 		return 0;
 	}
-	class_simple_destroy(sg_sysfs_class);
+	class_destroy(sg_sysfs_class);
 err_out:
 	unregister_chrdev_region(MKDEV(SCSI_GENERIC_MAJOR, 0), SG_MAX_DEVS);
 	return rc;
@@ -1703,7 +1703,7 @@ exit_sg(void)
 	sg_proc_cleanup();
 #endif				/* CONFIG_SCSI_PROC_FS */
 	scsi_unregister_interface(&sg_interface);
-	class_simple_destroy(sg_sysfs_class);
+	class_destroy(sg_sysfs_class);
 	sg_sysfs_valid = 0;
 	unregister_chrdev_region(MKDEV(SCSI_GENERIC_MAJOR, 0),
 				 SG_MAX_DEVS);
@@ -2472,6 +2472,8 @@ sg_remove_request(Sg_fd * sfp, Sg_request * srp)
 	if ((!sfp) || (!srp) || (!sfp->headrp))
 		return res;
 	write_lock_irqsave(&sfp->rq_list_lock, iflags);
+	if (srp->my_cmdp)
+		srp->my_cmdp->upper_private_data = NULL;
 	prev_rp = sfp->headrp;
 	if (srp == prev_rp) {
 		sfp->headrp = prev_rp->nextrp;
@@ -2969,23 +2971,22 @@ static void * dev_seq_start(struct seq_file *s, loff_t *pos)
 {
 	struct sg_proc_deviter * it = kmalloc(sizeof(*it), GFP_KERNEL);
 
+	s->private = it;
 	if (! it)
 		return NULL;
+
 	if (NULL == sg_dev_arr)
-		goto err1;
+		return NULL;
 	it->index = *pos;
 	it->max = sg_last_dev();
 	if (it->index >= it->max)
-		goto err1;
+		return NULL;
 	return it;
-err1:
-	kfree(it);
-	return NULL;
 }
 
 static void * dev_seq_next(struct seq_file *s, void *v, loff_t *pos)
 {
-	struct sg_proc_deviter * it = (struct sg_proc_deviter *) v;
+	struct sg_proc_deviter * it = s->private;
 
 	*pos = ++it->index;
 	return (it->index < it->max) ? it : NULL;
@@ -2993,7 +2994,7 @@ static void * dev_seq_next(struct seq_file *s, void *v, loff_t *pos)
 
 static void dev_seq_stop(struct seq_file *s, void *v)
 {
-	kfree (v);
+	kfree(s->private);
 }
 
 static int sg_proc_open_dev(struct inode *inode, struct file *file)
