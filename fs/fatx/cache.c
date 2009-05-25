@@ -60,10 +60,9 @@ int __init fatx_cache_init(void)
 	return 0;
 }
 
-void __exit fatx_cache_destroy(void)
+void fatx_cache_destroy(void)
 {
-	if (kmem_cache_destroy(fatx_cache_cachep))
-		printk(KERN_INFO "fatx_cache: not all structures were freed\n");
+	kmem_cache_destroy(fatx_cache_cachep);
 }
 
 static inline struct fatx_cache *fatx_cache_alloc(struct inode *inode)

@@ -119,6 +119,7 @@ struct fatx_mount_options {
 	unsigned short codepage;  /* Codepage for shortname conversions */
 	char *iocharset;          /* Charset used for filename input/display */
 	unsigned quiet:1;         /* set = fake successful chmods and chowns */
+	unsigned flush:1;	  /* write things quickly */
 };
 
 #define FAT_HASH_BITS	8
@@ -276,6 +277,8 @@ extern const struct file_operations fatx_file_operations;
 extern struct inode_operations fatx_file_inode_operations;
 extern int fatx_notify_change(struct dentry * dentry, struct iattr * attr);
 extern void fatx_truncate(struct inode *inode);
+extern int fatx_getattr(struct vfsmount *mnt, struct dentry *dentry,
+			struct kstat *stat);
 
 /* fatx/inode.c */
 extern void fatx_attach(struct inode *inode, loff_t i_pos);
@@ -286,6 +289,8 @@ extern struct inode *fatx_build_inode(struct super_block *sb,
 extern int fatx_sync_inode(struct inode *inode);
 extern int fatx_fill_super_inode(struct super_block *sb, void *data, int silent,
 			struct inode_operations *fs_dir_inode_ops);
+extern int fatx_flush_inodes(struct super_block *sb, struct inode *i1,
+			struct inode *i2);
 extern unsigned int fatx_debug;
 
 /* fatx/misc.c */

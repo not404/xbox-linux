@@ -16,8 +16,7 @@
 
 #define PRINTK(format, args...) do { if (fatx_debug) printk( format, ##args ); } while(0)
 
-static ssize_t fatx_file_aio_write(struct kiocb *iocb, const char __user *buf,
-				  size_t count, loff_t pos)
+static ssize_t fatx_file_aio_write(struct kiocb *iocb, const struct iovec *buf, unsigned long count, loff_t pos)
 {
 	struct inode *inode = iocb->ki_filp->f_dentry->d_inode;
 	int retval;
@@ -31,30 +30,24 @@ static ssize_t fatx_file_aio_write(struct kiocb *iocb, const char __user *buf,
 	return retval;
 }
 
-static ssize_t fatx_file_writev(struct file *filp, const struct iovec *iov,
-			       unsigned long nr_segs, loff_t *ppos)
+static int fatx_file_release(struct inode *inode, struct file *filp)
 {
-	struct inode *inode = filp->f_dentry->d_inode;
-	int retval;
-
-	retval = generic_file_writev(filp, iov, nr_segs, ppos);
-	if (retval > 0) {
-		inode->i_mtime = inode->i_ctime = CURRENT_TIME;
-		FATX_I(inode)->i_attrs |= ATTR_ARCH;
-		mark_inode_dirty(inode);
+	if ((filp->f_mode & FMODE_WRITE) &&
+		FATX_SB(inode->i_sb)->options.flush) {
+		fatx_flush_inodes(inode->i_sb, inode, NULL);
+		congestion_wait(WRITE, HZ/10);
 	}
-	return retval;
+	return 0;
 }
 
 const struct file_operations fatx_file_operations = {
 	.llseek		= generic_file_llseek,
 	.read		= do_sync_read,
 	.write		= do_sync_write,
-	.readv		= generic_file_readv,
-	.writev		= fatx_file_writev,
 	.aio_read	= generic_file_aio_read,
 	.aio_write	= fatx_file_aio_write,
 	.mmap		= generic_file_mmap,
+	.release        = fatx_file_release,
 	.ioctl		= NULL,
 	.fsync		= file_fsync,
 	.sendfile	= generic_file_sendfile,
@@ -204,9 +197,20 @@ void fatx_truncate(struct inode *inode)
 	lock_kernel();
 	fatx_free(inode, nr_clusters);
 	unlock_kernel();
+	fatx_flush_inodes(inode->i_sb, inode, NULL);
 }
 
+int fatx_getattr(struct vfsmount *mnt, struct dentry *dentry, struct kstat *stat)
+{
+	struct inode *inode = dentry->d_inode;
+	generic_fillattr(inode, stat);
+	stat->blksize = FATX_SB(inode->i_sb)->cluster_size;
+	return 0;
+}
+
+EXPORT_SYMBOL_GPL(fatx_getattr);
 struct inode_operations fatx_file_inode_operations = {
 	.truncate	= fatx_truncate,
 	.setattr	= fatx_notify_change,
+	.getattr        = fatx_getattr,
 };

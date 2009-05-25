@@ -25,6 +25,7 @@
 #include <linux/mount.h>
 #include <linux/vfs.h>
 #include <linux/parser.h>
+#include <linux/writeback.h>
 #include <asm/unaligned.h>
 
 #ifndef CONFIG_FAT_DEFAULT_IOCHARSET
@@ -59,7 +60,7 @@ static __s64 fatx_add_cluster(struct inode *inode)
 }
 
 static int fatx_get_block(struct inode *inode, sector_t iblock,
-			 struct buffer_head *bh_result, int create)
+			struct buffer_head *bh_result, int create)
 {
 	struct super_block *sb = inode->i_sb;
 	sector_t phys;
@@ -275,7 +276,6 @@ static int fatx_fill_inode(struct inode *inode, struct fatx_dir_entry *de)
 	}
 	FATX_I(inode)->i_attrs = de->attr & ATTR_UNUSED;
 	/* this is as close to the truth as we can get ... */
-	inode->i_blksize = sbi->cluster_size;
 	inode->i_blocks = ((inode->i_size + (sbi->cluster_size - 1))
 			   & ~((loff_t)sbi->cluster_size - 1)) >> 9;
 	inode->i_mtime.tv_sec = inode->i_atime.tv_sec =
@@ -398,8 +398,7 @@ static int __init fatx_init_inodecache(void)
 
 static void __exit fatx_destroy_inodecache(void)
 {
-	if (kmem_cache_destroy(fatx_inode_cachep))
-		printk(KERN_INFO "fatx_inode_cache: not all structures were freed\n");
+	kmem_cache_destroy(fatx_inode_cachep);
 }
 
 static int fatx_remount(struct super_block *sb, int *flags, char *data)
@@ -685,7 +684,7 @@ static int fatx_show_options(struct seq_file *m, struct vfsmount *mnt)
 
 enum {
 	Opt_uid, Opt_gid, Opt_umask, Opt_dmask, Opt_fmask, 
-	Opt_quiet, Opt_err,
+	Opt_quiet, Opt_flush, Opt_err,
 };
 
 static match_table_t fatx_tokens = {
@@ -694,6 +693,7 @@ static match_table_t fatx_tokens = {
 	{Opt_umask, "umask=%o"},
 	{Opt_dmask, "dmask=%o"},
 	{Opt_fmask, "fmask=%o"},
+	{Opt_flush, "flush"},
 	{Opt_err, NULL}
 };
 
@@ -749,6 +749,9 @@ static int parse_options(char *options, struct fatx_mount_options *opts)
 				return 0;
 			opts->fs_fmask = option;
 			break;
+		case Opt_flush:
+			opts->flush = 1;
+			break;
 		default:
 			printk(KERN_ERR "FATX: Unrecognized mount option \"%s\" "
 			       "or missing value\n", p);
@@ -777,7 +780,6 @@ static int fatx_read_root(struct inode *inode)
 	if (error < 0)
 		return error;
 	inode->i_size = sbi->dir_entries * sizeof(struct fatx_dir_entry);
-	inode->i_blksize = sbi->cluster_size;
 	inode->i_blocks = ((inode->i_size + (sbi->cluster_size - 1))
 			   & ~((loff_t)sbi->cluster_size - 1)) >> 9;
 	FATX_I(inode)->i_logstart = 0;
@@ -955,6 +957,56 @@ out_fail:
 }
 
 EXPORT_SYMBOL(fatx_fill_super_inode);
+
+/*
+ * helper function for fatx_flush_inodes.  This writes both the inode
+ * and the file data blocks, waiting for in flight data blocks before
+ * the start of the call.  It does not wait for any io started
+ * during the call
+ */
+static int writeback_inode(struct inode *inode)
+{
+
+	int ret;
+	struct address_space *mapping = inode->i_mapping;
+	struct writeback_control wbc = {
+		.sync_mode = WB_SYNC_NONE,
+		.nr_to_write = 0,
+	};
+	/* if we used WB_SYNC_ALL, sync_inode waits for the io for the
+	 * inode to finish.  So WB_SYNC_NONE is sent down to sync_inode
+	 * and filemap_fdatawrite is used for the data blocks
+	 */
+	ret = sync_inode(inode, &wbc);
+	if (!ret)
+		ret = filemap_fdatawrite(mapping);
+	return ret;
+}
+
+/*
+ * write data and metadata corresponding to i1 and i2.  The io is
+ * started but we do not wait for any of it to finish.
+ *
+ * filemap_flush is used for the block device, so if there is a dirty
+ * page for a block already in flight, we will not wait and start the
+ * io over again
+ */
+int fatx_flush_inodes(struct super_block *sb, struct inode *i1, struct inode *i2)
+{
+	int ret = 0;
+	if (!FATX_SB(sb)->options.flush)
+		return 0;
+	if (i1)
+		ret = writeback_inode(i1);
+	if (!ret && i2)
+		ret = writeback_inode(i2);
+	if (!ret) {
+		struct address_space *mapping = sb->s_bdev->bd_inode->i_mapping;
+		ret = filemap_flush(mapping);
+	}
+	return ret;
+}
+EXPORT_SYMBOL_GPL(fatx_flush_inodes);
 
 int __init fatx_cache_init(void);
 void __exit fatx_cache_destroy(void);
