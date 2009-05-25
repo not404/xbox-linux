@@ -115,7 +115,7 @@ static
 extern
 #endif
 int __init i2c_xbox_init(void);
-static int __init xbox_cleanup(void);
+static void __exit xbox_cleanup(void);
 static int xbox_setup(void);
 static s32 xbox_access(struct i2c_adapter *adap, u16 addr,
 			 unsigned short flags, char read_write,
@@ -141,7 +141,7 @@ static struct i2c_adapter xbox_adapter = {
 	.name           = "unset",
 };
 
-static int __initdata xbox_initialized;
+static int __devinitdata xbox_initialized;
 static unsigned short xbox_smba = 0;
 spinlock_t xbox_driver_lock = SPIN_LOCK_UNLOCKED;
 struct driver_data;
@@ -372,14 +372,14 @@ int __init i2c_xbox_init(void)
 	return 0;
 }
 
-int __init xbox_cleanup(void)
+void __exit xbox_cleanup(void)
 {
 	int res;
 	if (xbox_initialized >= 2) {
 		if ((res = i2c_del_adapter(&xbox_adapter))) {
 			printk
 			    ("i2c-xbox.o: i2c_del_adapter failed, module not removed\n");
-			return res;
+			return;
 		} else
 			xbox_initialized--;
 	}
@@ -388,10 +388,8 @@ int __init xbox_cleanup(void)
 		xbox_initialized--;
 	}
 	free_irq(XBOX_dev->irq, XBOX_dev);
-	return 0;
+	return;
 }
-
-EXPORT_SYMBOL(i2c_xbox_init);
 
 #ifdef MODULE
 
@@ -402,14 +400,7 @@ MODULE_DESCRIPTION("XBOX nForce SMBus driver");
 MODULE_LICENSE("GPL");
 #endif
 
-int init_module(void)
-{
-	return i2c_xbox_init();
-}
-
-void cleanup_module(void)
-{
-	xbox_cleanup();
-}
+module_init(i2c_xbox_init);
+module_exit(xbox_cleanup);
 
 #endif				/* MODULE */
