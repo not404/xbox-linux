@@ -192,6 +192,11 @@ static struct fb_var_screeninfo xboxfb_default_var = {
 	.vmode		= FB_VMODE_NONINTERLACED
 };
 
+#if 0
+/*
+ *  2009-May-24
+ * LALEE: These aren't used (yet), so I'm commenting them out to eliminate a compiler nag
+ */
 static struct fb_var_screeninfo xboxfb_mode_480p = {
 	.xres           = 720,
 	.yres           = 480,
@@ -239,6 +244,7 @@ static struct fb_var_screeninfo xboxfb_mode_720p = {
 	.vsync_len      = 5,
 	.vmode          = FB_VMODE_NONINTERLACED
 };
+#endif 
 
 static const char* tvEncodingNames[] = {
         "NTSC",
