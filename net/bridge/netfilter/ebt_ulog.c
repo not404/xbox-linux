@@ -29,7 +29,6 @@
  */
 
 #include <linux/module.h>
-#include <linux/config.h>
 #include <linux/spinlock.h>
 #include <linux/socket.h>
 #include <linux/skbuff.h>
@@ -74,6 +73,9 @@ static void ulog_send(unsigned int nlgroup)
 
 	if (timer_pending(&ub->timer))
 		del_timer(&ub->timer);
+
+	if (!ub->skb)
+		return;
 
 	/* last nlmsg needs NLMSG_DONE */
 	if (ub->qlen > 1)

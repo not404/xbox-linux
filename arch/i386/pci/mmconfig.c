@@ -15,7 +15,9 @@
 #include <asm/e820.h>
 #include "pci.h"
 
-#define MMCONFIG_APER_SIZE (256*1024*1024)
+/* aperture is up to 256MB but BIOS may reserve less */
+#define MMCONFIG_APER_MIN	(2 * 1024*1024)
+#define MMCONFIG_APER_MAX	(256 * 1024*1024)
 
 /* Assume systems with more busses have correct MCFG */
 #define MAX_CHECK_BUS 16
@@ -176,7 +178,7 @@ static __init void unreachable_devices(void)
 				pci_exp_set_dev_base(addr, k, PCI_DEVFN(i, 0));
 			if (addr == 0 ||
 			    readl((u32 __iomem *)mmcfg_virt_addr) != val1) {
-				set_bit(i, fallback_slots);
+				set_bit(i + 32*k, fallback_slots);
 				printk(KERN_NOTICE
 			"PCI: No mmconfig possible on %x:%x\n", k, i);
 			}
@@ -197,9 +199,10 @@ void __init pci_mmcfg_init(void)
 		return;
 
 	if (!e820_all_mapped(pci_mmcfg_config[0].base_address,
-			pci_mmcfg_config[0].base_address + MMCONFIG_APER_SIZE,
+			pci_mmcfg_config[0].base_address + MMCONFIG_APER_MIN,
 			E820_RESERVED)) {
-		printk(KERN_ERR "PCI: BIOS Bug: MCFG area is not E820-reserved\n");
+		printk(KERN_ERR "PCI: BIOS Bug: MCFG area at %x is not E820-reserved\n",
+				pci_mmcfg_config[0].base_address);
 		printk(KERN_ERR "PCI: Not using MMCONFIG.\n");
 		return;
 	}
