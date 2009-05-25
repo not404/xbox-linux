@@ -158,6 +158,7 @@ static int  strictmode __initdata = 0;
 static xbox_tv_encoding tv_encoding  __initdata = TV_ENC_INVALID;
 static xbox_av_type av_type __initdata = AV_INVALID;
 static int hoc __initdata = -1;
+static char *tv __initdata = "NTSC";
 static int voc __initdata = -1;
 
 static struct fb_fix_screeninfo xboxfb_fix = {
@@ -2489,23 +2490,23 @@ module_exit(xboxfb_exit);
 
 module_param(noaccel, bool, 0);
 MODULE_PARM_DESC(noaccel, "bool: disable acceleration");
-MODULE_PARM(flatpanel, "i");
+module_param(flatpanel, int,0);
 MODULE_PARM_DESC(flatpanel, "Enables experimental flat panel support for some chipsets. (0 or 1=enabled) (default=0)");
-MODULE_PARM(forceCRTC, "i");
+module_param(forceCRTC, int, 0);
 MODULE_PARM_DESC(forceCRTC, "Forces usage of a particular CRTC in case autodetection fails. (0 or 1) (default=autodetect)");
 
 #ifdef CONFIG_MTRR
-MODULE_PARM(nomtrr, "i");
+module_param(nomtrr, int, 0);
 MODULE_PARM_DESC(nomtrr, "Disables MTRR support (0 or 1=disabled) (default=0)");
 #endif
 module_param(strictmode, bool, 0);
 MODULE_PARM_DESC(strictmode, "Only use video modes from EDID");
 
-MODULE_PARM(tv, "s");
+module_param(tv, charp, 0);
 MODULE_PARM_DESC(tv, "Specifies the TV encoding (\"PAL\", \"NTSC\" or \"VGA\").");
-MODULE_PARM(hoc, "i");
+module_param(hoc, int, 0);
 MODULE_PARM_DESC(hoc, "Horizontal overscan compensation ratio, in % (0-20)");
-MODULE_PARM(voc, "i");
+module_param(voc, int, 0);
 MODULE_PARM_DESC(voc, "Vertical overscan compensation ratio, in % (0-20)");
 
 #endif /* MODULE */
