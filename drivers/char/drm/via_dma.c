@@ -213,14 +213,16 @@ static int via_initialize(drm_device_t * dev,
 	dev_priv->dma_wrap = init->size;
 	dev_priv->dma_offset = init->offset;
 	dev_priv->last_pause_ptr = NULL;
-	dev_priv->hw_addr_ptr = dev_priv->mmio->handle + init->reg_pause_addr;
+	dev_priv->hw_addr_ptr =
+		(volatile uint32_t *)((char *)dev_priv->mmio->handle +
+		init->reg_pause_addr);
 
 	via_cmdbuf_start(dev_priv);
 
 	return 0;
 }
 
-int via_dma_init(DRM_IOCTL_ARGS)
+static int via_dma_init(DRM_IOCTL_ARGS)
 {
 	DRM_DEVICE;
 	drm_via_private_t *dev_priv = (drm_via_private_t *) dev->dev_private;
@@ -232,13 +234,13 @@ int via_dma_init(DRM_IOCTL_ARGS)
 
 	switch (init.func) {
 	case VIA_INIT_DMA:
-		if (!capable(CAP_SYS_ADMIN))
+		if (!DRM_SUSER(DRM_CURPROC))
 			retcode = DRM_ERR(EPERM);
 		else
 			retcode = via_initialize(dev, dev_priv, &init);
 		break;
 	case VIA_CLEANUP_DMA:
-		if (!capable(CAP_SYS_ADMIN))
+		if (!DRM_SUSER(DRM_CURPROC))
 			retcode = DRM_ERR(EPERM);
 		else
 			retcode = via_dma_cleanup(dev);
@@ -319,7 +321,7 @@ int via_driver_dma_quiescent(drm_device_t * dev)
 	return 0;
 }
 
-int via_flush_ioctl(DRM_IOCTL_ARGS)
+static int via_flush_ioctl(DRM_IOCTL_ARGS)
 {
 	DRM_DEVICE;
 
@@ -328,7 +330,7 @@ int via_flush_ioctl(DRM_IOCTL_ARGS)
 	return via_driver_dma_quiescent(dev);
 }
 
-int via_cmdbuffer(DRM_IOCTL_ARGS)
+static int via_cmdbuffer(DRM_IOCTL_ARGS)
 {
 	DRM_DEVICE;
 	drm_via_cmdbuffer_t cmdbuf;
@@ -349,9 +351,6 @@ int via_cmdbuffer(DRM_IOCTL_ARGS)
 	return 0;
 }
 
-extern int
-via_parse_command_stream(drm_device_t * dev, const uint32_t * buf,
-			 unsigned int size);
 static int via_dispatch_pci_cmdbuffer(drm_device_t * dev,
 				      drm_via_cmdbuffer_t * cmd)
 {
@@ -376,7 +375,7 @@ static int via_dispatch_pci_cmdbuffer(drm_device_t * dev,
 	return ret;
 }
 
-int via_pci_cmdbuffer(DRM_IOCTL_ARGS)
+static int via_pci_cmdbuffer(DRM_IOCTL_ARGS)
 {
 	DRM_DEVICE;
 	drm_via_cmdbuffer_t cmdbuf;
@@ -450,9 +449,9 @@ static int via_hook_segment(drm_via_private_t * dev_priv,
 	if ((count <= 8) && (count >= 0)) {
 		uint32_t rgtr, ptr;
 		rgtr = *(dev_priv->hw_addr_ptr);
-		ptr = ((char *)dev_priv->last_pause_ptr - dev_priv->dma_ptr) +
-		    dev_priv->dma_offset + (uint32_t) dev_priv->agpAddr + 4 -
-		    CMDBUF_ALIGNMENT_SIZE;
+		ptr = ((volatile char *)dev_priv->last_pause_ptr -
+		      dev_priv->dma_ptr) + dev_priv->dma_offset +
+		      (uint32_t) dev_priv->agpAddr + 4 - CMDBUF_ALIGNMENT_SIZE;
 		if (rgtr <= ptr) {
 			DRM_ERROR
 			    ("Command regulator\npaused at count %d, address %x, "
@@ -472,7 +471,7 @@ static int via_hook_segment(drm_via_private_t * dev_priv,
 		       && count--) ;
 
 		rgtr = *(dev_priv->hw_addr_ptr);
-		ptr = ((char *)paused_at - dev_priv->dma_ptr) +
+		ptr = ((volatile char *)paused_at - dev_priv->dma_ptr) +
 		    dev_priv->dma_offset + (uint32_t) dev_priv->agpAddr + 4;
 
 		ptr_low = (ptr > 3 * CMDBUF_ALIGNMENT_SIZE) ?
@@ -666,7 +665,7 @@ static void via_cmdbuf_reset(drm_via_private_t * dev_priv)
  * User interface to the space and lag functions.
  */
 
-int via_cmdbuf_size(DRM_IOCTL_ARGS)
+static int via_cmdbuf_size(DRM_IOCTL_ARGS)
 {
 	DRM_DEVICE;
 	drm_via_cmdbuf_size_t d_siz;
@@ -724,3 +723,22 @@ int via_cmdbuf_size(DRM_IOCTL_ARGS)
 			       sizeof(d_siz));
 	return ret;
 }
+
+drm_ioctl_desc_t via_ioctls[] = {
+	[DRM_IOCTL_NR(DRM_VIA_ALLOCMEM)] = {via_mem_alloc, DRM_AUTH},
+	[DRM_IOCTL_NR(DRM_VIA_FREEMEM)] = {via_mem_free, DRM_AUTH},
+	[DRM_IOCTL_NR(DRM_VIA_AGP_INIT)] = {via_agp_init, DRM_AUTH|DRM_MASTER},
+	[DRM_IOCTL_NR(DRM_VIA_FB_INIT)] = {via_fb_init, DRM_AUTH|DRM_MASTER},
+	[DRM_IOCTL_NR(DRM_VIA_MAP_INIT)] = {via_map_init, DRM_AUTH|DRM_MASTER},
+	[DRM_IOCTL_NR(DRM_VIA_DEC_FUTEX)] = {via_decoder_futex, DRM_AUTH},
+	[DRM_IOCTL_NR(DRM_VIA_DMA_INIT)] = {via_dma_init, DRM_AUTH},
+	[DRM_IOCTL_NR(DRM_VIA_CMDBUFFER)] = {via_cmdbuffer, DRM_AUTH},
+	[DRM_IOCTL_NR(DRM_VIA_FLUSH)] = {via_flush_ioctl, DRM_AUTH},
+	[DRM_IOCTL_NR(DRM_VIA_PCICMD)] = {via_pci_cmdbuffer, DRM_AUTH},
+	[DRM_IOCTL_NR(DRM_VIA_CMDBUF_SIZE)] = {via_cmdbuf_size, DRM_AUTH},
+	[DRM_IOCTL_NR(DRM_VIA_WAIT_IRQ)] = {via_wait_irq, DRM_AUTH},
+	[DRM_IOCTL_NR(DRM_VIA_DMA_BLIT)] = {via_dma_blit, DRM_AUTH},
+	[DRM_IOCTL_NR(DRM_VIA_BLIT_SYNC)] = {via_dma_blit_sync, DRM_AUTH}
+};
+
+int via_max_ioctl = DRM_ARRAY_SIZE(via_ioctls);

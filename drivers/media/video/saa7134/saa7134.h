@@ -37,6 +37,9 @@
 #include <media/ir-common.h>
 #include <media/ir-kbd-i2c.h>
 #include <media/video-buf.h>
+#include <sound/driver.h>
+#include <sound/core.h>
+#include <sound/pcm.h>
 #include <media/video-buf-dvb.h>
 
 #ifndef TRUE
@@ -46,10 +49,6 @@
 # define FALSE (1==0)
 #endif
 #define UNSET (-1U)
-
-#include <sound/driver.h>
-#include <sound/core.h>
-#include <sound/pcm.h>
 
 /* ----------------------------------------------------------- */
 /* enums                                                       */
@@ -186,7 +185,7 @@ struct saa7134_format {
 #define SAA7134_BOARD_AVERMEDIA_GO_007_FM 57
 #define SAA7134_BOARD_ADS_INSTANT_TV 58
 #define SAA7134_BOARD_KWORLD_VSTREAM_XPERT 59
-#define SAA7134_BOARD_THYPHOON_DVBT_DUO_CARDBUS 60
+#define SAA7134_BOARD_FLYDVBT_DUO_CARDBUS 60
 #define SAA7134_BOARD_PHILIPS_TOUGH 61
 #define SAA7134_BOARD_VIDEOMATE_TV_GOLD_PLUSII 62
 #define SAA7134_BOARD_KWORLD_XPERT 63
@@ -209,6 +208,8 @@ struct saa7134_format {
 #define SAA7134_BOARD_ASUSTEK_DIGIMATRIX_TV 80
 #define SAA7134_BOARD_PHILIPS_TIGER  81
 #define SAA7134_BOARD_MSI_TVATANYWHERE_PLUS  82
+#define SAA7134_BOARD_CINERGY250PCI 83
+#define SAA7134_BOARD_FLYDVB_TRIO 84
 
 #define SAA7134_MAXBOARDS 8
 #define SAA7134_INPUT_MAX 8
@@ -546,7 +547,6 @@ struct saa7134_dev {
 
 extern struct list_head  saa7134_devlist;
 
-void saa7134_print_ioctl(char *name, unsigned int cmd);
 void saa7134_track_gpio(struct saa7134_dev *dev, char *msg);
 
 #define SAA7134_PGTABLE_SIZE 4096

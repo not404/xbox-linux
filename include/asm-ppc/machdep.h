@@ -35,8 +35,10 @@ struct machdep_calls {
 	int		(*get_irq)(struct pt_regs *);
 	
 	/* A general init function, called by ppc_init in init/main.c.
-	   May be NULL. */
+	   May be NULL. DEPRECATED ! */
 	void		(*init)(void);
+	/* For compatibility with merged platforms */
+	void		(*init_early)(void);
 
 	void		(*restart)(char *cmd);
 	void		(*power_off)(void);
@@ -151,19 +153,6 @@ extern struct machdep_calls ppc_md;
 extern char cmd_line[COMMAND_LINE_SIZE];
 
 extern void setup_pci_ptrs(void);
-
-/*
- * Power macintoshes have either a CUDA or a PMU controlling
- * system reset, power, NVRAM, RTC.
- */
-typedef enum sys_ctrler_kind {
-	SYS_CTRLER_UNKNOWN = 0,
-	SYS_CTRLER_CUDA = 1,
-	SYS_CTRLER_PMU = 2,
-	SYS_CTRLER_SMU = 3,
-} sys_ctrler_t;
-
-extern sys_ctrler_t sys_ctrler;
 
 #ifdef CONFIG_SMP
 struct smp_ops_t {

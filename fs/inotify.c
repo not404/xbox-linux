@@ -33,6 +33,7 @@
 #include <linux/list.h>
 #include <linux/writeback.h>
 #include <linux/inotify.h>
+#include <linux/syscalls.h>
 
 #include <asm/ioctls.h>
 
@@ -966,7 +967,7 @@ asmlinkage long sys_inotify_add_watch(int fd, const char __user *path, u32 mask)
 		mask_add = 1;
 
 	/* don't let user-space set invalid bits: we don't want flags set */
-	mask &= IN_ALL_EVENTS;
+	mask &= IN_ALL_EVENTS | IN_ONESHOT;
 	if (unlikely(!mask)) {
 		ret = -EINVAL;
 		goto out;

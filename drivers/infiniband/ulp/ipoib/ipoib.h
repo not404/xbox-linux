@@ -45,11 +45,11 @@
 #include <linux/config.h>
 #include <linux/kref.h>
 #include <linux/if_infiniband.h>
+#include <linux/mutex.h>
 
 #include <net/neighbour.h>
 
 #include <asm/atomic.h>
-#include <asm/semaphore.h>
 
 #include <rdma/ib_verbs.h>
 #include <rdma/ib_pack.h>
@@ -78,6 +78,7 @@ enum {
 	IPOIB_FLAG_SUBINTERFACE   = 4,
 	IPOIB_MCAST_RUN 	  = 5,
 	IPOIB_STOP_REAPER         = 6,
+	IPOIB_MCAST_STARTED       = 7,
 
 	IPOIB_MAX_BACKOFF_SECONDS = 16,
 
@@ -123,8 +124,8 @@ struct ipoib_dev_priv {
 
 	unsigned long flags;
 
-	struct semaphore mcast_mutex;
-	struct semaphore vlan_mutex;
+	struct mutex mcast_mutex;
+	struct mutex vlan_mutex;
 
 	struct rb_root  path_tree;
 	struct list_head path_list;

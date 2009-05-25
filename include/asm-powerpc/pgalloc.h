@@ -1,5 +1,6 @@
 #ifndef _ASM_POWERPC_PGALLOC_H
 #define _ASM_POWERPC_PGALLOC_H
+#ifdef __KERNEL__
 
 #ifndef CONFIG_PPC64
 #include <asm-ppc/pgalloc.h>
@@ -145,7 +146,7 @@ extern void pgtable_free_tlb(struct mmu_gather *tlb, pgtable_free_t pgf);
 	pgtable_free_tlb(tlb, pgtable_free_cache(pmd, \
 		PMD_CACHE_NUM, PMD_TABLE_SIZE-1))
 #ifndef CONFIG_PPC_64K_PAGES
-#define __pud_free_tlb(tlb, pmd)	\
+#define __pud_free_tlb(tlb, pud)	\
 	pgtable_free_tlb(tlb, pgtable_free_cache(pud, \
 		PUD_CACHE_NUM, PUD_TABLE_SIZE-1))
 #endif /* CONFIG_PPC_64K_PAGES */
@@ -153,4 +154,5 @@ extern void pgtable_free_tlb(struct mmu_gather *tlb, pgtable_free_t pgf);
 #define check_pgt_cache()	do { } while (0)
 
 #endif /* CONFIG_PPC64 */
+#endif /* __KERNEL__ */
 #endif /* _ASM_POWERPC_PGALLOC_H */

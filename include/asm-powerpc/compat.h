@@ -1,5 +1,6 @@
 #ifndef _ASM_POWERPC_COMPAT_H
 #define _ASM_POWERPC_COMPAT_H
+#ifdef __KERNEL__
 /*
  * Architecture specific compatibility types
  */
@@ -125,6 +126,11 @@ static inline void __user *compat_ptr(compat_uptr_t uptr)
 	return (void __user *)(unsigned long)uptr;
 }
 
+static inline compat_uptr_t ptr_to_compat(void __user *uptr)
+{
+	return (u32)(unsigned long)uptr;
+}
+
 static inline void __user *compat_alloc_user_space(long len)
 {
 	struct pt_regs *regs = current->thread.regs;
@@ -202,4 +208,5 @@ struct compat_shmid64_ds {
 	compat_ulong_t __unused6;
 };
 
+#endif /* __KERNEL__ */
 #endif /* _ASM_POWERPC_COMPAT_H */

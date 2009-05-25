@@ -2,8 +2,6 @@
  *  drivers/s390/net/claw.c
  *    ESCON CLAW network driver
  *
- *    $Revision: 1.38 $ $Date: 2005/08/29 09:47:04 $
- *
  *  Linux for zSeries version
  *    Copyright (C) 2002,2005 IBM Corporation
  *  Author(s) Original code written by:
@@ -1603,7 +1601,7 @@ dumpit(char* buf, int len)
         __u32      ct, sw, rm, dup;
         char       *ptr, *rptr;
         char       tbuf[82], tdup[82];
-#if (CONFIG_ARCH_S390X)
+#if (CONFIG_64BIT)
         char       addr[22];
 #else
         char       addr[12];
@@ -1619,7 +1617,7 @@ dumpit(char* buf, int len)
         dup = 0;
         for ( ct=0; ct < len; ct++, ptr++, rptr++ )  {
                 if (sw == 0) {
-#if (CONFIG_ARCH_S390X)
+#if (CONFIG_64BIT)
                         sprintf(addr, "%16.16lX",(unsigned long)rptr);
 #else
                         sprintf(addr, "%8.8X",(__u32)rptr);
@@ -1634,7 +1632,7 @@ dumpit(char* buf, int len)
                 if (sw == 8) {
                         strcat(bhex, "  ");
                 }
-#if (CONFIG_ARCH_S390X)
+#if (CONFIG_64BIT)
                 sprintf(tbuf,"%2.2lX", (unsigned long)*ptr);
 #else
                 sprintf(tbuf,"%2.2X", (__u32)*ptr);
@@ -4391,14 +4389,7 @@ static int __init
 claw_init(void)
 {
 	int ret = 0;
-       printk(KERN_INFO "claw: starting driver "
-#ifdef MODULE
-                "module "
-#else
-                "compiled into kernel "
-#endif
-                " $Revision: 1.38 $ $Date: 2005/08/29 09:47:04 $ \n");
-
+	printk(KERN_INFO "claw: starting driver\n");
 
 #ifdef FUNCTRACE
         printk(KERN_INFO "claw: %s() enter \n",__FUNCTION__);

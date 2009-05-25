@@ -677,12 +677,27 @@ static int ntfs_read_locked_inode(struct inode *vi)
 		ntfs_debug("Attribute list found in inode 0x%lx.", vi->i_ino);
 		NInoSetAttrList(ni);
 		a = ctx->attr;
-		if (a->flags & ATTR_IS_ENCRYPTED ||
-				a->flags & ATTR_COMPRESSION_MASK ||
-				a->flags & ATTR_IS_SPARSE) {
+		if (a->flags & ATTR_COMPRESSION_MASK) {
 			ntfs_error(vi->i_sb, "Attribute list attribute is "
-					"compressed/encrypted/sparse.");
+					"compressed.");
 			goto unm_err_out;
+		}
+		if (a->flags & ATTR_IS_ENCRYPTED ||
+				a->flags & ATTR_IS_SPARSE) {
+			if (a->non_resident) {
+				ntfs_error(vi->i_sb, "Non-resident attribute "
+						"list attribute is encrypted/"
+						"sparse.");
+				goto unm_err_out;
+			}
+			ntfs_warning(vi->i_sb, "Resident attribute list "
+					"attribute in inode 0x%lx is marked "
+					"encrypted/sparse which is not true.  "
+					"However, Windows allows this and "
+					"chkdsk does not detect or correct it "
+					"so we will just ignore the invalid "
+					"flags and pretend they are not set.",
+					vi->i_ino);
 		}
 		/* Now allocate memory for the attribute list. */
 		ni->attr_list_size = (u32)ntfs_attr_size(a);
@@ -1809,18 +1824,32 @@ int ntfs_read_inode_mount(struct inode *vi)
 	} else /* if (!err) */ {
 		ATTR_LIST_ENTRY *al_entry, *next_al_entry;
 		u8 *al_end;
+		static const char *es = "  Not allowed.  $MFT is corrupt.  "
+				"You should run chkdsk.";
 
 		ntfs_debug("Attribute list attribute found in $MFT.");
 		NInoSetAttrList(ni);
 		a = ctx->attr;
-		if (a->flags & ATTR_IS_ENCRYPTED ||
-				a->flags & ATTR_COMPRESSION_MASK ||
-				a->flags & ATTR_IS_SPARSE) {
+		if (a->flags & ATTR_COMPRESSION_MASK) {
 			ntfs_error(sb, "Attribute list attribute is "
-					"compressed/encrypted/sparse. Not "
-					"allowed. $MFT is corrupt. You should "
-					"run chkdsk.");
+					"compressed.%s", es);
 			goto put_err_out;
+		}
+		if (a->flags & ATTR_IS_ENCRYPTED ||
+				a->flags & ATTR_IS_SPARSE) {
+			if (a->non_resident) {
+				ntfs_error(sb, "Non-resident attribute list "
+						"attribute is encrypted/"
+						"sparse.%s", es);
+				goto put_err_out;
+			}
+			ntfs_warning(sb, "Resident attribute list attribute "
+					"in $MFT system file is marked "
+					"encrypted/sparse which is not true.  "
+					"However, Windows allows this and "
+					"chkdsk does not detect or correct it "
+					"so we will just ignore the invalid "
+					"flags and pretend they are not set.");
 		}
 		/* Now allocate memory for the attribute list. */
 		ni->attr_list_size = (u32)ntfs_attr_size(a);
@@ -2125,13 +2154,13 @@ void ntfs_put_inode(struct inode *vi)
 		ntfs_inode *ni = NTFS_I(vi);
 		if (NInoIndexAllocPresent(ni)) {
 			struct inode *bvi = NULL;
-			down(&vi->i_sem);
+			mutex_lock(&vi->i_mutex);
 			if (atomic_read(&vi->i_count) == 2) {
 				bvi = ni->itype.index.bmp_ino;
 				if (bvi)
 					ni->itype.index.bmp_ino = NULL;
 			}
-			up(&vi->i_sem);
+			mutex_unlock(&vi->i_mutex);
 			if (bvi)
 				iput(bvi);
 		}
@@ -2311,7 +2340,7 @@ static const char *es = "  Leaving inconsistent metadata.  Unmount and run "
  *
  * Returns 0 on success or -errno on error.
  *
- * Called with ->i_sem held.  In all but one case ->i_alloc_sem is held for
+ * Called with ->i_mutex held.  In all but one case ->i_alloc_sem is held for
  * writing.  The only case in the kernel where ->i_alloc_sem is not held is
  * mm/filemap.c::generic_file_buffered_write() where vmtruncate() is called
  * with the current i_size as the offset.  The analogous place in NTFS is in
@@ -2767,7 +2796,25 @@ unm_done:
 	up_write(&ni->runlist.lock);
 done:
 	/* Update the mtime and ctime on the base inode. */
-	inode_update_time(VFS_I(base_ni), 1);
+	/* normally ->truncate shouldn't update ctime or mtime,
+	 * but ntfs did before so it got a copy & paste version
+	 * of file_update_time.  one day someone should fix this
+	 * for real.
+	 */
+	if (!IS_NOCMTIME(VFS_I(base_ni)) && !IS_RDONLY(VFS_I(base_ni))) {
+		struct timespec now = current_fs_time(VFS_I(base_ni)->i_sb);
+		int sync_it = 0;
+
+		if (!timespec_equal(&VFS_I(base_ni)->i_mtime, &now) ||
+		    !timespec_equal(&VFS_I(base_ni)->i_ctime, &now))
+			sync_it = 1;
+		VFS_I(base_ni)->i_mtime = now;
+		VFS_I(base_ni)->i_ctime = now;
+
+		if (sync_it)
+			mark_inode_dirty_sync(VFS_I(base_ni));
+	}
+
 	if (likely(!err)) {
 		NInoClearTruncateFailed(ni);
 		ntfs_debug("Done.");
@@ -2831,7 +2878,7 @@ void ntfs_truncate_vfs(struct inode *vi) {
  * We also abort all changes of user, group, and mode as we do not implement
  * the NTFS ACLs yet.
  *
- * Called with ->i_sem held.  For the ATTR_SIZE (i.e. ->truncate) case, also
+ * Called with ->i_mutex held.  For the ATTR_SIZE (i.e. ->truncate) case, also
  * called with ->i_alloc_sem held for writing.
  *
  * Basically this is a copy of generic notify_change() and inode_setattr()

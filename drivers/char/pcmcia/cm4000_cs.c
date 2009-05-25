@@ -13,11 +13,12 @@
   *
   * (C) 2000,2001,2002,2003,2004 Omnikey AG
   *
-  * (C) 2005 Harald Welte <laforge@gnumonks.org>
+  * (C) 2005-2006 Harald Welte <laforge@gnumonks.org>
   * 	- Adhere to Kernel CodingStyle
   * 	- Port to 2.6.13 "new" style PCMCIA
   * 	- Check for copy_{from,to}_user return values
   * 	- Use nonseekable_open()
+  * 	- add class interface for udev device creation
   *
   * All rights reserved. Licensed under dual BSD/GPL license.
   */
@@ -56,7 +57,7 @@ module_param(pc_debug, int, 0600);
 #else
 #define DEBUGP(n, rdr, x, args...)
 #endif
-static char *version = "cm4000_cs.c v2.4.0gm5 - All bugs added by Harald Welte";
+static char *version = "cm4000_cs.c v2.4.0gm6 - All bugs added by Harald Welte";
 
 #define	T_1SEC		(HZ)
 #define	T_10MSEC	msecs_to_jiffies(10)
@@ -66,7 +67,6 @@ static char *version = "cm4000_cs.c v2.4.0gm5 - All bugs added by Harald Welte";
 #define	T_100MSEC	msecs_to_jiffies(100)
 #define	T_500MSEC	msecs_to_jiffies(500)
 
-static void cm4000_detach(dev_link_t *link);
 static void cm4000_release(dev_link_t *link);
 
 static int major;		/* major number we get from the kernel */
@@ -156,8 +156,8 @@ struct cm4000_dev {
 		/*sbuf*/ 512*sizeof(char) - 			\
 		/*queue*/ 4*sizeof(wait_queue_head_t))
 
-static dev_info_t dev_info = MODULE_NAME;
 static dev_link_t *dev_table[CM4000_MAX_DEV];
+static struct class *cmm_class;
 
 /* This table doesn't use spaces after the comma between fields and thus
  * violates CodingStyle.  However, I don't really think wrapping it around will
@@ -1864,68 +1864,36 @@ cs_release:
 	link->state &= ~DEV_CONFIG_PENDING;
 }
 
-static int cm4000_event(event_t event, int priority,
-			event_callback_args_t *args)
+static int cm4000_suspend(struct pcmcia_device *p_dev)
 {
-	dev_link_t *link;
+	dev_link_t *link = dev_to_instance(p_dev);
 	struct cm4000_dev *dev;
-	int devno;
 
-	link = args->client_data;
 	dev = link->priv;
 
-	DEBUGP(3, dev, "-> cm4000_event\n");
-	for (devno = 0; devno < CM4000_MAX_DEV; devno++)
-		if (dev_table[devno] == link)
-			break;
+	link->state |= DEV_SUSPEND;
+	if (link->state & DEV_CONFIG)
+		pcmcia_release_configuration(link->handle);
+	stop_monitor(dev);
 
-	if (devno == CM4000_MAX_DEV)
-		return CS_BAD_ADAPTER;
+	return 0;
+}
 
-	switch (event) {
-	case CS_EVENT_CARD_INSERTION:
-		DEBUGP(5, dev, "CS_EVENT_CARD_INSERTION\n");
-		link->state |= DEV_PRESENT | DEV_CONFIG_PENDING;
-		cm4000_config(link, devno);
-		break;
-	case CS_EVENT_CARD_REMOVAL:
-		DEBUGP(5, dev, "CS_EVENT_CARD_REMOVAL\n");
-		link->state &= ~DEV_PRESENT;
-		stop_monitor(dev);
-		break;
-	case CS_EVENT_PM_SUSPEND:
-		DEBUGP(5, dev, "CS_EVENT_PM_SUSPEND "
-		      "(fall-through to CS_EVENT_RESET_PHYSICAL)\n");
-		link->state |= DEV_SUSPEND;
-		/* fall-through */
-	case CS_EVENT_RESET_PHYSICAL:
-		DEBUGP(5, dev, "CS_EVENT_RESET_PHYSICAL\n");
-		if (link->state & DEV_CONFIG) {
-			DEBUGP(5, dev, "ReleaseConfiguration\n");
-			pcmcia_release_configuration(link->handle);
-		}
-		stop_monitor(dev);
-		break;
-	case CS_EVENT_PM_RESUME:
-		DEBUGP(5, dev, "CS_EVENT_PM_RESUME "
-		      "(fall-through to CS_EVENT_CARD_RESET)\n");
-		link->state &= ~DEV_SUSPEND;
-		/* fall-through */
-	case CS_EVENT_CARD_RESET:
-		DEBUGP(5, dev, "CS_EVENT_CARD_RESET\n");
-		if ((link->state & DEV_CONFIG)) {
-			DEBUGP(5, dev, "RequestConfiguration\n");
-			pcmcia_request_configuration(link->handle, &link->conf);
-		}
-		if (link->open)
-			start_monitor(dev);
-		break;
-	default:
-		DEBUGP(5, dev, "unknown event %.2x\n", event);
-		break;
-	}
-	DEBUGP(3, dev, "<- cm4000_event\n");
-	return CS_SUCCESS;
+static int cm4000_resume(struct pcmcia_device *p_dev)
+{
+	dev_link_t *link = dev_to_instance(p_dev);
+	struct cm4000_dev *dev;
+
+	dev = link->priv;
+
+	link->state &= ~DEV_SUSPEND;
+	if (link->state & DEV_CONFIG)
+		pcmcia_request_configuration(link->handle, &link->conf);
+
+	if (link->open)
+		start_monitor(dev);
+
+	return 0;
 }
 
 static void cm4000_release(dev_link_t *link)
@@ -1935,11 +1903,10 @@ static void cm4000_release(dev_link_t *link)
 	pcmcia_release_io(link->handle, &link->io);
 }
 
-static dev_link_t *cm4000_attach(void)
+static int cm4000_attach(struct pcmcia_device *p_dev)
 {
 	struct cm4000_dev *dev;
 	dev_link_t *link;
-	client_reg_t client_reg;
 	int i;
 
 	for (i = 0; i < CM4000_MAX_DEV; i++)
@@ -1948,76 +1915,60 @@ static dev_link_t *cm4000_attach(void)
 
 	if (i == CM4000_MAX_DEV) {
 		printk(KERN_NOTICE MODULE_NAME ": all devices in use\n");
-		return NULL;
+		return -ENODEV;
 	}
 
 	/* create a new cm4000_cs device */
 	dev = kzalloc(sizeof(struct cm4000_dev), GFP_KERNEL);
 	if (dev == NULL)
-		return NULL;
+		return -ENOMEM;
 
 	link = &dev->link;
 	link->priv = dev;
 	link->conf.IntType = INT_MEMORY_AND_IO;
 	dev_table[i] = link;
 
-	/* register with card services */
-	client_reg.dev_info = &dev_info;
-	client_reg.EventMask =
-	    CS_EVENT_CARD_INSERTION | CS_EVENT_CARD_REMOVAL |
-	    CS_EVENT_RESET_PHYSICAL | CS_EVENT_CARD_RESET |
-	    CS_EVENT_PM_SUSPEND | CS_EVENT_PM_RESUME;
-	client_reg.Version = 0x0210;
-	client_reg.event_callback_args.client_data = link;
-
-	i = pcmcia_register_client(&link->handle, &client_reg);
-	if (i) {
-		cs_error(link->handle, RegisterClient, i);
-		cm4000_detach(link);
-		return NULL;
-	}
-
 	init_waitqueue_head(&dev->devq);
 	init_waitqueue_head(&dev->ioq);
 	init_waitqueue_head(&dev->atrq);
 	init_waitqueue_head(&dev->readq);
 
-	return link;
+	link->handle = p_dev;
+	p_dev->instance = link;
+
+	link->state |= DEV_PRESENT | DEV_CONFIG_PENDING;
+	cm4000_config(link, i);
+
+	class_device_create(cmm_class, NULL, MKDEV(major, i), NULL,
+			    "cmm%d", i);
+
+	return 0;
 }
 
-static void cm4000_detach_by_devno(int devno, dev_link_t * link)
+static void cm4000_detach(struct pcmcia_device *p_dev)
 {
+	dev_link_t *link = dev_to_instance(p_dev);
 	struct cm4000_dev *dev = link->priv;
-
-	DEBUGP(3, dev, "-> detach_by_devno(devno=%d)\n", devno);
-
-	if (link->state & DEV_CONFIG) {
-		DEBUGP(5, dev, "device still configured (try to release it)\n");
-		cm4000_release(link);
-	}
-
-	if (link->handle) {
-		pcmcia_deregister_client(link->handle);
-	}
-
-	dev_table[devno] = NULL;
-	kfree(dev);
-	return;
-}
-
-static void cm4000_detach(dev_link_t * link)
-{
-	int i;
+	int devno;
 
 	/* find device */
-	for (i = 0; i < CM4000_MAX_DEV; i++)
-		if (dev_table[i] == link)
+	for (devno = 0; devno < CM4000_MAX_DEV; devno++)
+		if (dev_table[devno] == link)
 			break;
-
-	if (i == CM4000_MAX_DEV)
+	if (devno == CM4000_MAX_DEV)
 		return;
 
-	cm4000_detach_by_devno(i, link);
+	link->state &= ~DEV_PRESENT;
+	stop_monitor(dev);
+
+	if (link->state & DEV_CONFIG)
+ 		cm4000_release(link);
+
+	dev_table[devno] = NULL;
+ 	kfree(dev);
+
+	class_device_destroy(cmm_class, MKDEV(major, devno));
+
 	return;
 }
 
@@ -2042,16 +1993,27 @@ static struct pcmcia_driver cm4000_driver = {
 	.drv	  = {
 		.name = "cm4000_cs",
 		},
-	.attach   = cm4000_attach,
-	.detach   = cm4000_detach,
-	.event	  = cm4000_event,
+	.probe    = cm4000_attach,
+	.remove   = cm4000_detach,
+	.suspend  = cm4000_suspend,
+	.resume   = cm4000_resume,
 	.id_table = cm4000_ids,
 };
 
 static int __init cmm_init(void)
 {
+	int rc;
+
 	printk(KERN_INFO "%s\n", version);
-	pcmcia_register_driver(&cm4000_driver);
+
+	cmm_class = class_create(THIS_MODULE, "cardman_4000");
+	if (!cmm_class)
+		return -1;
+
+	rc = pcmcia_register_driver(&cm4000_driver);
+	if (rc < 0)
+		return rc;
+
 	major = register_chrdev(0, DEVICE_NAME, &cm4000_fops);
 	if (major < 0) {
 		printk(KERN_WARNING MODULE_NAME
@@ -2064,14 +2026,10 @@ static int __init cmm_init(void)
 
 static void __exit cmm_exit(void)
 {
-	int i;
-
 	printk(KERN_INFO MODULE_NAME ": unloading\n");
 	pcmcia_unregister_driver(&cm4000_driver);
-	for (i = 0; i < CM4000_MAX_DEV; i++)
-		if (dev_table[i])
-			cm4000_detach_by_devno(i, dev_table[i]);
 	unregister_chrdev(major, DEVICE_NAME);
+	class_destroy(cmm_class);
 };
 
 module_init(cmm_init);

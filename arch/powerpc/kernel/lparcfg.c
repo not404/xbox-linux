@@ -55,15 +55,13 @@ static unsigned long get_purr(void)
 {
 	unsigned long sum_purr = 0;
 	int cpu;
-	struct paca_struct *lpaca;
 
 	for_each_cpu(cpu) {
-		lpaca = paca + cpu;
-		sum_purr += lpaca->lppaca.emulated_time_base;
+		sum_purr += lppaca[cpu].emulated_time_base;
 
 #ifdef PURR_DEBUG
 		printk(KERN_INFO "get_purr for cpu (%d) has value (%ld) \n",
-			cpu, lpaca->lppaca.emulated_time_base);
+			cpu, lppaca[cpu].emulated_time_base);
 #endif
 	}
 	return sum_purr;
@@ -79,12 +77,11 @@ static int lparcfg_data(struct seq_file *m, void *v)
 	unsigned long pool_id, lp_index;
 	int shared, entitled_capacity, max_entitled_capacity;
 	int processors, max_processors;
-	struct paca_struct *lpaca = get_paca();
 	unsigned long purr = get_purr();
 
 	seq_printf(m, "%s %s \n", MODULE_NAME, MODULE_VERS);
 
-	shared = (int)(lpaca->lppaca_ptr->shared_proc);
+	shared = (int)(get_lppaca()->shared_proc);
 	seq_printf(m, "serial_number=%c%c%c%c%c%c%c\n",
 		   e2a(xItExtVpdPanel.mfgID[2]),
 		   e2a(xItExtVpdPanel.mfgID[3]),
@@ -344,7 +341,7 @@ static int lparcfg_data(struct seq_file *m, void *v)
 	const char *system_id = "";
 	unsigned int *lp_index_ptr, lp_index = 0;
 	struct device_node *rtas_node;
-	int *lrdrp;
+	int *lrdrp = NULL;
 
 	rootdn = find_path_device("/");
 	if (rootdn) {
@@ -365,7 +362,9 @@ static int lparcfg_data(struct seq_file *m, void *v)
 	seq_printf(m, "partition_id=%d\n", (int)lp_index);
 
 	rtas_node = find_path_device("/rtas");
-	lrdrp = (int *)get_property(rtas_node, "ibm,lrdr-capacity", NULL);
+	if (rtas_node)
+		lrdrp = (int *)get_property(rtas_node, "ibm,lrdr-capacity",
+		                            NULL);
 
 	if (lrdrp == NULL) {
 		partition_potential_processors = vdso_data->processorCount;
@@ -402,7 +401,7 @@ static int lparcfg_data(struct seq_file *m, void *v)
 			   (h_resource >> 0 * 8) & 0xffff);
 
 		/* pool related entries are apropriate for shared configs */
-		if (paca[0].lppaca.shared_proc) {
+		if (lppaca[0].shared_proc) {
 
 			h_pic(&pool_idle_time, &pool_procs);
 
@@ -451,7 +450,7 @@ static int lparcfg_data(struct seq_file *m, void *v)
 	seq_printf(m, "partition_potential_processors=%d\n",
 		   partition_potential_processors);
 
-	seq_printf(m, "shared_processor_mode=%d\n", paca[0].lppaca.shared_proc);
+	seq_printf(m, "shared_processor_mode=%d\n", lppaca[0].shared_proc);
 
 	return 0;
 }

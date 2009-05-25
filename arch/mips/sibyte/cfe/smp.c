@@ -31,7 +31,7 @@
  *
  * Common setup before any secondaries are started
  */
-void __init prom_prepare_cpus(unsigned int max_cpus)
+void __init plat_smp_setup(void)
 {
 	int i, num;
 
@@ -40,14 +40,18 @@ void __init prom_prepare_cpus(unsigned int max_cpus)
 	__cpu_number_map[0] = 0;
 	__cpu_logical_map[0] = 0;
 
-	for (i=1, num=0; i<NR_CPUS; i++) {
+	for (i = 1, num = 0; i < NR_CPUS; i++) {
 		if (cfe_cpu_stop(i) == 0) {
 			cpu_set(i, phys_cpu_present_map);
 			__cpu_number_map[i] = ++num;
 			__cpu_logical_map[num] = i;
 		}
 	}
-	printk("Detected %i available secondary CPU(s)\n", num);
+	printk(KERN_INFO "Detected %i available secondary CPU(s)\n", num);
+}
+
+void __init plat_prepare_cpus(unsigned int max_cpus)
+{
 }
 
 /*
@@ -60,7 +64,7 @@ void prom_boot_secondary(int cpu, struct task_struct *idle)
 
 	retval = cfe_cpu_start(cpu_logical_map(cpu), &smp_bootstrap,
 			       __KSTK_TOS(idle),
-			       (unsigned long)idle->thread_info, 0);
+			       (unsigned long)task_thread_info(idle), 0);
 	if (retval != 0)
 		printk("cfe_start_cpu(%i) returned %i\n" , cpu, retval);
 }

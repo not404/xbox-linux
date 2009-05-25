@@ -14,6 +14,8 @@
 #include <linux/seq_file.h>
 #include <net/netfilter/nf_conntrack.h>
 
+struct nfattr;
+
 struct nf_conntrack_l3proto
 {
 	/* Next pointer. */
@@ -70,6 +72,12 @@ struct nf_conntrack_l3proto
 
 	u_int32_t (*get_features)(const struct nf_conntrack_tuple *tuple);
 
+	int (*tuple_to_nfattr)(struct sk_buff *skb,
+			       const struct nf_conntrack_tuple *t);
+
+	int (*nfattr_to_tuple)(struct nfattr *tb[],
+			       struct nf_conntrack_tuple *t);
+
 	/* Module (if any) which this is connected to. */
 	struct module *me;
 };
@@ -80,14 +88,22 @@ extern struct nf_conntrack_l3proto *nf_ct_l3protos[AF_MAX];
 extern int nf_conntrack_l3proto_register(struct nf_conntrack_l3proto *proto);
 extern void nf_conntrack_l3proto_unregister(struct nf_conntrack_l3proto *proto);
 
-static inline struct nf_conntrack_l3proto *
-nf_ct_find_l3proto(u_int16_t l3proto)
-{
-	return nf_ct_l3protos[l3proto];
-}
+extern struct nf_conntrack_l3proto *
+nf_ct_l3proto_find_get(u_int16_t l3proto);
+
+extern void nf_ct_l3proto_put(struct nf_conntrack_l3proto *p);
 
 /* Existing built-in protocols */
 extern struct nf_conntrack_l3proto nf_conntrack_l3proto_ipv4;
 extern struct nf_conntrack_l3proto nf_conntrack_l3proto_ipv6;
 extern struct nf_conntrack_l3proto nf_conntrack_generic_l3proto;
+
+static inline struct nf_conntrack_l3proto *
+__nf_ct_l3proto_find(u_int16_t l3proto)
+{
+	if (unlikely(l3proto >= AF_MAX))
+		return &nf_conntrack_generic_l3proto;
+	return nf_ct_l3protos[l3proto];
+}
+
 #endif /*_NF_CONNTRACK_L3PROTO_H*/

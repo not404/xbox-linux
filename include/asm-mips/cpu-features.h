@@ -96,6 +96,9 @@
 #ifndef cpu_has_ic_fills_f_dc
 #define cpu_has_ic_fills_f_dc	(cpu_data[0].icache.flags & MIPS_CACHE_IC_F_DC)
 #endif
+#ifndef cpu_has_pindexed_dcache
+#define cpu_has_pindexed_dcache	(cpu_data[0].dcache.flags & MIPS_CACHE_PINDEX)
+#endif
 
 /*
  * I-Cache snoops remote store.  This only matters on SMP.  Some multiprocessors
@@ -115,6 +118,27 @@
 #define cpu_icache_snoops_remote_store	1
 #endif
 #endif
+
+# ifndef cpu_has_mips32r1
+# define cpu_has_mips32r1	(cpu_data[0].isa_level & MIPS_CPU_ISA_M32R1)
+# endif
+# ifndef cpu_has_mips32r2
+# define cpu_has_mips32r2	(cpu_data[0].isa_level & MIPS_CPU_ISA_M32R2)
+# endif
+# ifndef cpu_has_mips64r1
+# define cpu_has_mips64r1	(cpu_data[0].isa_level & MIPS_CPU_ISA_M64R1)
+# endif
+# ifndef cpu_has_mips64r2
+# define cpu_has_mips64r2	(cpu_data[0].isa_level & MIPS_CPU_ISA_M64R2)
+# endif
+
+/*
+ * Shortcuts ...
+ */
+#define cpu_has_mips32	(cpu_has_mips32r1 | cpu_has_mips32r2)
+#define cpu_has_mips64	(cpu_has_mips64r1 | cpu_has_mips64r2)
+#define cpu_has_mips_r1	(cpu_has_mips32r1 | cpu_has_mips64r1)
+#define cpu_has_mips_r2	(cpu_has_mips32r2 | cpu_has_mips64r2)
 
 #ifndef cpu_has_dsp
 #define cpu_has_dsp		(cpu_data[0].ases & MIPS_ASE_DSP)

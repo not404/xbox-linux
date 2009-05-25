@@ -16,15 +16,15 @@
 #include <linux/slab.h>
 #include <linux/string.h>
 #include <linux/sysdev.h>
+#include <linux/amba/bus.h>
+#include <linux/amba/kmi.h>
+#include <linux/amba/clcd.h>
 
 #include <asm/hardware.h>
 #include <asm/io.h>
 #include <asm/irq.h>
 #include <asm/setup.h>
 #include <asm/mach-types.h>
-#include <asm/hardware/amba.h>
-#include <asm/hardware/amba_kmi.h>
-#include <asm/hardware/amba_clcd.h>
 #include <asm/hardware/icst525.h>
 
 #include <asm/arch/cm.h>
@@ -469,7 +469,9 @@ static void cp_clcd_enable(struct clcd_fb *fb)
 	if (fb->fb.var.bits_per_pixel <= 8)
 		val = CM_CTRL_LCDMUXSEL_VGA_8421BPP;
 	else if (fb->fb.var.bits_per_pixel <= 16)
-		val = CM_CTRL_LCDMUXSEL_VGA_16BPP;
+		val = CM_CTRL_LCDMUXSEL_VGA_16BPP
+			| CM_CTRL_LCDEN0 | CM_CTRL_LCDEN1
+			| CM_CTRL_STATIC1 | CM_CTRL_STATIC2;
 	else
 		val = 0; /* no idea for this, don't trust the docs */
 
@@ -578,7 +580,6 @@ static struct sys_timer cp_timer = {
 
 MACHINE_START(CINTEGRATOR, "ARM-IntegratorCP")
 	/* Maintainer: ARM Ltd/Deep Blue Solutions Ltd */
-	.phys_ram	= 0x00000000,
 	.phys_io	= 0x16000000,
 	.io_pg_offst	= ((0xf1600000) >> 18) & 0xfffc,
 	.boot_params	= 0x00000100,

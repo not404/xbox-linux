@@ -27,6 +27,9 @@
 #include <linux/types.h>
 #include <linux/ptrace.h>
 
+#define  __ARCH_WANT_KPROBES_INSN_SLOT
+
+struct kprobe;
 struct pt_regs;
 
 typedef u8 kprobe_opcode_t;
@@ -41,12 +44,13 @@ typedef u8 kprobe_opcode_t;
 #define JPROBE_ENTRY(pentry)	(kprobe_opcode_t *)pentry
 #define ARCH_SUPPORTS_KRETPROBES
 
+void arch_remove_kprobe(struct kprobe *p);
 void kretprobe_trampoline(void);
 
 /* Architecture specific copy of original instruction*/
 struct arch_specific_insn {
 	/* copy of the original instruction */
-	kprobe_opcode_t insn[MAX_INSN_SIZE];
+	kprobe_opcode_t *insn;
 };
 
 struct prev_kprobe {
@@ -76,14 +80,6 @@ static inline void restore_interrupts(struct pt_regs *regs)
 		local_irq_enable();
 }
 
-#ifdef CONFIG_KPROBES
 extern int kprobe_exceptions_notify(struct notifier_block *self,
 				    unsigned long val, void *data);
-#else				/* !CONFIG_KPROBES */
-static inline int kprobe_exceptions_notify(struct notifier_block *self,
-					   unsigned long val, void *data)
-{
-	return 0;
-}
-#endif
 #endif				/* _ASM_KPROBES_H */

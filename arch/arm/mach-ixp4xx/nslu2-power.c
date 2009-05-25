@@ -54,9 +54,6 @@ static int __init nslu2_power_init(void)
 	set_irq_type(NSLU2_RB_IRQ, IRQT_LOW);
 	set_irq_type(NSLU2_PB_IRQ, IRQT_HIGH);
 
-	gpio_line_isr_clear(NSLU2_RB_GPIO);
-	gpio_line_isr_clear(NSLU2_PB_GPIO);
-
 	if (request_irq(NSLU2_RB_IRQ, &nslu2_reset_handler,
 		SA_INTERRUPT, "NSLU2 reset button", NULL) < 0) {
 
@@ -80,6 +77,9 @@ static int __init nslu2_power_init(void)
 
 static void __exit nslu2_power_exit(void)
 {
+	if (!(machine_is_nslu2()))
+		return;
+
 	free_irq(NSLU2_RB_IRQ, NULL);
 	free_irq(NSLU2_PB_IRQ, NULL);
 }

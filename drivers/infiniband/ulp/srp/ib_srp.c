@@ -39,6 +39,7 @@
 #include <linux/string.h>
 #include <linux/parser.h>
 #include <linux/random.h>
+#include <linux/jiffies.h>
 
 #include <asm/atomic.h>
 
@@ -356,9 +357,9 @@ static void srp_remove_work(void *target_ptr)
 	target->state = SRP_TARGET_REMOVED;
 	spin_unlock_irq(target->scsi_host->host_lock);
 
-	down(&target->srp_host->target_mutex);
+	mutex_lock(&target->srp_host->target_mutex);
 	list_del(&target->list);
-	up(&target->srp_host->target_mutex);
+	mutex_unlock(&target->srp_host->target_mutex);
 
 	scsi_remove_host(target->scsi_host);
 	ib_destroy_cm_id(target->cm_id);
@@ -1154,6 +1155,12 @@ static int srp_send_tsk_mgmt(struct scsi_cmnd *scmnd, u8 func)
 
 	spin_lock_irq(target->scsi_host->host_lock);
 
+	if (target->state == SRP_TARGET_DEAD ||
+	    target->state == SRP_TARGET_REMOVED) {
+		scmnd->result = DID_BAD_TARGET << 16;
+		goto out;
+	}
+
 	if (scmnd->host_scribble == (void *) -1L)
 		goto out;
 
@@ -1253,9 +1260,9 @@ static int srp_add_target(struct srp_host *host, struct srp_target_port *target)
 	if (scsi_add_host(target->scsi_host, host->dev->dma_device))
 		return -ENODEV;
 
-	down(&host->target_mutex);
+	mutex_lock(&host->target_mutex);
 	list_add_tail(&target->list, &host->target_list);
-	up(&host->target_mutex);
+	mutex_unlock(&host->target_mutex);
 
 	target->state = SRP_TARGET_LIVE;
 
@@ -1515,8 +1522,7 @@ static ssize_t show_port(struct class_device *class_dev, char *buf)
 
 static CLASS_DEVICE_ATTR(port, S_IRUGO, show_port, NULL);
 
-static struct srp_host *srp_add_port(struct ib_device *device,
-				     __be64 node_guid, u8 port)
+static struct srp_host *srp_add_port(struct ib_device *device, u8 port)
 {
 	struct srp_host *host;
 
@@ -1525,13 +1531,13 @@ static struct srp_host *srp_add_port(struct ib_device *device,
 		return NULL;
 
 	INIT_LIST_HEAD(&host->target_list);
-	init_MUTEX(&host->target_mutex);
+	mutex_init(&host->target_mutex);
 	init_completion(&host->released);
 	host->dev  = device;
 	host->port = port;
 
 	host->initiator_port_id[7] = port;
-	memcpy(host->initiator_port_id + 8, &node_guid, 8);
+	memcpy(host->initiator_port_id + 8, &device->node_guid, 8);
 
 	host->pd   = ib_alloc_pd(device);
 	if (IS_ERR(host->pd))
@@ -1579,22 +1585,11 @@ static void srp_add_one(struct ib_device *device)
 {
 	struct list_head *dev_list;
 	struct srp_host *host;
-	struct ib_device_attr *dev_attr;
 	int s, e, p;
-
-	dev_attr = kmalloc(sizeof *dev_attr, GFP_KERNEL);
-	if (!dev_attr)
-		return;
-
-	if (ib_query_device(device, dev_attr)) {
-		printk(KERN_WARNING PFX "Couldn't query node GUID for %s.\n",
-		       device->name);
-		goto out;
-	}
 
 	dev_list = kmalloc(sizeof *dev_list, GFP_KERNEL);
 	if (!dev_list)
-		goto out;
+		return;
 
 	INIT_LIST_HEAD(dev_list);
 
@@ -1607,15 +1602,12 @@ static void srp_add_one(struct ib_device *device)
 	}
 
 	for (p = s; p <= e; ++p) {
-		host = srp_add_port(device, dev_attr->node_guid, p);
+		host = srp_add_port(device, p);
 		if (host)
 			list_add_tail(&host->list, dev_list);
 	}
 
 	ib_set_client_data(device, &srp_client, dev_list);
-
-out:
-	kfree(dev_attr);
 }
 
 static void srp_remove_one(struct ib_device *device)
@@ -1640,7 +1632,7 @@ static void srp_remove_one(struct ib_device *device)
 		 * Mark all target ports as removed, so we stop queueing
 		 * commands and don't try to reconnect.
 		 */
-		down(&host->target_mutex);
+		mutex_lock(&host->target_mutex);
 		list_for_each_entry_safe(target, tmp_target,
 					 &host->target_list, list) {
 			spin_lock_irqsave(target->scsi_host->host_lock, flags);
@@ -1648,7 +1640,7 @@ static void srp_remove_one(struct ib_device *device)
 				target->state = SRP_TARGET_REMOVED;
 			spin_unlock_irqrestore(target->scsi_host->host_lock, flags);
 		}
-		up(&host->target_mutex);
+		mutex_unlock(&host->target_mutex);
 
 		/*
 		 * Wait for any reconnection tasks that may have

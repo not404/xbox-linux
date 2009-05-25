@@ -34,6 +34,7 @@
 #include <linux/kernel.h>
 #include <linux/timer.h>
 #include <linux/mm.h>
+#include <linux/sched.h>
 #include <linux/interrupt.h>
 #include <linux/major.h>
 #include <linux/errno.h>
@@ -308,11 +309,13 @@ static void ide_pio_multi(ide_drive_t *drive, unsigned int write)
 		ide_pio_sector(drive, write);
 }
 
-static inline void ide_pio_datablock(ide_drive_t *drive, struct request *rq,
+static void ide_pio_datablock(ide_drive_t *drive, struct request *rq,
 				     unsigned int write)
 {
 	if (rq->bio)	/* fs request */
 		rq->errors = 0;
+
+	touch_softlockup_watchdog();
 
 	switch (drive->hwif->data_phase) {
 	case TASKFILE_MULTI_IN:

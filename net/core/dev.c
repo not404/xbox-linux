@@ -75,6 +75,7 @@
 #include <asm/uaccess.h>
 #include <asm/system.h>
 #include <linux/bitops.h>
+#include <linux/capability.h>
 #include <linux/config.h>
 #include <linux/cpu.h>
 #include <linux/types.h>
@@ -626,7 +627,7 @@ struct net_device * dev_get_by_flags(unsigned short if_flags, unsigned short mas
  *	Network device names need to be valid file names to
  *	to allow sysfs to work
  */
-static int dev_valid_name(const char *name)
+int dev_valid_name(const char *name)
 {
 	return !(*name == '\0' 
 		 || !strcmp(name, ".")
@@ -1092,15 +1093,12 @@ int skb_checksum_help(struct sk_buff *skb, int inward)
 			goto out;
 	}
 
-	if (offset > (int)skb->len)
-		BUG();
+	BUG_ON(offset > (int)skb->len);
 	csum = skb_checksum(skb, offset, skb->len-offset, 0);
 
 	offset = skb->tail - skb->h.raw;
-	if (offset <= 0)
-		BUG();
-	if (skb->csum + 2 > offset)
-		BUG();
+	BUG_ON(offset <= 0);
+	BUG_ON(skb->csum + 2 > offset);
 
 	*(u16*)(skb->h.raw + skb->csum) = csum_fold(csum);
 	skb->ip_summed = CHECKSUM_NONE;
@@ -2545,13 +2543,14 @@ int dev_ioctl(unsigned int cmd, void __user *arg)
 		case SIOCBONDENSLAVE:
 		case SIOCBONDRELEASE:
 		case SIOCBONDSETHWADDR:
-		case SIOCBONDSLAVEINFOQUERY:
-		case SIOCBONDINFOQUERY:
 		case SIOCBONDCHANGEACTIVE:
 		case SIOCBRADDIF:
 		case SIOCBRDELIF:
 			if (!capable(CAP_NET_ADMIN))
 				return -EPERM;
+			/* fall through */
+		case SIOCBONDSLAVEINFOQUERY:
+		case SIOCBONDINFOQUERY:
 			dev_load(ifr.ifr_name);
 			rtnl_lock();
 			ret = dev_ifsioc(&ifr, cmd);
@@ -3238,7 +3237,7 @@ static int __init net_dev_init(void)
 	 *	Initialise the packet receive queues.
 	 */
 
-	for (i = 0; i < NR_CPUS; i++) {
+	for_each_cpu(i) {
 		struct softnet_data *queue;
 
 		queue = &per_cpu(softnet_data, i);
@@ -3270,13 +3269,13 @@ EXPORT_SYMBOL(__dev_get_by_index);
 EXPORT_SYMBOL(__dev_get_by_name);
 EXPORT_SYMBOL(__dev_remove_pack);
 EXPORT_SYMBOL(__skb_linearize);
+EXPORT_SYMBOL(dev_valid_name);
 EXPORT_SYMBOL(dev_add_pack);
 EXPORT_SYMBOL(dev_alloc_name);
 EXPORT_SYMBOL(dev_close);
 EXPORT_SYMBOL(dev_get_by_flags);
 EXPORT_SYMBOL(dev_get_by_index);
 EXPORT_SYMBOL(dev_get_by_name);
-EXPORT_SYMBOL(dev_ioctl);
 EXPORT_SYMBOL(dev_open);
 EXPORT_SYMBOL(dev_queue_xmit);
 EXPORT_SYMBOL(dev_remove_pack);

@@ -61,8 +61,17 @@ extern unsigned long wall_jiffies;
  */
 unsigned long long sched_clock(void)
 {
-	return ((get_clock() - jiffies_timer_cc) * 1000) >> 12;
+	return ((get_clock() - jiffies_timer_cc) * 125) >> 9;
 }
+
+/*
+ * Monotonic_clock - returns # of nanoseconds passed since time_init()
+ */
+unsigned long long monotonic_clock(void)
+{
+	return sched_clock();
+}
+EXPORT_SYMBOL(monotonic_clock);
 
 void tod_to_timeval(__u64 todval, struct timespec *xtime)
 {
@@ -214,7 +223,7 @@ void account_ticks(struct pt_regs *regs)
 #endif
 
 #ifdef CONFIG_VIRT_CPU_ACCOUNTING
-	account_user_vtime(current);
+	account_tick_vtime(current);
 #else
 	while (ticks--)
 		update_process_times(user_mode(regs));
@@ -282,7 +291,7 @@ static inline void start_hz_timer(void)
 {
 	if (!cpu_isset(smp_processor_id(), nohz_cpu_mask))
 		return;
-	account_ticks(__KSTK_PTREGS(current));
+	account_ticks(task_pt_regs(current));
 	cpu_clear(smp_processor_id(), nohz_cpu_mask);
 }
 

@@ -5,6 +5,7 @@
  *  Copyright (C) 1997 David S. Miller (davem@caip.rutgers.edu)
  */
 
+#include <linux/config.h>
 #include <linux/string.h>
 #include <linux/slab.h>
 #include <linux/file.h>
@@ -16,43 +17,23 @@
 #include <linux/eventpoll.h>
 #include <linux/rcupdate.h>
 #include <linux/mount.h>
+#include <linux/capability.h>
 #include <linux/cdev.h>
 #include <linux/fsnotify.h>
+#include <linux/sysctl.h>
+#include <linux/percpu_counter.h>
+
+#include <asm/atomic.h>
 
 /* sysctl tunables... */
 struct files_stat_struct files_stat = {
 	.max_files = NR_FILE
 };
 
-EXPORT_SYMBOL(files_stat); /* Needed by unix.o */
-
 /* public. Not pretty! */
- __cacheline_aligned_in_smp DEFINE_SPINLOCK(files_lock);
+__cacheline_aligned_in_smp DEFINE_SPINLOCK(files_lock);
 
-static DEFINE_SPINLOCK(filp_count_lock);
-
-/* slab constructors and destructors are called from arbitrary
- * context and must be fully threaded - use a local spinlock
- * to protect files_stat.nr_files
- */
-void filp_ctor(void *objp, struct kmem_cache *cachep, unsigned long cflags)
-{
-	if ((cflags & (SLAB_CTOR_VERIFY|SLAB_CTOR_CONSTRUCTOR)) ==
-	    SLAB_CTOR_CONSTRUCTOR) {
-		unsigned long flags;
-		spin_lock_irqsave(&filp_count_lock, flags);
-		files_stat.nr_files++;
-		spin_unlock_irqrestore(&filp_count_lock, flags);
-	}
-}
-
-void filp_dtor(void *objp, struct kmem_cache *cachep, unsigned long dflags)
-{
-	unsigned long flags;
-	spin_lock_irqsave(&filp_count_lock, flags);
-	files_stat.nr_files--;
-	spin_unlock_irqrestore(&filp_count_lock, flags);
-}
+static struct percpu_counter nr_files __cacheline_aligned_in_smp;
 
 static inline void file_free_rcu(struct rcu_head *head)
 {
@@ -62,8 +43,44 @@ static inline void file_free_rcu(struct rcu_head *head)
 
 static inline void file_free(struct file *f)
 {
+	percpu_counter_dec(&nr_files);
 	call_rcu(&f->f_u.fu_rcuhead, file_free_rcu);
 }
+
+/*
+ * Return the total number of open files in the system
+ */
+static int get_nr_files(void)
+{
+	return percpu_counter_read_positive(&nr_files);
+}
+
+/*
+ * Return the maximum number of open files in the system
+ */
+int get_max_files(void)
+{
+	return files_stat.max_files;
+}
+EXPORT_SYMBOL_GPL(get_max_files);
+
+/*
+ * Handle nr_files sysctl
+ */
+#if defined(CONFIG_SYSCTL) && defined(CONFIG_PROC_FS)
+int proc_nr_files(ctl_table *table, int write, struct file *filp,
+                     void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	files_stat.nr_files = get_nr_files();
+	return proc_dointvec(table, write, filp, buffer, lenp, ppos);
+}
+#else
+int proc_nr_files(ctl_table *table, int write, struct file *filp,
+                     void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	return -ENOSYS;
+}
+#endif
 
 /* Find an unused file structure and return a pointer to it.
  * Returns NULL, if there are no more free file structures or
@@ -77,14 +94,20 @@ struct file *get_empty_filp(void)
 	/*
 	 * Privileged users can go above max_files
 	 */
-	if (files_stat.nr_files >= files_stat.max_files &&
-				!capable(CAP_SYS_ADMIN))
-		goto over;
+	if (get_nr_files() >= files_stat.max_files && !capable(CAP_SYS_ADMIN)) {
+		/*
+		 * percpu_counters are inaccurate.  Do an expensive check before
+		 * we go and fail.
+		 */
+		if (percpu_counter_sum(&nr_files) >= files_stat.max_files)
+			goto over;
+	}
 
 	f = kmem_cache_alloc(filp_cachep, GFP_KERNEL);
 	if (f == NULL)
 		goto fail;
 
+	percpu_counter_inc(&nr_files);
 	memset(f, 0, sizeof(*f));
 	if (security_file_alloc(f))
 		goto fail_sec;
@@ -100,10 +123,10 @@ struct file *get_empty_filp(void)
 
 over:
 	/* Ran out of filps - report that */
-	if (files_stat.nr_files > old_max) {
+	if (get_nr_files() > old_max) {
 		printk(KERN_INFO "VFS: file-max limit %d reached\n",
-					files_stat.max_files);
-		old_max = files_stat.nr_files;
+					get_max_files());
+		old_max = get_nr_files();
 	}
 	goto fail;
 
@@ -117,7 +140,7 @@ EXPORT_SYMBOL(get_empty_filp);
 
 void fastcall fput(struct file *file)
 {
-	if (rcuref_dec_and_test(&file->f_count))
+	if (atomic_dec_and_test(&file->f_count))
 		__fput(file);
 }
 
@@ -166,7 +189,7 @@ struct file fastcall *fget(unsigned int fd)
 	rcu_read_lock();
 	file = fcheck_files(files, fd);
 	if (file) {
-		if (!rcuref_inc_lf(&file->f_count)) {
+		if (!atomic_inc_not_zero(&file->f_count)) {
 			/* File object ref couldn't be taken */
 			rcu_read_unlock();
 			return NULL;
@@ -198,7 +221,7 @@ struct file fastcall *fget_light(unsigned int fd, int *fput_needed)
 		rcu_read_lock();
 		file = fcheck_files(files, fd);
 		if (file) {
-			if (rcuref_inc_lf(&file->f_count))
+			if (atomic_inc_not_zero(&file->f_count))
 				*fput_needed = 1;
 			else
 				/* Didn't get the reference, someone's freed */
@@ -213,7 +236,7 @@ struct file fastcall *fget_light(unsigned int fd, int *fput_needed)
 
 void put_filp(struct file *file)
 {
-	if (rcuref_dec_and_test(&file->f_count)) {
+	if (atomic_dec_and_test(&file->f_count)) {
 		security_file_free(file);
 		file_kill(file);
 		file_free(file);
@@ -275,4 +298,5 @@ void __init files_init(unsigned long mempages)
 	if (files_stat.max_files < NR_FILE)
 		files_stat.max_files = NR_FILE;
 	files_defer_init();
+	percpu_counter_init(&nr_files);
 } 

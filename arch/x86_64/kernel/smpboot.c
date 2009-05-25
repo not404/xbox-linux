@@ -59,6 +59,7 @@
 #include <asm/nmi.h>
 #include <asm/irq.h>
 #include <asm/hw_irq.h>
+#include <asm/numa.h>
 
 /* Number of siblings per CPU package */
 int smp_num_siblings = 1;
@@ -335,7 +336,13 @@ static __cpuinit void sync_tsc(unsigned int master)
 
 static void __cpuinit tsc_sync_wait(void)
 {
-	if (notscsync || !cpu_has_tsc)
+	/*
+	 * When the CPU has synchronized TSCs assume the BIOS
+  	 * or the hardware already synced.  Otherwise we could
+	 * mess up a possible perfect synchronization with a
+	 * not-quite-perfect algorithm.
+	 */
+	if (notscsync || !cpu_has_tsc || !unsynchronized_tsc())
 		return;
 	sync_tsc(0);
 }
@@ -646,6 +653,7 @@ static int __cpuinit wakeup_secondary_via_INIT(int phys_apicid, unsigned int sta
 		send_status = apic_read(APIC_ICR) & APIC_ICR_BUSY;
 	} while (send_status && (timeout++ < 1000));
 
+	mb();
 	atomic_set(&init_deasserted, 1);
 
 	num_starts = 2;
@@ -659,7 +667,6 @@ static int __cpuinit wakeup_secondary_via_INIT(int phys_apicid, unsigned int sta
 
 	for (j = 1; j <= num_starts; j++) {
 		Dprintk("Sending STARTUP #%d.\n",j);
-		apic_read_around(APIC_SPIV);
 		apic_write(APIC_ESR, 0);
 		apic_read(APIC_ESR);
 		Dprintk("After apic_write.\n");
@@ -698,7 +705,6 @@ static int __cpuinit wakeup_secondary_via_INIT(int phys_apicid, unsigned int sta
 		 * Due to the Pentium erratum 3AP.
 		 */
 		if (maxlvt > 3) {
-			apic_read_around(APIC_SPIV);
 			apic_write(APIC_ESR, 0);
 		}
 		accept_status = (apic_read(APIC_ESR) & 0xEF);
@@ -743,11 +749,35 @@ static int __cpuinit do_boot_cpu(int cpu, int apicid)
 	};
 	DECLARE_WORK(work, do_fork_idle, &c_idle);
 
+	/* allocate memory for gdts of secondary cpus. Hotplug is considered */
+	if (!cpu_gdt_descr[cpu].address &&
+		!(cpu_gdt_descr[cpu].address = get_zeroed_page(GFP_KERNEL))) {
+		printk(KERN_ERR "Failed to allocate GDT for CPU %d\n", cpu);
+		return -1;
+	}
+
+	/* Allocate node local memory for AP pdas */
+	if (cpu_pda(cpu) == &boot_cpu_pda[cpu]) {
+		struct x8664_pda *newpda, *pda;
+		int node = cpu_to_node(cpu);
+		pda = cpu_pda(cpu);
+		newpda = kmalloc_node(sizeof (struct x8664_pda), GFP_ATOMIC,
+				      node);
+		if (newpda) {
+			memcpy(newpda, pda, sizeof (struct x8664_pda));
+			cpu_pda(cpu) = newpda;
+		} else
+			printk(KERN_ERR
+		"Could not allocate node local PDA for CPU %d on node %d\n",
+				cpu, node);
+	}
+
+
 	c_idle.idle = get_idle_for_cpu(cpu);
 
 	if (c_idle.idle) {
 		c_idle.idle->thread.rsp = (unsigned long) (((struct pt_regs *)
-			(THREAD_SIZE + (unsigned long) c_idle.idle->thread_info)) - 1);
+			(THREAD_SIZE +  task_stack_page(c_idle.idle))) - 1);
 		init_idle(c_idle.idle, cpu);
 		goto do_rest;
 	}
@@ -778,14 +808,14 @@ static int __cpuinit do_boot_cpu(int cpu, int apicid)
 
 do_rest:
 
-	cpu_pda[cpu].pcurrent = c_idle.idle;
+	cpu_pda(cpu)->pcurrent = c_idle.idle;
 
 	start_rip = setup_trampoline();
 
 	init_rsp = c_idle.idle->thread.rsp;
 	per_cpu(init_tss,cpu).rsp0 = init_rsp;
 	initial_code = start_secondary;
-	clear_ti_thread_flag(c_idle.idle->thread_info, TIF_FORK);
+	clear_tsk_thread_flag(c_idle.idle, TIF_FORK);
 
 	printk(KERN_INFO "Booting processor %d/%d APIC 0x%x\n", cpu,
 		cpus_weight(cpu_present_map),
@@ -811,11 +841,8 @@ do_rest:
 	/*
 	 * Be paranoid about clearing APIC errors.
 	 */
-	if (APIC_INTEGRATED(apic_version[apicid])) {
-		apic_read_around(APIC_SPIV);
-		apic_write(APIC_ESR, 0);
-		apic_read(APIC_ESR);
-	}
+	apic_write(APIC_ESR, 0);
+	apic_read(APIC_ESR);
 
 	/*
 	 * Status is now clean
@@ -864,6 +891,7 @@ do_rest:
 	if (boot_error) {
 		cpu_clear(cpu, cpu_callout_map); /* was set here (do_boot_cpu()) */
 		clear_bit(cpu, &cpu_initialized); /* was set by cpu_init() */
+		clear_node_cpumask(cpu); /* was set by numa_add_cpu */
 		cpu_clear(cpu, cpu_present_map);
 		cpu_clear(cpu, cpu_possible_map);
 		x86_cpu_to_apicid[cpu] = BAD_APICID;
@@ -927,8 +955,8 @@ int additional_cpus __initdata = -1;
  *
  * Three ways to find out the number of additional hotplug CPUs:
  * - If the BIOS specified disabled CPUs in ACPI/mptables use that.
- * - otherwise use half of the available CPUs or 2, whatever is more.
  * - The user can overwrite it with additional_cpus=NUM
+ * - Otherwise don't reserve additional CPUs.
  * We do this because additional CPUs waste a lot of memory.
  * -AK
  */
@@ -938,13 +966,10 @@ __init void prefill_possible_map(void)
 	int possible;
 
  	if (additional_cpus == -1) {
- 		if (disabled_cpus > 0) {
+ 		if (disabled_cpus > 0)
  			additional_cpus = disabled_cpus;
- 		} else {
- 			additional_cpus = num_processors / 2;
- 			if (additional_cpus == 0)
- 				additional_cpus = 2;
- 		}
+ 		else
+			additional_cpus = 0;
  	}
 	possible = num_processors + additional_cpus;
 	if (possible > NR_CPUS) 
@@ -996,7 +1021,7 @@ static int __init smp_sanity_check(unsigned max_cpus)
 	/*
 	 * If we couldn't find a local APIC, then get out of here now!
 	 */
-	if (APIC_INTEGRATED(apic_version[boot_cpu_id]) && !cpu_has_apic) {
+	if (!cpu_has_apic) {
 		printk(KERN_ERR "BIOS bug, local APIC #%d not detected!...\n",
 			boot_cpu_id);
 		printk(KERN_ERR "... forcing use of dummy APIC emulation. (tell your hw vendor)\n");
@@ -1127,8 +1152,6 @@ void __init smp_cpus_done(unsigned int max_cpus)
 	setup_ioapic_dest();
 #endif
 
-	time_init_gtod();
-
 	check_nmi_watchdog();
 }
 
@@ -1164,6 +1187,7 @@ void remove_cpu_from_maps(void)
 	cpu_clear(cpu, cpu_callout_map);
 	cpu_clear(cpu, cpu_callin_map);
 	clear_bit(cpu, &cpu_initialized); /* was set by cpu_init() */
+	clear_node_cpumask(cpu);
 }
 
 int __cpu_disable(void)
@@ -1218,7 +1242,7 @@ void __cpu_die(unsigned int cpu)
  	printk(KERN_ERR "CPU %u didn't die...\n", cpu);
 }
 
-static __init int setup_additional_cpus(char *s)
+__init int setup_additional_cpus(char *s)
 {
 	return get_option(&s, &additional_cpus);
 }

@@ -137,8 +137,8 @@ struct prom_t {
 };
 
 struct mem_map_entry {
-	unsigned long	base;
-	unsigned long	size;
+	u64	base;
+	u64	size;
 };
 
 typedef u32 cell_t;
@@ -192,6 +192,11 @@ static unsigned long __initdata alloc_bottom;
 static unsigned long __initdata rmo_top;
 static unsigned long __initdata ram_top;
 
+#ifdef CONFIG_KEXEC
+static unsigned long __initdata prom_crashk_base;
+static unsigned long __initdata prom_crashk_size;
+#endif
+
 static struct mem_map_entry __initdata mem_reserve_map[MEM_RESERVE_MAP_SIZE];
 static int __initdata mem_reserve_cnt;
 
@@ -199,14 +204,6 @@ static cell_t __initdata regbuf[1024];
 
 
 #define MAX_CPU_THREADS 2
-
-/* TO GO */
-#ifdef CONFIG_HMT
-struct {
-	unsigned int pir;
-	unsigned int threadid;
-} hmt_thread_data[NR_CPUS];
-#endif /* CONFIG_HMT */
 
 /*
  * Error results ... some OF calls will return "-1" on error, some
@@ -553,7 +550,8 @@ unsigned long prom_memparse(const char *ptr, const char **retptr)
 static void __init early_cmdline_parse(void)
 {
 	struct prom_t *_prom = &RELOC(prom);
-	char *opt, *p;
+	const char *opt;
+	char *p;
 	int l = 0;
 
 	RELOC(prom_cmd_line[0]) = 0;
@@ -590,6 +588,35 @@ static void __init early_cmdline_parse(void)
 		RELOC(prom_memory_limit) = ALIGN(RELOC(prom_memory_limit), 0x1000000);
 #endif
 	}
+
+#ifdef CONFIG_KEXEC
+	/*
+	 * crashkernel=size@addr specifies the location to reserve for
+	 * crash kernel.
+	 */
+	opt = strstr(RELOC(prom_cmd_line), RELOC("crashkernel="));
+	if (opt) {
+		opt += 12;
+		RELOC(prom_crashk_size) = 
+			prom_memparse(opt, (const char **)&opt);
+
+		if (ALIGN(RELOC(prom_crashk_size), 0x1000000) !=
+			RELOC(prom_crashk_size)) {
+			prom_printf("Warning: crashkernel size is not "
+					"aligned to 16MB\n");
+		}
+
+		/*
+		 * At present, the crash kernel always run at 32MB.
+		 * Just ignore whatever user passed.
+		 */
+		RELOC(prom_crashk_base) = 0x2000000;
+		if (*opt == '@') {
+			prom_printf("Warning: PPC64 kdump kernel always runs "
+					"at 32 MB\n");
+		}
+	}
+#endif
 }
 
 #ifdef CONFIG_PPC_PSERIES
@@ -863,9 +890,9 @@ static unsigned long __init prom_next_cell(int s, cell_t **cellp)
  * If problems seem to show up, it would be a good start to track
  * them down.
  */
-static void reserve_mem(unsigned long base, unsigned long size)
+static void reserve_mem(u64 base, u64 size)
 {
-	unsigned long top = base + size;
+	u64 top = base + size;
 	unsigned long cnt = RELOC(mem_reserve_cnt);
 
 	if (size == 0)
@@ -951,7 +978,7 @@ static void __init prom_init_mem(void)
 			if (size == 0)
 				continue;
 			prom_debug("    %x %x\n", base, size);
-			if (base == 0)
+			if (base == 0 && (RELOC(of_platform) & PLATFORM_LPAR))
 				RELOC(rmo_top) = size;
 			if ((base + size) > RELOC(ram_top))
 				RELOC(ram_top) = base + size;
@@ -1011,6 +1038,12 @@ static void __init prom_init_mem(void)
 	prom_printf("  alloc_top_hi : %x\n", RELOC(alloc_top_high));
 	prom_printf("  rmo_top      : %x\n", RELOC(rmo_top));
 	prom_printf("  ram_top      : %x\n", RELOC(ram_top));
+#ifdef CONFIG_KEXEC
+	if (RELOC(prom_crashk_base)) {
+		prom_printf("  crashk_base  : %x\n",  RELOC(prom_crashk_base));
+		prom_printf("  crashk_size  : %x\n", RELOC(prom_crashk_size));
+	}
+#endif
 }
 
 
@@ -1278,10 +1311,6 @@ static void __init prom_hold_cpus(void)
 	 */
 	*spinloop = 0;
 
-#ifdef CONFIG_HMT
-	for (i = 0; i < NR_CPUS; i++)
-		RELOC(hmt_thread_data)[i].pir = 0xdeadbeef;
-#endif
 	/* look for cpus */
 	for (node = 0; prom_next_node(&node); ) {
 		type[0] = 0;
@@ -1348,32 +1377,6 @@ static void __init prom_hold_cpus(void)
 		/* Reserve cpu #s for secondary threads.   They start later. */
 		cpuid += cpu_threads;
 	}
-#ifdef CONFIG_HMT
-	/* Only enable HMT on processors that provide support. */
-	if (__is_processor(PV_PULSAR) || 
-	    __is_processor(PV_ICESTAR) ||
-	    __is_processor(PV_SSTAR)) {
-		prom_printf("    starting secondary threads\n");
-
-		for (i = 0; i < NR_CPUS; i += 2) {
-			if (!cpu_online(i))
-				continue;
-
-			if (i == 0) {
-				unsigned long pir = mfspr(SPRN_PIR);
-				if (__is_processor(PV_PULSAR)) {
-					RELOC(hmt_thread_data)[i].pir = 
-						pir & 0x1f;
-				} else {
-					RELOC(hmt_thread_data)[i].pir = 
-						pir & 0x3ff;
-				}
-			}
-		}
-	} else {
-		prom_printf("Processor is not HMT capable\n");
-	}
-#endif
 
 	if (cpuid > NR_CPUS)
 		prom_printf("WARNING: maximum CPUs (" __stringify(NR_CPUS)
@@ -1500,6 +1503,8 @@ static int __init prom_find_machine_type(void)
 #ifdef CONFIG_PPC64
 			if (strstr(p, RELOC("Momentum,Maple")))
 				return PLATFORM_MAPLE;
+			if (strstr(p, RELOC("IBM,CPB")))
+				return PLATFORM_CELL;
 #endif
 			i += sl + 1;
 		}
@@ -1994,7 +1999,7 @@ static void __init prom_check_initrd(unsigned long r3, unsigned long r4)
 	if (r3 && r4 && r4 != 0xdeadbeef) {
 		unsigned long val;
 
-		RELOC(prom_initrd_start) = (r3 >= KERNELBASE) ? __pa(r3) : r3;
+		RELOC(prom_initrd_start) = is_kernel_addr(r3) ? __pa(r3) : r3;
 		RELOC(prom_initrd_end) = RELOC(prom_initrd_start) + r4;
 
 		val = RELOC(prom_initrd_start);
@@ -2055,6 +2060,10 @@ unsigned long __init prom_init(unsigned long r3, unsigned long r4,
 	 */
 	prom_init_stdout();
 
+	/* Bail if this is a kdump kernel. */
+	if (PHYSICAL_START > 0)
+		prom_panic("Error: You can't boot a kdump kernel from OF!\n");
+
 	/*
 	 * Check for an initrd
 	 */
@@ -2094,6 +2103,10 @@ unsigned long __init prom_init(unsigned long r3, unsigned long r4,
 	 */
 	prom_init_mem();
 
+#ifdef CONFIG_KEXEC
+	if (RELOC(prom_crashk_base))
+		reserve_mem(RELOC(prom_crashk_base), RELOC(prom_crashk_size));
+#endif
 	/*
 	 * Determine which cpu is actually running right _now_
 	 */
@@ -2150,6 +2163,16 @@ unsigned long __init prom_init(unsigned long r3, unsigned long r4,
 	}
 #endif
 
+#ifdef CONFIG_KEXEC
+	if (RELOC(prom_crashk_base)) {
+		prom_setprop(_prom->chosen, "/chosen", "linux,crashkernel-base",
+			PTRRELOC(&prom_crashk_base),
+			sizeof(RELOC(prom_crashk_base)));
+		prom_setprop(_prom->chosen, "/chosen", "linux,crashkernel-size",
+			PTRRELOC(&prom_crashk_size),
+			sizeof(RELOC(prom_crashk_size)));
+	}
+#endif
 	/*
 	 * Fixup any known bugs in the device-tree
 	 */

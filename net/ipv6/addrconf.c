@@ -58,6 +58,7 @@
 #ifdef CONFIG_SYSCTL
 #include <linux/sysctl.h>
 #endif
+#include <linux/capability.h>
 #include <linux/delay.h>
 #include <linux/notifier.h>
 #include <linux/string.h>
@@ -821,7 +822,7 @@ struct ipv6_saddr_score {
 	int		addr_type;
 	unsigned int	attrs;
 	int		matchlen;
-	unsigned int	scope;
+	int		scope;
 	unsigned int	rule;
 };
 
@@ -1195,7 +1196,7 @@ struct inet6_ifaddr * ipv6_get_ifaddr(struct in6_addr *addr, struct net_device *
 int ipv6_rcv_saddr_equal(const struct sock *sk, const struct sock *sk2)
 {
 	const struct in6_addr *sk_rcv_saddr6 = &inet6_sk(sk)->rcv_saddr;
-	const struct in6_addr *sk2_rcv_saddr6 = tcp_v6_rcv_saddr(sk2);
+	const struct in6_addr *sk2_rcv_saddr6 = inet6_rcv_saddr(sk2);
 	u32 sk_rcv_saddr = inet_sk(sk)->rcv_saddr;
 	u32 sk2_rcv_saddr = inet_rcv_saddr(sk2);
 	int sk_ipv6only = ipv6_only_sock(sk);
@@ -1228,7 +1229,7 @@ int ipv6_rcv_saddr_equal(const struct sock *sk, const struct sock *sk2)
 
 /* Gets referenced address, destroys ifaddr */
 
-void addrconf_dad_stop(struct inet6_ifaddr *ifp)
+static void addrconf_dad_stop(struct inet6_ifaddr *ifp)
 {
 	if (ifp->flags&IFA_F_PERMANENT) {
 		spin_lock_bh(&ifp->lock);
@@ -2164,6 +2165,9 @@ static int addrconf_notify(struct notifier_block *this, unsigned long event,
 					dev->name);
 				break;
 			}
+
+			if (idev)
+				idev->if_flags |= IF_READY;
 		} else {
 			if (!netif_carrier_ok(dev)) {
 				/* device is still not ready. */
@@ -2643,7 +2647,7 @@ static int if6_seq_show(struct seq_file *seq, void *v)
 {
 	struct inet6_ifaddr *ifp = (struct inet6_ifaddr *)v;
 	seq_printf(seq,
-		   "%04x%04x%04x%04x%04x%04x%04x%04x %02x %02x %02x %02x %8s\n",
+		   NIP6_SEQFMT " %02x %02x %02x %02x %8s\n",
 		   NIP6(ifp->addr),
 		   ifp->idev->dev->ifindex,
 		   ifp->prefix_len,
@@ -3320,9 +3324,7 @@ static void __ipv6_ifa_notify(int event, struct inet6_ifaddr *ifp)
 
 	switch (event) {
 	case RTM_NEWADDR:
-		dst_hold(&ifp->rt->u.dst);
-		if (ip6_ins_rt(ifp->rt, NULL, NULL, NULL))
-			dst_release(&ifp->rt->u.dst);
+		ip6_ins_rt(ifp->rt, NULL, NULL, NULL);
 		if (ifp->idev->cnf.forwarding)
 			addrconf_join_anycast(ifp);
 		break;
@@ -3333,8 +3335,6 @@ static void __ipv6_ifa_notify(int event, struct inet6_ifaddr *ifp)
 		dst_hold(&ifp->rt->u.dst);
 		if (ip6_del_rt(ifp->rt, NULL, NULL, NULL))
 			dst_free(&ifp->rt->u.dst);
-		else
-			dst_release(&ifp->rt->u.dst);
 		break;
 	}
 }

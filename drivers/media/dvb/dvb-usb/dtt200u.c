@@ -160,7 +160,7 @@ static struct dvb_usb_properties wt220u_properties = {
 	.pid_filter_count = 15,
 
 	.usb_ctrl = CYPRESS_FX2,
-	.firmware = "dvb-usb-wt220u-01.fw",
+	.firmware = "dvb-usb-wt220u-02.fw",
 
 	.power_ctrl      = dtt200u_power_ctrl,
 	.streaming_ctrl  = dtt200u_streaming_ctrl,
@@ -198,7 +198,6 @@ static struct dvb_usb_properties wt220u_properties = {
 
 /* usb specific object needed to register this driver with the usb subsystem */
 static struct usb_driver dtt200u_usb_driver = {
-	.owner		= THIS_MODULE,
 	.name		= "dvb_usb_dtt200u",
 	.probe		= dtt200u_usb_probe,
 	.disconnect = dvb_usb_device_exit,

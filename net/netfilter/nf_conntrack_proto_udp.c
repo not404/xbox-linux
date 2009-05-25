@@ -27,8 +27,8 @@
 #include <linux/netfilter_ipv6.h>
 #include <net/netfilter/nf_conntrack_protocol.h>
 
-unsigned long nf_ct_udp_timeout = 30*HZ;
-unsigned long nf_ct_udp_timeout_stream = 180*HZ;
+unsigned int nf_ct_udp_timeout = 30*HZ;
+unsigned int nf_ct_udp_timeout_stream = 180*HZ;
 
 static int udp_pkt_to_tuple(const struct sk_buff *skb,
 			     unsigned int dataoff,
@@ -161,7 +161,9 @@ static int csum6(const struct sk_buff *skb, unsigned int dataoff)
 {
 	return csum_ipv6_magic(&skb->nh.ipv6h->saddr, &skb->nh.ipv6h->daddr,
 			       skb->len - dataoff, IPPROTO_UDP,
-			       skb->ip_summed == CHECKSUM_HW ? skb->csum
+			       skb->ip_summed == CHECKSUM_HW
+			       ? csum_sub(skb->csum,
+					  skb_checksum(skb, 0, dataoff, 0))
 			       : skb_checksum(skb, dataoff, skb->len - dataoff,
 					      0));
 }
@@ -196,6 +198,11 @@ struct nf_conntrack_protocol nf_conntrack_protocol_udp4 =
 	.packet			= udp_packet,
 	.new			= udp_new,
 	.error			= udp_error4,
+#if defined(CONFIG_NF_CT_NETLINK) || \
+    defined(CONFIG_NF_CT_NETLINK_MODULE)
+	.tuple_to_nfattr	= nf_ct_port_tuple_to_nfattr,
+	.nfattr_to_tuple	= nf_ct_port_nfattr_to_tuple,
+#endif
 };
 
 struct nf_conntrack_protocol nf_conntrack_protocol_udp6 =
@@ -210,6 +217,11 @@ struct nf_conntrack_protocol nf_conntrack_protocol_udp6 =
 	.packet			= udp_packet,
 	.new			= udp_new,
 	.error			= udp_error6,
+#if defined(CONFIG_NF_CT_NETLINK) || \
+    defined(CONFIG_NF_CT_NETLINK_MODULE)
+	.tuple_to_nfattr	= nf_ct_port_tuple_to_nfattr,
+	.nfattr_to_tuple	= nf_ct_port_nfattr_to_tuple,
+#endif
 };
 
 EXPORT_SYMBOL(nf_conntrack_protocol_udp4);

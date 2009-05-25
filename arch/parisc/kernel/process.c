@@ -54,27 +54,6 @@
 #include <asm/uaccess.h>
 #include <asm/unwind.h>
 
-static int hlt_counter;
-
-/*
- * Power off function, if any
- */ 
-void (*pm_power_off)(void);
-
-void disable_hlt(void)
-{
-	hlt_counter++;
-}
-
-EXPORT_SYMBOL(disable_hlt);
-
-void enable_hlt(void)
-{
-	hlt_counter--;
-}
-
-EXPORT_SYMBOL(enable_hlt);
-
 void default_idle(void)
 {
 	barrier();
@@ -102,12 +81,7 @@ void cpu_idle(void)
 }
 
 
-#ifdef __LP64__
-#define COMMAND_GLOBAL  0xfffffffffffe0030UL
-#else
-#define COMMAND_GLOBAL  0xfffe0030
-#endif
-
+#define COMMAND_GLOBAL  F_EXTEND(0xfffe0030)
 #define CMD_RESET       5       /* reset any module */
 
 /*
@@ -162,6 +136,7 @@ void machine_halt(void)
 	*/
 }
 
+void (*chassis_power_off)(void);
 
 /*
  * This routine is called from sys_reboot to actually turn off the
@@ -170,8 +145,8 @@ void machine_halt(void)
 void machine_power_off(void)
 {
 	/* If there is a registered power off handler, call it. */
-	if(pm_power_off)
-		pm_power_off();
+	if (chassis_power_off)
+		chassis_power_off();
 
 	/* Put the soft power button back under hardware control.
 	 * If the user had already pressed the power button, the
@@ -187,6 +162,8 @@ void machine_power_off(void)
 	       KERN_EMERG "Please power this system off now.");
 }
 
+void (*pm_power_off)(void) = machine_power_off;
+EXPORT_SYMBOL(pm_power_off);
 
 /*
  * Create a kernel thread
@@ -295,7 +272,7 @@ copy_thread(int nr, unsigned long clone_flags, unsigned long usp,
 	    struct task_struct * p, struct pt_regs * pregs)
 {
 	struct pt_regs * cregs = &(p->thread.regs);
-	struct thread_info *ti = p->thread_info;
+	void *stack = task_stack_page(p);
 	
 	/* We have to use void * instead of a function pointer, because
 	 * function pointers aren't a pointer to the function on 64-bit.
@@ -322,7 +299,7 @@ copy_thread(int nr, unsigned long clone_flags, unsigned long usp,
 	 */
 	if (usp == 1) {
 		/* kernel thread */
-		cregs->ksp = (((unsigned long)(ti)) + THREAD_SZ_ALGN);
+		cregs->ksp = (unsigned long)stack + THREAD_SZ_ALGN;
 		/* Must exit via ret_from_kernel_thread in order
 		 * to call schedule_tail()
 		 */
@@ -344,7 +321,7 @@ copy_thread(int nr, unsigned long clone_flags, unsigned long usp,
 		 */
 
 		/* Use same stack depth as parent */
-		cregs->ksp = ((unsigned long)(ti))
+		cregs->ksp = (unsigned long)stack
 			+ (pregs->gr[21] & (THREAD_SIZE - 1));
 		cregs->gr[30] = usp;
 		if (p->personality == PER_HPUX) {

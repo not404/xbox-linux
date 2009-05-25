@@ -19,6 +19,7 @@
 #include <asm/dma.h>	/* isa_dma_bridge_buggy */
 #include "pci.h"
 
+#if 0
 
 /**
  * pci_bus_max_busnr - returns maximum PCI bus number of given bus' children
@@ -62,6 +63,8 @@ pci_max_busnr(void)
 	}
 	return max;
 }
+
+#endif  /*  0  */
 
 static int __pci_find_next_cap(struct pci_bus *bus, unsigned int devfn, u8 pos, int cap)
 {
@@ -160,6 +163,7 @@ int pci_bus_find_capability(struct pci_bus *bus, unsigned int devfn, int cap)
 	return __pci_bus_find_cap(bus, devfn, hdr_type & 0x7f, cap);
 }
 
+#if 0
 /**
  * pci_find_ext_capability - Find an extended capability
  * @dev: PCI device to query
@@ -207,6 +211,7 @@ int pci_find_ext_capability(struct pci_dev *dev, int cap)
 
 	return 0;
 }
+#endif  /*  0  */
 
 /**
  * pci_find_parent_resource - return resource region of parent bus of given region
@@ -587,7 +592,7 @@ pci_get_interrupt_pin(struct pci_dev *dev, struct pci_dev **bridge)
 {
 	u8 pin;
 
-	pci_read_config_byte(dev, PCI_INTERRUPT_PIN, &pin);
+	pin = dev->pin;
 	if (!pin)
 		return -1;
 	pin--;
@@ -917,8 +922,6 @@ EXPORT_SYMBOL_GPL(pci_restore_bars);
 EXPORT_SYMBOL(pci_enable_device_bars);
 EXPORT_SYMBOL(pci_enable_device);
 EXPORT_SYMBOL(pci_disable_device);
-EXPORT_SYMBOL(pci_max_busnr);
-EXPORT_SYMBOL(pci_bus_max_busnr);
 EXPORT_SYMBOL(pci_find_capability);
 EXPORT_SYMBOL(pci_bus_find_capability);
 EXPORT_SYMBOL(pci_release_regions);

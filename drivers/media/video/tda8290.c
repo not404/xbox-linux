@@ -398,13 +398,7 @@ static int tda8290_tune(struct i2c_client *c, u16 ifc, unsigned int freq)
 	return 0;
 }
 
-
 /*---------------------------------------------------------------------*/
-
-#define V4L2_STD_MN	(V4L2_STD_PAL_M|V4L2_STD_PAL_N|V4L2_STD_PAL_Nc|V4L2_STD_NTSC)
-#define V4L2_STD_B	(V4L2_STD_PAL_B|V4L2_STD_PAL_B1|V4L2_STD_SECAM_B)
-#define V4L2_STD_GH	(V4L2_STD_PAL_G|V4L2_STD_PAL_H|V4L2_STD_SECAM_G|V4L2_STD_SECAM_H)
-#define V4L2_STD_DK	(V4L2_STD_PAL_DK|V4L2_STD_SECAM_DK)
 
 static void set_audio(struct tuner *t)
 {
@@ -573,8 +567,8 @@ int tda8290_init(struct i2c_client *c)
 	}
 	tuner_info("tuner: type set to %s\n", c->name);
 
-	t->tv_freq    = set_tv_freq;
-	t->radio_freq = set_radio_freq;
+	t->set_tv_freq    = set_tv_freq;
+	t->set_radio_freq = set_radio_freq;
 	t->has_signal = has_signal;
 	t->standby = standby;
 	t->tda827x_lpsel = 0;
@@ -586,9 +580,10 @@ int tda8290_init(struct i2c_client *c)
 
 int tda8290_probe(struct i2c_client *c)
 {
-	unsigned char soft_reset[]  = { 0x00, 0x00 };
-	unsigned char easy_mode_b[] = { 0x01, 0x02 };
-	unsigned char easy_mode_g[] = { 0x01, 0x04 };
+	unsigned char soft_reset[]   = { 0x00, 0x00 };
+	unsigned char easy_mode_b[]  = { 0x01, 0x02 };
+	unsigned char easy_mode_g[]  = { 0x01, 0x04 };
+	unsigned char restore_9886[] = { 0x00, 0xd6, 0x30 };
 	unsigned char addr_dto_lsb = 0x07;
 	unsigned char data;
 
@@ -605,6 +600,7 @@ int tda8290_probe(struct i2c_client *c)
 			return 0;
 		}
 	}
+	i2c_master_send(c, restore_9886, 3);
 	return -1;
 }
 

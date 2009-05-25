@@ -398,7 +398,11 @@ ignore_int:
 	pushl 32(%esp)
 	pushl 40(%esp)
 	pushl $int_msg
+#ifdef CONFIG_EARLY_PRINTK
+	call early_printk
+#else
 	call printk
+#endif
 	addl $(5*4),%esp
 	popl %ds
 	popl %es
@@ -504,19 +508,24 @@ ENTRY(cpu_gdt_table)
 	.quad 0x0000000000000000	/* 0x80 TSS descriptor */
 	.quad 0x0000000000000000	/* 0x88 LDT descriptor */
 
-	/* Segments used for calling PnP BIOS */
-	.quad 0x00c09a0000000000	/* 0x90 32-bit code */
-	.quad 0x00809a0000000000	/* 0x98 16-bit code */
-	.quad 0x0080920000000000	/* 0xa0 16-bit data */
-	.quad 0x0080920000000000	/* 0xa8 16-bit data */
-	.quad 0x0080920000000000	/* 0xb0 16-bit data */
+	/*
+	 * Segments used for calling PnP BIOS have byte granularity.
+	 * They code segments and data segments have fixed 64k limits,
+	 * the transfer segment sizes are set at run time.
+	 */
+	.quad 0x00409a000000ffff	/* 0x90 32-bit code */
+	.quad 0x00009a000000ffff	/* 0x98 16-bit code */
+	.quad 0x000092000000ffff	/* 0xa0 16-bit data */
+	.quad 0x0000920000000000	/* 0xa8 16-bit data */
+	.quad 0x0000920000000000	/* 0xb0 16-bit data */
+
 	/*
 	 * The APM segments have byte granularity and their bases
-	 * and limits are set at run time.
+	 * are set at run time.  All have 64k limits.
 	 */
-	.quad 0x00409a0000000000	/* 0xb8 APM CS    code */
-	.quad 0x00009a0000000000	/* 0xc0 APM CS 16 code (16 bit) */
-	.quad 0x0040920000000000	/* 0xc8 APM DS    data */
+	.quad 0x00409a000000ffff	/* 0xb8 APM CS    code */
+	.quad 0x00009a000000ffff	/* 0xc0 APM CS 16 code (16 bit) */
+	.quad 0x004092000000ffff	/* 0xc8 APM DS    data */
 
 	.quad 0x0000920000000000	/* 0xd0 - ESPFIX 16-bit SS */
 	.quad 0x0000000000000000	/* 0xd8 - unused */

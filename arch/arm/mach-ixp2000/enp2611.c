@@ -106,6 +106,7 @@ static void __init enp2611_pci_preinit(void)
 {
 	ixp2000_reg_write(IXP2000_PCI_ADDR_EXT, 0x00100000);
 	ixp2000_pci_preinit();
+	pcibios_setup("firmware");
 }
 
 static inline int enp2611_pci_valid_device(struct pci_bus *bus,
@@ -254,7 +255,6 @@ static void __init enp2611_init_machine(void)
 
 MACHINE_START(ENP2611, "Radisys ENP-2611 PCI network processor board")
 	/* Maintainer: Lennert Buytenhek <buytenh@wantstofly.org> */
-	.phys_ram	= 0x00000000,
 	.phys_io	= IXP2000_UART_PHYS_BASE,
 	.io_pg_offst	= ((IXP2000_UART_VIRT_BASE) >> 18) & 0xfffc,
 	.boot_params	= 0x00000100,

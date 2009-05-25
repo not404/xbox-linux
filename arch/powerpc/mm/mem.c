@@ -114,19 +114,18 @@ void online_page(struct page *page)
 	num_physpages++;
 }
 
-/*
- * This works only for the non-NUMA case.  Later, we'll need a lookup
- * to convert from real physical addresses to nid, that doesn't use
- * pfn_to_nid().
- */
 int __devinit add_memory(u64 start, u64 size)
 {
-	struct pglist_data *pgdata = NODE_DATA(0);
+	struct pglist_data *pgdata;
 	struct zone *zone;
+	int nid;
 	unsigned long start_pfn = start >> PAGE_SHIFT;
 	unsigned long nr_pages = size >> PAGE_SHIFT;
 
-	start += KERNELBASE;
+	nid = hot_add_scn_to_nid(start);
+	pgdata = NODE_DATA(nid);
+
+	start = __va(start);
 	create_section_mapping(start, start + size);
 
 	/* this should work for most non-highmem platforms */
@@ -436,17 +435,12 @@ void clear_user_page(void *page, unsigned long vaddr, struct page *pg)
 {
 	clear_page(page);
 
-	if (cpu_has_feature(CPU_FTR_COHERENT_ICACHE))
-		return;
 	/*
 	 * We shouldnt have to do this, but some versions of glibc
 	 * require it (ld.so assumes zero filled pages are icache clean)
 	 * - Anton
 	 */
-
-	/* avoid an atomic op if possible */
-	if (test_bit(PG_arch_1, &pg->flags))
-		clear_bit(PG_arch_1, &pg->flags);
+	flush_dcache_page(pg);
 }
 EXPORT_SYMBOL(clear_user_page);
 
@@ -470,12 +464,7 @@ void copy_user_page(void *vto, void *vfrom, unsigned long vaddr,
 		return;
 #endif
 
-	if (cpu_has_feature(CPU_FTR_COHERENT_ICACHE))
-		return;
-
-	/* avoid an atomic op if possible */
-	if (test_bit(PG_arch_1, &pg->flags))
-		clear_bit(PG_arch_1, &pg->flags);
+	flush_dcache_page(pg);
 }
 
 void flush_icache_user_range(struct vm_area_struct *vma, struct page *page,

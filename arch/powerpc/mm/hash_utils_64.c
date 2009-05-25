@@ -88,6 +88,7 @@ static unsigned long _SDR1;
 struct mmu_psize_def mmu_psize_defs[MMU_PAGE_COUNT];
 
 hpte_t *htab_address;
+unsigned long htab_size_bytes;
 unsigned long htab_hash_mask;
 int mmu_linear_psize = MMU_PAGE_4K;
 int mmu_virtual_psize = MMU_PAGE_4K;
@@ -168,7 +169,7 @@ int htab_bolt_mapping(unsigned long vstart, unsigned long vend,
 #ifdef CONFIG_PPC_ISERIES
 		if (_machine == PLATFORM_ISERIES_LPAR)
 			ret = iSeries_hpte_insert(hpteg, va,
-						  virt_to_abs(paddr),
+						  __pa(vaddr),
 						  tmp_mode,
 						  HPTE_V_BOLTED,
 						  psize);
@@ -368,7 +369,7 @@ static unsigned long __init htab_get_table_size(void)
 	unsigned long mem_size, rnd_mem_size, pteg_count;
 
 	/* If hash size isn't already provided by the platform, we try to
-	 * retreive it from the device-tree. If it's not there neither, we
+	 * retrieve it from the device-tree. If it's not there neither, we
 	 * calculate it now based on the total RAM size
 	 */
 	if (ppc64_pft_size == 0)
@@ -399,7 +400,7 @@ void create_section_mapping(unsigned long start, unsigned long end)
 
 void __init htab_initialize(void)
 {
-	unsigned long table, htab_size_bytes;
+	unsigned long table;
 	unsigned long pteg_count;
 	unsigned long mode_rw;
 	unsigned long base = 0, size = 0;
@@ -456,7 +457,7 @@ void __init htab_initialize(void)
 
 	/* create bolted the linear mapping in the hash table */
 	for (i=0; i < lmb.memory.cnt; i++) {
-		base = lmb.memory.region[i].base + KERNELBASE;
+		base = (unsigned long)__va(lmb.memory.region[i].base);
 		size = lmb.memory.region[i].size;
 
 		DBG("creating mapping for region: %lx : %lx\n", base, size);
@@ -498,8 +499,8 @@ void __init htab_initialize(void)
 	 * for either 4K or 16MB pages.
 	 */
 	if (tce_alloc_start) {
-		tce_alloc_start += KERNELBASE;
-		tce_alloc_end += KERNELBASE;
+		tce_alloc_start = (unsigned long)__va(tce_alloc_start);
+		tce_alloc_end = (unsigned long)__va(tce_alloc_end);
 
 		if (base + size >= tce_alloc_start)
 			tce_alloc_start = base + size + 1;
@@ -644,6 +645,7 @@ int hash_page(unsigned long ea, unsigned long access, unsigned long trap)
 	DBG_LOW(" -> rc=%d\n", rc);
 	return rc;
 }
+EXPORT_SYMBOL_GPL(hash_page);
 
 void hash_preload(struct mm_struct *mm, unsigned long ea,
 		  unsigned long access, unsigned long trap)

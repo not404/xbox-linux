@@ -57,6 +57,7 @@ static int initialized = 0;
 
 #ifdef CONFIG_PROC_FS
 struct proc_dir_entry *proc_ipmi_root = NULL;
+EXPORT_SYMBOL(proc_ipmi_root);
 #endif /* CONFIG_PROC_FS */
 
 #define MAX_EVENTS_IN_QUEUE	25
@@ -480,7 +481,7 @@ int ipmi_validate_addr(struct ipmi_addr *addr, int len)
 	}
 
 	if ((addr->channel == IPMI_BMC_CHANNEL)
-	    || (addr->channel >= IPMI_NUM_CHANNELS)
+	    || (addr->channel >= IPMI_MAX_CHANNELS)
 	    || (addr->channel < 0))
 		return -EINVAL;
 
@@ -787,7 +788,6 @@ int ipmi_destroy_user(ipmi_user_t user)
 	int              i;
 	unsigned long    flags;
 	struct cmd_rcvr  *rcvr;
-	struct list_head *entry1, *entry2;
 	struct cmd_rcvr  *rcvrs = NULL;
 
 	user->valid = 1;
@@ -812,8 +812,7 @@ int ipmi_destroy_user(ipmi_user_t user)
 	 * synchronize_rcu()) then free everything in that list.
 	 */
 	down(&intf->cmd_rcvrs_lock);
-	list_for_each_safe_rcu(entry1, entry2, &intf->cmd_rcvrs) {
-		rcvr = list_entry(entry1, struct cmd_rcvr, link);
+	list_for_each_entry_rcu(rcvr, &intf->cmd_rcvrs, link) {
 		if (rcvr->user == user) {
 			list_del_rcu(&rcvr->link);
 			rcvr->next = rcvrs;
@@ -1322,7 +1321,7 @@ static int i_ipmi_request(ipmi_user_t          user,
 		unsigned char         ipmb_seq;
 		long                  seqid;
 
-		if (addr->channel >= IPMI_NUM_CHANNELS) {
+		if (addr->channel >= IPMI_MAX_CHANNELS) {
 			spin_lock_irqsave(&intf->counter_lock, flags);
 			intf->sent_invalid_commands++;
 			spin_unlock_irqrestore(&intf->counter_lock, flags);
@@ -3297,6 +3296,5 @@ EXPORT_SYMBOL(ipmi_get_my_address);
 EXPORT_SYMBOL(ipmi_set_my_LUN);
 EXPORT_SYMBOL(ipmi_get_my_LUN);
 EXPORT_SYMBOL(ipmi_smi_add_proc_entry);
-EXPORT_SYMBOL(proc_ipmi_root);
 EXPORT_SYMBOL(ipmi_user_set_run_to_completion);
 EXPORT_SYMBOL(ipmi_free_recv_msg);

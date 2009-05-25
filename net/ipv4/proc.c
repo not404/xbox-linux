@@ -38,6 +38,7 @@
 #include <net/protocol.h>
 #include <net/tcp.h>
 #include <net/udp.h>
+#include <linux/inetdevice.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
 #include <net/sock.h>
@@ -48,7 +49,7 @@ static int fold_prot_inuse(struct proto *proto)
 	int res = 0;
 	int cpu;
 
-	for (cpu = 0; cpu < NR_CPUS; cpu++)
+	for_each_cpu(cpu)
 		res += proto->stats[cpu].inuse;
 
 	return res;

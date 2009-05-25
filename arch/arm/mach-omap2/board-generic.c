@@ -33,6 +33,7 @@
 
 static void __init omap_generic_init_irq(void)
 {
+	omap2_init_common_hw();
 	omap_init_irq();
 }
 
@@ -64,12 +65,11 @@ static void __init omap_generic_init(void)
 
 static void __init omap_generic_map_io(void)
 {
-	omap_map_common_io();
+	omap2_map_common_io();
 }
 
 MACHINE_START(OMAP_GENERIC, "Generic OMAP24xx")
 	/* Maintainer: Paul Mundt <paul.mundt@nokia.com> */
-	.phys_ram	= 0x80000000,
 	.phys_io	= 0x48000000,
 	.io_pg_offst	= ((0xd8000000) >> 18) & 0xfffc,
 	.boot_params	= 0x80000100,

@@ -57,20 +57,16 @@ struct timer_list mcfrs_timer_struct;
  *	keep going.  Perhaps one day the cflag settings for the
  *	console can be used instead.
  */
-#if defined(CONFIG_ARNEWSH) || defined(CONFIG_FREESCALE) || \
-    defined(CONFIG_senTec) || defined(CONFIG_SNEHA)
-#define	CONSOLE_BAUD_RATE	19200
-#define	DEFAULT_CBAUD		B19200
-#endif
-
 #if defined(CONFIG_HW_FEITH)
 #define	CONSOLE_BAUD_RATE	38400
 #define	DEFAULT_CBAUD		B38400
-#endif
-
-#if defined(CONFIG_MOD5272) || defined(CONFIG_M5208EVB)
+#elif defined(CONFIG_MOD5272) || defined(CONFIG_M5208EVB)
 #define CONSOLE_BAUD_RATE 	115200
 #define DEFAULT_CBAUD		B115200
+#elif defined(CONFIG_ARNEWSH) || defined(CONFIG_FREESCALE) || \
+      defined(CONFIG_senTec) || defined(CONFIG_SNEHA)
+#define	CONSOLE_BAUD_RATE	19200
+#define	DEFAULT_CBAUD		B19200
 #endif
 
 #ifndef CONSOLE_BAUD_RATE
@@ -313,7 +309,7 @@ static inline void receive_chars(struct mcf_serial *info)
 {
 	volatile unsigned char	*uartp;
 	struct tty_struct	*tty = info->tty;
-	unsigned char		status, ch;
+	unsigned char		status, ch, flag;
 
 	if (!tty)
 		return;
@@ -321,10 +317,6 @@ static inline void receive_chars(struct mcf_serial *info)
 	uartp = info->addr;
 
 	while ((status = uartp[MCFUART_USR]) & MCFUART_USR_RXREADY) {
-
-		if (tty->flip.count >= TTY_FLIPBUF_SIZE)
-			break;
-
 		ch = uartp[MCFUART_URB];
 		info->stats.rx++;
 
@@ -335,32 +327,26 @@ static inline void receive_chars(struct mcf_serial *info)
 		}
 #endif
 
-		tty->flip.count++;
+		flag = TTY_NORMAL;
 		if (status & MCFUART_USR_RXERR) {
 			uartp[MCFUART_UCR] = MCFUART_UCR_CMDRESETERR;
 			if (status & MCFUART_USR_RXBREAK) {
 				info->stats.rxbreak++;
-				*tty->flip.flag_buf_ptr++ = TTY_BREAK;
+				flag = TTY_BREAK;
 			} else if (status & MCFUART_USR_RXPARITY) {
 				info->stats.rxparity++;
-				*tty->flip.flag_buf_ptr++ = TTY_PARITY;
+				flag = TTY_PARITY;
 			} else if (status & MCFUART_USR_RXOVERRUN) {
 				info->stats.rxoverrun++;
-				*tty->flip.flag_buf_ptr++ = TTY_OVERRUN;
+				flag = TTY_OVERRUN;
 			} else if (status & MCFUART_USR_RXFRAMING) {
 				info->stats.rxframing++;
-				*tty->flip.flag_buf_ptr++ = TTY_FRAME;
-			} else {
-				/* This should never happen... */
-				*tty->flip.flag_buf_ptr++ = 0;
+				flag = TTY_FRAME;
 			}
-		} else {
-			*tty->flip.flag_buf_ptr++ = 0;
 		}
-		*tty->flip.char_buf_ptr++ = ch;
+		tty_insert_flip_char(tty, ch, flag);
 	}
-
-	schedule_work(&tty->flip.work);
+	tty_schedule_flip(tty);
 	return;
 }
 
@@ -1525,7 +1511,7 @@ static void mcfrs_irqinit(struct mcf_serial *info)
 
 	icrp = (volatile unsigned char *) (MCF_MBAR + MCFICM_INTC0 +
 		MCFINTC_ICR0 + MCFINT_UART0 + info->line);
-	*icrp = 0x33; /* UART0 with level 6, priority 3 */
+	*icrp = 0x30 + info->line; /* level 6, line based priority */
 
 	imrp = (volatile unsigned long *) (MCF_MBAR + MCFICM_INTC0 +
 		MCFINTC_IMRL);
