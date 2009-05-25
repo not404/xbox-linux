@@ -990,5 +990,5 @@ module_exit(exit_fatx_fs)
 
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("FATX filesystem support");
-MODULE_PARM(fatx_debug,"i");
+module_param(fatx_debug,int,0);
 MODULE_PARM_DESC(fatxx_debug,"turn on fatxx debugging output");
