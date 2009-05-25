@@ -126,7 +126,7 @@ enum riva_chips {
 static struct riva_chip_info {
 	const char *name;
 	unsigned arch_rev;
-} riva_chip_info[] __initdata = {
+} riva_chip_info[] __devinitdata = {
         { "GeForce3", NV_ARCH_20}
 };
 
@@ -145,21 +145,21 @@ MODULE_DEVICE_TABLE(pci, xboxfb_pci_tbl);
 
 /* command line data, set in xboxfb_setup() */
 static u32 pseudo_palette[17];
-static int flatpanel __initdata = -1; /* Autodetect later */
-static int forceCRTC __initdata = -1;
-static int noaccel   __initdata = 0;
+static int flatpanel __devinitdata = -1; /* Autodetect later */
+static int forceCRTC __devinitdata = -1;
+static int noaccel   __devinitdata = 0;
 #ifdef CONFIG_MTRR
-static int nomtrr __initdata = 0;
+static int nomtrr __devinitdata = 0;
 #endif
 
-static char *mode_option __initdata = NULL;
-static int  strictmode __initdata = 0;
+static char *mode_option __devinitdata = NULL;
+static int  strictmode __devinitdata = 0;
 
-static xbox_tv_encoding tv_encoding  __initdata = TV_ENC_INVALID;
-static xbox_av_type av_type __initdata = AV_INVALID;
-static int hoc __initdata = -1;
-static char *tv __initdata = "NTSC";
-static int voc __initdata = -1;
+static xbox_tv_encoding tv_encoding  __devinitdata = TV_ENC_INVALID;
+static xbox_av_type av_type __devinitdata = AV_INVALID;
+static int hoc __devinitdata = -1;
+static char *tv __devinitdata = "NTSC";
+static int voc __devinitdata = -1;
 
 static struct fb_fix_screeninfo xboxfb_fix = {
 	.id		= "Xbox",
@@ -2404,7 +2404,7 @@ static void __exit xboxfb_remove(struct pci_dev *pd)
  *
  * ------------------------------------------------------------------------- */
 
-int __init xboxfb_setup(char *options)
+static int __init xboxfb_setup(char *options)
 {
 	char *this_opt;
 
