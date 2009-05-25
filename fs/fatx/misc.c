@@ -195,5 +195,3 @@ int fatx_sync_bhs(struct buffer_head **bhs, int nr_bhs)
 	}
 	return err;
 }
-
-EXPORT_SYMBOL(fatx_sync_bhs);

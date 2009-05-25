@@ -141,7 +141,7 @@ struct fatx_sb_info {
 	unsigned long max_cluster;   /* maximum cluster number */
 	unsigned long root_cluster;  /* first cluster of the root directory */
 	unsigned long fsinfo_sector; /* sector number of FAT32 fsinfo */
-	struct semaphore fatx_lock;
+	struct mutex fatx_lock;
 	unsigned int prev_free;      /* previously allocated cluster number */
 	unsigned int free_clusters;  /* -1 if undefined */
 	struct fatx_mount_options options;
@@ -211,7 +211,7 @@ extern __s64 fatx_get_cluster(struct inode *inode, __s64 cluster,
 extern int fatx_bmap(struct inode *inode, sector_t sector, sector_t *phys);
 
 /* fatx/dir.c */
-extern struct file_operations fatx_dir_operations;
+extern const struct file_operations fatx_dir_operations;
 extern int fatx_search_long(struct inode *inode, const unsigned char *name,
 			   int name_len, struct fatx_slot_info *sinfo);
 extern int fatx_dir_empty(struct inode *dir);
@@ -272,7 +272,7 @@ extern __s64 fatx_count_free_clusters(struct super_block *sb);
 /* fatx/file.c */
 extern int fatx_generic_ioctl(struct inode *inode, struct file *filp,
 			     unsigned int cmd, unsigned long arg);
-extern struct file_operations fatx_file_operations;
+extern const struct file_operations fatx_file_operations;
 extern struct inode_operations fatx_file_inode_operations;
 extern int fatx_notify_change(struct dentry * dentry, struct iattr * attr);
 extern void fatx_truncate(struct inode *inode);
@@ -297,9 +297,9 @@ extern int fatx_sync_bhs(struct buffer_head **bhs, int nr_bhs);
 
 /* fatx/namei.c */
 extern void fatx_printname(const char *name, int length);
-extern struct super_block *fatx_get_sb(struct file_system_type *fs_type,
+extern int fatx_get_sb(struct file_system_type *fs_type,
 					int flags, const char *dev_name,
-					void *data);
+					void *data, struct vfsmount *mnt);
 
 #endif /* __KERNEL__ */
 

@@ -172,7 +172,7 @@ out:
 	return ret;
 }
 
-struct file_operations fatx_dir_operations = {
+const struct file_operations fatx_dir_operations = {
 	.read		= generic_read_dir,
 	.readdir	= fatx_readdir,
 	.ioctl		= NULL,

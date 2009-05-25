@@ -53,7 +53,7 @@ int __init fatx_cache_init(void)
 {
 	fatx_cache_cachep = kmem_cache_create("fatx_cache",
 				sizeof(struct fatx_cache),
-				0, SLAB_RECLAIM_ACCOUNT,
+				0, SLAB_RECLAIM_ACCOUNT|SLAB_MEM_SPREAD,
 				init_once, NULL);
 	if (fatx_cache_cachep == NULL)
 		return -ENOMEM;

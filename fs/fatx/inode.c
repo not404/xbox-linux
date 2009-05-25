@@ -119,7 +119,7 @@ static sector_t _fatx_bmap(struct address_space *mapping, sector_t block)
 	return generic_block_bmap(mapping, block, fatx_get_block);
 }
 
-static struct address_space_operations fatx_aops = {
+static const struct address_space_operations fatx_aops = {
 	.readpage	= fatx_readpage,
 	.writepage	= fatx_writepage,
 	.sync_page	= block_sync_page,
@@ -388,7 +388,8 @@ static int __init fatx_init_inodecache(void)
 {
 	fatx_inode_cachep = kmem_cache_create("fatx_inode_cache",
 					     sizeof(struct fatx_inode_info),
-					     0, SLAB_RECLAIM_ACCOUNT,
+					     0, (SLAB_RECLAIM_ACCOUNT|
+						SLAB_MEM_SPREAD),
 					     init_once, NULL);
 	if (fatx_inode_cachep == NULL)
 		return -ENOMEM;
@@ -407,18 +408,18 @@ static int fatx_remount(struct super_block *sb, int *flags, char *data)
 	return 0;
 }
 
-static int fatx_statfs(struct super_block *sb, struct kstatfs *buf)
+static int fatx_statfs(struct dentry *dentry, struct kstatfs *buf)
 {
-	struct fatx_sb_info *sbi = FATX_SB(sb);
+	struct fatx_sb_info *sbi = FATX_SB(dentry->d_sb);
 
 	/* If the count of free cluster is still unknown, counts it here. */
 	if (sbi->free_clusters == -1) {
-		__s64 err = fatx_count_free_clusters(sb);
+		__s64 err = fatx_count_free_clusters(dentry->d_sb);
 		if (err)
 			return err;
 	}
 
-	buf->f_type = sb->s_magic;
+	buf->f_type = dentry->d_sb->s_magic;
 	buf->f_bsize = sbi->cluster_size;
 	buf->f_blocks = sbi->max_cluster - FAT_START_ENT;
 	buf->f_bfree = sbi->free_clusters;

@@ -46,7 +46,7 @@ static ssize_t fatx_file_writev(struct file *filp, const struct iovec *iov,
 	return retval;
 }
 
-struct file_operations fatx_file_operations = {
+const struct file_operations fatx_file_operations = {
 	.llseek		= generic_file_llseek,
 	.read		= do_sync_read,
 	.write		= do_sync_write,

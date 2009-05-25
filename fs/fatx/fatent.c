@@ -147,19 +147,19 @@ static struct fatxent_operations fatx32_ops = {
 
 static inline void lock_fatx(struct fatx_sb_info *sbi)
 {
-	down(&sbi->fatx_lock);
+	mutex_lock(&sbi->fatx_lock);
 }
 
 static inline void unlock_fatx(struct fatx_sb_info *sbi)
 {
-	up(&sbi->fatx_lock);
+	mutex_unlock(&sbi->fatx_lock);
 }
 
 void fatx_ent_access_init(struct super_block *sb)
 {
 	struct fatx_sb_info *sbi = FATX_SB(sb);
 
-	init_MUTEX(&sbi->fatx_lock);
+	mutex_init(&sbi->fatx_lock);
 
 	switch (sbi->fatx_bits) {
 	case 32:
