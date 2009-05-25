@@ -1,7 +1,6 @@
 #ifndef __XBOXFB_H
 #define __XBOXFB_H
 
-#include <linux/config.h>
 #include <linux/fb.h>
 #include <video/vga.h>
 #include "riva_hw.h"
