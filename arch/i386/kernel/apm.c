@@ -824,8 +824,6 @@ static void apm_do_busy(void)
 
 static void (*original_pm_idle)(void);
 
-extern void default_idle(void);
-
 /**
  * apm_cpu_idle		-	cpu idling for APM capable Linux
  *
@@ -1081,7 +1079,7 @@ static int apm_console_blank(int blank)
 			break;
 	}
 
-	if (error == APM_NOT_ENGAGED && state != APM_STATE_READY) {
+	if (error == APM_NOT_ENGAGED) {
 		static int tried;
 		int eng_error;
 		if (tried++ == 0) {

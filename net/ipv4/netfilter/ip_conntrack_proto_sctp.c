@@ -235,12 +235,15 @@ static int do_basic_checks(struct ip_conntrack *conntrack,
 			flag = 1;
 		}
 
-		/* Cookie Ack/Echo chunks not the first OR 
-		   Init / Init Ack / Shutdown compl chunks not the only chunks */
-		if ((sch->type == SCTP_CID_COOKIE_ACK 
+		/*
+		 * Cookie Ack/Echo chunks not the first OR
+		 * Init / Init Ack / Shutdown compl chunks not the only chunks
+		 * OR zero-length.
+		 */
+		if (((sch->type == SCTP_CID_COOKIE_ACK
 			|| sch->type == SCTP_CID_COOKIE_ECHO
 			|| flag)
-		     && count !=0 ) {
+		      && count !=0) || !sch->length) {
 			DEBUGP("Basic checks failed\n");
 			return 1;
 		}
@@ -609,7 +612,7 @@ static ctl_table ip_ct_net_table[] = {
 static struct ctl_table_header *ip_ct_sysctl_header;
 #endif
 
-static int __init init(void)
+static int __init ip_conntrack_proto_sctp_init(void)
 {
 	int ret;
 
@@ -640,7 +643,7 @@ static int __init init(void)
 	return ret;
 }
 
-static void __exit fini(void)
+static void __exit ip_conntrack_proto_sctp_fini(void)
 {
 	ip_conntrack_protocol_unregister(&ip_conntrack_protocol_sctp);
 #ifdef CONFIG_SYSCTL
@@ -649,8 +652,8 @@ static void __exit fini(void)
 	DEBUGP("SCTP conntrack module unloaded\n");
 }
 
-module_init(init);
-module_exit(fini);
+module_init(ip_conntrack_proto_sctp_init);
+module_exit(ip_conntrack_proto_sctp_fini);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Kiran Kumar Immidi");

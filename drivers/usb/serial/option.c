@@ -28,6 +28,7 @@
   2005-09-10  v0.4.3 added HUAWEI E600 card and Audiovox AirCard
   2005-09-20  v0.4.4 increased recv buffer size: the card sometimes
                      wants to send >2000 bytes.
+  2006-04-10  v0.4.2 fixed two array overrun errors :-/
 
   Work sponsored by: Sigos GmbH, Germany <info@sigos.de>
 
@@ -102,7 +103,7 @@ static struct usb_driver option_driver = {
 	.no_dynamic_id = 	1,
 };
 
-/* The card has three separate interfaces, wich the serial driver
+/* The card has three separate interfaces, which the serial driver
  * recognizes separately, thus num_port=1.
  */
 static struct usb_serial_driver option_3port_device = {
@@ -582,14 +583,14 @@ static void option_setup_urbs(struct usb_serial *serial)
 	portdata = usb_get_serial_port_data(port);
 
 	/* Do indat endpoints first */
-	for (j = 0; j <= N_IN_URB; ++j) {
+	for (j = 0; j < N_IN_URB; ++j) {
 		portdata->in_urbs[j] = option_setup_urb (serial,
                   port->bulk_in_endpointAddress, USB_DIR_IN, port,
                   portdata->in_buffer[j], IN_BUFLEN, option_indat_callback);
 	}
 
 	/* outdat endpoints */
-	for (j = 0; j <= N_OUT_URB; ++j) {
+	for (j = 0; j < N_OUT_URB; ++j) {
 		portdata->out_urbs[j] = option_setup_urb (serial,
                   port->bulk_out_endpointAddress, USB_DIR_OUT, port,
                   portdata->out_buffer[j], OUT_BUFLEN, option_outdat_callback);
@@ -631,13 +632,12 @@ static int option_startup(struct usb_serial *serial)
 	/* Now setup per port private data */
 	for (i = 0; i < serial->num_ports; i++) {
 		port = serial->port[i];
-		portdata = kmalloc(sizeof(*portdata), GFP_KERNEL);
+		portdata = kzalloc(sizeof(*portdata), GFP_KERNEL);
 		if (!portdata) {
 			dbg("%s: kmalloc for option_port_private (%d) failed!.",
 					__FUNCTION__, i);
 			return (1);
 		}
-		memset(portdata, 0, sizeof(struct option_port_private));
 
 		usb_set_serial_port_data(port, portdata);
 

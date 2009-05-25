@@ -2088,21 +2088,28 @@ static int __init alsa_card_opti9xx_init(void)
 	int error;
 	struct platform_device *device;
 
+#ifdef CONFIG_PNP
 	pnp_register_card_driver(&opti9xx_pnpc_driver);
 	if (snd_opti9xx_pnp_is_probed)
 		return 0;
+#endif
 	if (! is_isapnp_selected()) {
 		error = platform_driver_register(&snd_opti9xx_driver);
 		if (error < 0)
 			return error;
 		device = platform_device_register_simple(DRIVER_NAME, -1, NULL, 0);
 		if (!IS_ERR(device)) {
-			snd_opti9xx_platform_device = device;
-			return 0;
+			if (platform_get_drvdata(device)) {
+				snd_opti9xx_platform_device = device;
+				return 0;
+			}
+			platform_device_unregister(device);
 		}
 		platform_driver_unregister(&snd_opti9xx_driver);
 	}
+#ifdef CONFIG_PNP
 	pnp_unregister_card_driver(&opti9xx_pnpc_driver);
+#endif
 #ifdef MODULE
 	printk(KERN_ERR "no OPTi " CHIP_NAME " soundcard found\n");
 #endif
@@ -2115,7 +2122,9 @@ static void __exit alsa_card_opti9xx_exit(void)
 		platform_device_unregister(snd_opti9xx_platform_device);
 		platform_driver_unregister(&snd_opti9xx_driver);
 	}
+#ifdef CONFIG_PNP
 	pnp_unregister_card_driver(&opti9xx_pnpc_driver);
+#endif
 }
 
 module_init(alsa_card_opti9xx_init)

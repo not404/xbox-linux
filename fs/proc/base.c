@@ -104,6 +104,7 @@ enum pid_directory_inos {
 	PROC_TGID_MAPS,
 	PROC_TGID_NUMA_MAPS,
 	PROC_TGID_MOUNTS,
+	PROC_TGID_MOUNTSTATS,
 	PROC_TGID_WCHAN,
 #ifdef CONFIG_MMU
 	PROC_TGID_SMAPS,
@@ -144,6 +145,7 @@ enum pid_directory_inos {
 	PROC_TID_MAPS,
 	PROC_TID_NUMA_MAPS,
 	PROC_TID_MOUNTS,
+	PROC_TID_MOUNTSTATS,
 	PROC_TID_WCHAN,
 #ifdef CONFIG_MMU
 	PROC_TID_SMAPS,
@@ -201,6 +203,7 @@ static struct pid_entry tgid_base_stuff[] = {
 	E(PROC_TGID_ROOT,      "root",    S_IFLNK|S_IRWXUGO),
 	E(PROC_TGID_EXE,       "exe",     S_IFLNK|S_IRWXUGO),
 	E(PROC_TGID_MOUNTS,    "mounts",  S_IFREG|S_IRUGO),
+	E(PROC_TGID_MOUNTSTATS, "mountstats", S_IFREG|S_IRUSR),
 #ifdef CONFIG_MMU
 	E(PROC_TGID_SMAPS,     "smaps",   S_IFREG|S_IRUGO),
 #endif
@@ -294,16 +297,20 @@ static int proc_fd_link(struct inode *inode, struct dentry **dentry, struct vfsm
 
 	files = get_files_struct(task);
 	if (files) {
-		rcu_read_lock();
+		/*
+		 * We are not taking a ref to the file structure, so we must
+		 * hold ->file_lock.
+		 */
+		spin_lock(&files->file_lock);
 		file = fcheck_files(files, fd);
 		if (file) {
 			*mnt = mntget(file->f_vfsmnt);
 			*dentry = dget(file->f_dentry);
-			rcu_read_unlock();
+			spin_unlock(&files->file_lock);
 			put_files_struct(files);
 			return 0;
 		}
-		rcu_read_unlock();
+		spin_unlock(&files->file_lock);
 		put_files_struct(files);
 	}
 	return -ENOENT;
@@ -531,12 +538,15 @@ static int proc_oom_score(struct task_struct *task, char *buffer)
 
 /* If the process being read is separated by chroot from the reading process,
  * don't let the reader access the threads.
+ *
+ * note: this does dput(root) and mntput(vfsmnt) on exit.
  */
 static int proc_check_chroot(struct dentry *root, struct vfsmount *vfsmnt)
 {
 	struct dentry *de, *base;
 	struct vfsmount *our_vfsmnt, *mnt;
 	int res = 0;
+
 	read_lock(&current->fs->lock);
 	our_vfsmnt = mntget(current->fs->rootmnt);
 	base = dget(current->fs->root);
@@ -546,11 +556,11 @@ static int proc_check_chroot(struct dentry *root, struct vfsmount *vfsmnt)
 	de = root;
 	mnt = vfsmnt;
 
-	while (vfsmnt != our_vfsmnt) {
-		if (vfsmnt == vfsmnt->mnt_parent)
+	while (mnt != our_vfsmnt) {
+		if (mnt == mnt->mnt_parent)
 			goto out;
-		de = vfsmnt->mnt_mountpoint;
-		vfsmnt = vfsmnt->mnt_parent;
+		de = mnt->mnt_mountpoint;
+		mnt = mnt->mnt_parent;
 	}
 
 	if (!is_subdir(de, base))
@@ -561,7 +571,7 @@ exit:
 	dput(base);
 	mntput(our_vfsmnt);
 	dput(root);
-	mntput(mnt);
+	mntput(vfsmnt);
 	return res;
 out:
 	spin_unlock(&vfsmount_lock);
@@ -730,6 +740,38 @@ static struct file_operations proc_mounts_operations = {
 	.llseek		= seq_lseek,
 	.release	= mounts_release,
 	.poll		= mounts_poll,
+};
+
+extern struct seq_operations mountstats_op;
+static int mountstats_open(struct inode *inode, struct file *file)
+{
+	struct task_struct *task = proc_task(inode);
+	int ret = seq_open(file, &mountstats_op);
+
+	if (!ret) {
+		struct seq_file *m = file->private_data;
+		struct namespace *namespace;
+		task_lock(task);
+		namespace = task->namespace;
+		if (namespace)
+			get_namespace(namespace);
+		task_unlock(task);
+
+		if (namespace)
+			m->private = namespace;
+		else {
+			seq_release(inode, file);
+			ret = -EINVAL;
+		}
+	}
+	return ret;
+}
+
+static struct file_operations proc_mountstats_operations = {
+	.open		= mountstats_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= mounts_release,
 };
 
 #define PROC_BLOCK_SIZE	(3*1024)		/* 4K page size but our output routines use some slack for overruns */
@@ -1485,7 +1527,12 @@ static struct dentry *proc_lookupfd(struct inode * dir, struct dentry * dentry, 
 	if (!files)
 		goto out_unlock;
 	inode->i_mode = S_IFLNK;
-	rcu_read_lock();
+
+	/*
+	 * We are not taking a ref to the file structure, so we must
+	 * hold ->file_lock.
+	 */
+	spin_lock(&files->file_lock);
 	file = fcheck_files(files, fd);
 	if (!file)
 		goto out_unlock2;
@@ -1493,7 +1540,7 @@ static struct dentry *proc_lookupfd(struct inode * dir, struct dentry * dentry, 
 		inode->i_mode |= S_IRUSR | S_IXUSR;
 	if (file->f_mode & 2)
 		inode->i_mode |= S_IWUSR | S_IXUSR;
-	rcu_read_unlock();
+	spin_unlock(&files->file_lock);
 	put_files_struct(files);
 	inode->i_op = &proc_pid_link_inode_operations;
 	inode->i_size = 64;
@@ -1503,7 +1550,7 @@ static struct dentry *proc_lookupfd(struct inode * dir, struct dentry * dentry, 
 	return NULL;
 
 out_unlock2:
-	rcu_read_unlock();
+	spin_unlock(&files->file_lock);
 	put_files_struct(files);
 out_unlock:
 	iput(inode);
@@ -1730,6 +1777,10 @@ static struct dentry *proc_pident_lookup(struct inode *dir,
 			inode->i_fop = &proc_smaps_operations;
 			break;
 #endif
+		case PROC_TID_MOUNTSTATS:
+		case PROC_TGID_MOUNTSTATS:
+			inode->i_fop = &proc_mountstats_operations;
+			break;
 #ifdef CONFIG_SECURITY
 		case PROC_TID_ATTR:
 			inode->i_nlink = 2;

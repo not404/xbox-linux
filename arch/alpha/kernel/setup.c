@@ -24,16 +24,19 @@
 #include <linux/config.h>	/* CONFIG_ALPHA_LCA etc */
 #include <linux/mc146818rtc.h>
 #include <linux/console.h>
+#include <linux/cpu.h>
 #include <linux/errno.h>
 #include <linux/init.h>
 #include <linux/string.h>
 #include <linux/ioport.h>
+#include <linux/platform_device.h>
 #include <linux/bootmem.h>
 #include <linux/pci.h>
 #include <linux/seq_file.h>
 #include <linux/root_dev.h>
 #include <linux/initrd.h>
 #include <linux/eisa.h>
+#include <linux/pfn.h>
 #ifdef CONFIG_MAGIC_SYSRQ
 #include <linux/sysrq.h>
 #include <linux/reboot.h>
@@ -42,7 +45,7 @@
 #include <asm/setup.h>
 #include <asm/io.h>
 
-extern struct notifier_block *panic_notifier_list;
+extern struct atomic_notifier_head panic_notifier_list;
 static int alpha_panic_event(struct notifier_block *, unsigned long, void *);
 static struct notifier_block alpha_panic_block = {
 	alpha_panic_event,
@@ -241,9 +244,6 @@ reserve_std_resources(void)
 		request_resource(io, standard_io_resources+i);
 }
 
-#define PFN_UP(x)	(((x) + PAGE_SIZE-1) >> PAGE_SHIFT)
-#define PFN_DOWN(x)	((x) >> PAGE_SHIFT)
-#define PFN_PHYS(x)	((x) << PAGE_SHIFT)
 #define PFN_MAX		PFN_DOWN(0x80000000)
 #define for_each_mem_cluster(memdesc, cluster, i)		\
 	for ((cluster) = (memdesc)->cluster, (i) = 0;		\
@@ -472,10 +472,21 @@ page_is_ram(unsigned long pfn)
 	return 0;
 }
 
-#undef PFN_UP
-#undef PFN_DOWN
-#undef PFN_PHYS
-#undef PFN_MAX
+static int __init
+register_cpus(void)
+{
+	int i;
+
+	for_each_possible_cpu(i) {
+		struct cpu *p = kzalloc(sizeof(*p), GFP_KERNEL);
+		if (!p)
+			return -ENOMEM;
+		register_cpu(p, i, NULL);
+	}
+	return 0;
+}
+
+arch_initcall(register_cpus);
 
 void __init
 setup_arch(char **cmdline_p)
@@ -507,7 +518,8 @@ setup_arch(char **cmdline_p)
 	}
 
 	/* Register a call for panic conditions. */
-	notifier_chain_register(&panic_notifier_list, &alpha_panic_block);
+	atomic_notifier_chain_register(&panic_notifier_list,
+			&alpha_panic_block);
 
 #ifdef CONFIG_ALPHA_GENERIC
 	/* Assume that we've booted from SRM if we haven't booted from MILO.
@@ -1484,3 +1496,20 @@ alpha_panic_event(struct notifier_block *this, unsigned long event, void *ptr)
 #endif
         return NOTIFY_DONE;
 }
+
+static __init int add_pcspkr(void)
+{
+	struct platform_device *pd;
+	int ret;
+
+	pd = platform_device_alloc("pcspkr", -1);
+	if (!pd)
+		return -ENOMEM;
+
+	ret = platform_device_add(pd);
+	if (ret)
+		platform_device_put(pd);
+
+	return ret;
+}
+device_initcall(add_pcspkr);
