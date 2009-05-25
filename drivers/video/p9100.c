@@ -48,7 +48,9 @@ static struct fb_ops p9100_ops = {
 	.fb_imageblit		= cfb_imageblit,
 	.fb_mmap		= p9100_mmap,
 	.fb_ioctl		= p9100_ioctl,
-	.fb_cursor		= soft_cursor,
+#ifdef CONFIG_COMPAT
+	.fb_compat_ioctl	= sbusfb_compat_ioctl,
+#endif
 };
 
 /* P9100 control registers */
@@ -138,7 +140,6 @@ struct p9100_par {
 	unsigned long		fbsize;
 
 	struct sbus_dev		*sdev;
-	struct list_head	list;
 };
 
 /**

@@ -49,7 +49,7 @@ static unsigned int ip_nat_htable_size;
 static struct list_head *bysource;
 
 #define MAX_IP_NAT_PROTO 256
-struct ip_nat_protocol *ip_nat_protos[MAX_IP_NAT_PROTO];
+static struct ip_nat_protocol *ip_nat_protos[MAX_IP_NAT_PROTO];
 
 static inline struct ip_nat_protocol *
 __ip_nat_proto_find(u_int8_t protonum)
@@ -66,10 +66,8 @@ ip_nat_proto_find_get(u_int8_t protonum)
 	 * removed until we've grabbed the reference */
 	preempt_disable();
 	p = __ip_nat_proto_find(protonum);
-	if (p) {
-		if (!try_module_get(p->me))
-			p = &ip_nat_unknown_protocol;
-	}
+	if (!try_module_get(p->me))
+		p = &ip_nat_unknown_protocol;
 	preempt_enable();
 
 	return p;

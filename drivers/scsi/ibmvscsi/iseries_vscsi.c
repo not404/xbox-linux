@@ -28,10 +28,10 @@
  * hypervisor system or a converged hypervisor system.
  */
 
-#include <asm/iSeries/vio.h>
-#include <asm/iSeries/HvLpEvent.h>
-#include <asm/iSeries/HvTypes.h>
-#include <asm/iSeries/HvLpConfig.h>
+#include <asm/iseries/vio.h>
+#include <asm/iseries/hv_lp_event.h>
+#include <asm/iseries/hv_types.h>
+#include <asm/iseries/hv_lp_config.h>
 #include <asm/vio.h>
 #include <linux/device.h>
 #include "ibmvscsi.h"
@@ -117,9 +117,10 @@ void ibmvscsi_release_crq_queue(struct crq_queue *queue,
  *
  * no-op for iSeries
  */
-void ibmvscsi_reset_crq_queue(struct crq_queue *queue,
+int ibmvscsi_reset_crq_queue(struct crq_queue *queue,
 			      struct ibmvscsi_host_data *hostdata)
 {
+	return 0;
 }
 
 /**

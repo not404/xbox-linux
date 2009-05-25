@@ -44,10 +44,10 @@
 #include <linux/circ_buf.h>
 
 /****************** driver description and version ********************/
-#define DRIVER_VERSION		"v0.1.5"
+#define DRIVER_VERSION		"v0.1.6"
 #define DRIVER_AUTHOR		"Marko Friedemann <mfr@bmx-chemnitz.de>,\
  Oliver Schwartz <Oliver.Schwartz@gmx.de>, Georg Lukas <georg@op-co.de>,\
- Thomas Pedley <Gentoox@shallax.com>"
+ Thomas Pedley <Gentoox@shallax.com>, Edgar Hucek <hostmaster@ed-soft.at>"
 
 #define DRIVER_DESC		"driver for Xbox controllers"
 
@@ -60,7 +60,7 @@
 
 /************************* the device struct **************************/
 struct usb_xpad {
-	struct input_dev dev;			/* input device interface */
+	struct input_dev *dev;			/* input device interface */
 	struct usb_device *udev;		/* usb device */
 
 	struct urb *irq_in;			/* urb for int. in report */
@@ -76,6 +76,7 @@ struct usb_xpad {
 	int right_offset_y;
 
 	int isMat;				/* is this a dancepad/mat? */
+	int is360;				/* is this a Xbox 360 Controller */
 
 #ifdef CONFIG_USB_XPAD_RUMBLE
 	int rumble_enabled;			/* ioctl can toggle rumble */
@@ -100,6 +101,7 @@ struct xpad_device {
 	u16 idProduct;
 	u8  isMat;
 	char *name;
+	u8  is360;
 };
 
 

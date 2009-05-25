@@ -29,6 +29,8 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
+#include <linux/string.h>
+#include <linux/slab.h>
 
 #include "dvb_frontend.h"
 #include "mt312_priv.h"
@@ -552,7 +554,7 @@ static int mt312_set_frontend(struct dvb_frontend* fe,
 	if ((ret = mt312_write(state, SYM_RATE_H, buf, sizeof(buf))) < 0)
 		return ret;
 
-        mt312_reset(state, 0);
+	mt312_reset(state, 0);
 
 	return 0;
 }
@@ -675,8 +677,7 @@ struct dvb_frontend* mt312_attach(const struct mt312_config* config,
 	return &state->frontend;
 
 error:
-	if (state)
-		kfree(state);
+	kfree(state);
 	return NULL;
 }
 
@@ -694,7 +695,7 @@ static struct dvb_frontend_ops vp310_mt312_ops = {
 		    FE_CAN_FEC_1_2 | FE_CAN_FEC_2_3 |
 		    FE_CAN_FEC_3_4 | FE_CAN_FEC_5_6 | FE_CAN_FEC_7_8 |
 		    FE_CAN_FEC_AUTO | FE_CAN_QPSK | FE_CAN_MUTE_TS |
-	            FE_CAN_RECOVER
+		    FE_CAN_RECOVER
 	},
 
 	.release = mt312_release,

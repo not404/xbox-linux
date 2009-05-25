@@ -85,6 +85,12 @@ static void mmc_blk_put(struct mmc_blk_data *md)
 	up(&open_lock);
 }
 
+static inline int mmc_blk_readonly(struct mmc_card *card)
+{
+	return mmc_card_readonly(card) ||
+	       !(card->csd.cmdclass & CCC_BLOCK_WRITE);
+}
+
 static int mmc_blk_open(struct inode *inode, struct file *filp)
 {
 	struct mmc_blk_data *md;
@@ -97,7 +103,7 @@ static int mmc_blk_open(struct inode *inode, struct file *filp)
 		ret = 0;
 
 		if ((filp->f_mode & FMODE_WRITE) &&
-			mmc_card_readonly(md->queue.card))
+			mmc_blk_readonly(md->queue.card))
 			ret = -EROFS;
 	}
 
@@ -197,7 +203,6 @@ static int mmc_blk_issue_rq(struct mmc_queue *mq, struct request *req)
 			brq.data.flags |= MMC_DATA_READ;
 		} else {
 			brq.cmd.opcode = MMC_WRITE_BLOCK;
-			brq.cmd.flags = MMC_RSP_R1B;
 			brq.data.flags |= MMC_DATA_WRITE;
 			brq.data.blocks = 1;
 		}
@@ -354,7 +359,12 @@ static struct mmc_blk_data *mmc_blk_alloc(struct mmc_card *card)
 		md->block_bits = card->csd.read_blkbits;
 
 		blk_queue_hardsect_size(md->queue.queue, 1 << md->block_bits);
-		set_capacity(md->disk, card->csd.capacity);
+
+		/*
+		 * The CSD capacity field is in units of read_blkbits.
+		 * set_capacity takes units of 512 bytes.
+		 */
+		set_capacity(md->disk, card->csd.capacity << (card->csd.read_blkbits - 9));
 	}
  out:
 	return md;
@@ -368,7 +378,7 @@ mmc_blk_set_blksize(struct mmc_blk_data *md, struct mmc_card *card)
 
 	mmc_card_claim_host(card);
 	cmd.opcode = MMC_SET_BLOCKLEN;
-	cmd.arg = 1 << card->csd.read_blkbits;
+	cmd.arg = 1 << md->block_bits;
 	cmd.flags = MMC_RSP_R1;
 	err = mmc_wait_for_cmd(card->host, &cmd, 5);
 	mmc_card_release_host(card);
@@ -407,10 +417,9 @@ static int mmc_blk_probe(struct mmc_card *card)
 	if (err)
 		goto out;
 
-	printk(KERN_INFO "%s: %s %s %dKiB %s\n",
+	printk(KERN_INFO "%s: %s %s %luKiB %s\n",
 		md->disk->disk_name, mmc_card_id(card), mmc_card_name(card),
-		(card->csd.capacity << card->csd.read_blkbits) / 1024,
-		mmc_card_readonly(card)?"(ro)":"");
+		get_capacity(md->disk) >> 1, mmc_blk_readonly(card)?"(ro)":"");
 
 	mmc_set_drvdata(card, md);
 	add_disk(md->disk);

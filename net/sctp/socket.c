@@ -156,10 +156,6 @@ static inline void sctp_set_owner_w(struct sctp_chunk *chunk)
 				sizeof(struct sk_buff) +
 				sizeof(struct sctp_chunk);
 
-	sk->sk_wmem_queued += SCTP_DATA_SNDSIZE(chunk) +
-				sizeof(struct sk_buff) +
-				sizeof(struct sctp_chunk);
-
 	atomic_add(sizeof(struct sctp_chunk), &sk->sk_wmem_alloc);
 }
 
@@ -1010,6 +1006,19 @@ static int __sctp_connect(struct sock* sk,
 					err = -EAGAIN;
 					goto out_free;
 				}
+			} else {
+				/*
+				 * If an unprivileged user inherits a 1-many 
+				 * style socket with open associations on a 
+				 * privileged port, it MAY be permitted to 
+				 * accept new associations, but it SHOULD NOT 
+				 * be permitted to open new associations.
+				 */
+				if (ep->base.bind_addr.port < PROT_SOCK &&
+				    !capable(CAP_NET_BIND_SERVICE)) {
+					err = -EACCES;
+					goto out_free;
+				}
 			}
 
 			scope = sctp_scope(&to);
@@ -1389,27 +1398,27 @@ SCTP_STATIC int sctp_sendmsg(struct kiocb *iocb, struct sock *sk,
 	SCTP_DEBUG_PRINTK("msg_len: %zu, sinfo_flags: 0x%x\n",
 			  msg_len, sinfo_flags);
 
-	/* MSG_EOF or MSG_ABORT cannot be set on a TCP-style socket. */
-	if (sctp_style(sk, TCP) && (sinfo_flags & (MSG_EOF | MSG_ABORT))) {
+	/* SCTP_EOF or SCTP_ABORT cannot be set on a TCP-style socket. */
+	if (sctp_style(sk, TCP) && (sinfo_flags & (SCTP_EOF | SCTP_ABORT))) {
 		err = -EINVAL;
 		goto out_nounlock;
 	}
 
-	/* If MSG_EOF is set, no data can be sent. Disallow sending zero
-	 * length messages when MSG_EOF|MSG_ABORT is not set.
-	 * If MSG_ABORT is set, the message length could be non zero with
+	/* If SCTP_EOF is set, no data can be sent. Disallow sending zero
+	 * length messages when SCTP_EOF|SCTP_ABORT is not set.
+	 * If SCTP_ABORT is set, the message length could be non zero with
 	 * the msg_iov set to the user abort reason.
  	 */
-	if (((sinfo_flags & MSG_EOF) && (msg_len > 0)) ||
-	    (!(sinfo_flags & (MSG_EOF|MSG_ABORT)) && (msg_len == 0))) {
+	if (((sinfo_flags & SCTP_EOF) && (msg_len > 0)) ||
+	    (!(sinfo_flags & (SCTP_EOF|SCTP_ABORT)) && (msg_len == 0))) {
 		err = -EINVAL;
 		goto out_nounlock;
 	}
 
-	/* If MSG_ADDR_OVER is set, there must be an address
+	/* If SCTP_ADDR_OVER is set, there must be an address
 	 * specified in msg_name.
 	 */
-	if ((sinfo_flags & MSG_ADDR_OVER) && (!msg->msg_name)) {
+	if ((sinfo_flags & SCTP_ADDR_OVER) && (!msg->msg_name)) {
 		err = -EINVAL;
 		goto out_nounlock;
 	}
@@ -1458,14 +1467,14 @@ SCTP_STATIC int sctp_sendmsg(struct kiocb *iocb, struct sock *sk,
 			goto out_unlock;
 		}
 
-		if (sinfo_flags & MSG_EOF) {
+		if (sinfo_flags & SCTP_EOF) {
 			SCTP_DEBUG_PRINTK("Shutting down association: %p\n",
 					  asoc);
 			sctp_primitive_SHUTDOWN(asoc, NULL);
 			err = 0;
 			goto out_unlock;
 		}
-		if (sinfo_flags & MSG_ABORT) {
+		if (sinfo_flags & SCTP_ABORT) {
 			SCTP_DEBUG_PRINTK("Aborting association: %p\n", asoc);
 			sctp_primitive_ABORT(asoc, msg);
 			err = 0;
@@ -1477,7 +1486,7 @@ SCTP_STATIC int sctp_sendmsg(struct kiocb *iocb, struct sock *sk,
 	if (!asoc) {
 		SCTP_DEBUG_PRINTK("There is no association yet.\n");
 
-		if (sinfo_flags & (MSG_EOF | MSG_ABORT)) {
+		if (sinfo_flags & (SCTP_EOF | SCTP_ABORT)) {
 			err = -EINVAL;
 			goto out_unlock;
 		}
@@ -1513,6 +1522,19 @@ SCTP_STATIC int sctp_sendmsg(struct kiocb *iocb, struct sock *sk,
 		if (!ep->base.bind_addr.port) {
 			if (sctp_autobind(sk)) {
 				err = -EAGAIN;
+				goto out_unlock;
+			}
+		} else {
+			/*
+			 * If an unprivileged user inherits a one-to-many
+			 * style socket with open associations on a privileged
+			 * port, it MAY be permitted to accept new associations,
+			 * but it SHOULD NOT be permitted to open new
+			 * associations.
+			 */
+			if (ep->base.bind_addr.port < PROT_SOCK &&
+			    !capable(CAP_NET_BIND_SERVICE)) {
+				err = -EACCES;
 				goto out_unlock;
 			}
 		}
@@ -1611,10 +1633,10 @@ SCTP_STATIC int sctp_sendmsg(struct kiocb *iocb, struct sock *sk,
 
 	/* If an address is passed with the sendto/sendmsg call, it is used
 	 * to override the primary destination address in the TCP model, or
-	 * when MSG_ADDR_OVER flag is set in the UDP model.
+	 * when SCTP_ADDR_OVER flag is set in the UDP model.
 	 */
 	if ((sctp_style(sk, TCP) && msg_name) ||
-	    (sinfo_flags & MSG_ADDR_OVER)) {
+	    (sinfo_flags & SCTP_ADDR_OVER)) {
 		chunk_tp = sctp_assoc_lookup_paddr(asoc, &to);
 		if (!chunk_tp) {
 			err = -EINVAL;
@@ -1906,7 +1928,6 @@ static int sctp_setsockopt_autoclose(struct sock *sk, char __user *optval,
 	if (copy_from_user(&sp->autoclose, optval, optlen))
 		return -EFAULT;
 
-	sp->ep->timeouts[SCTP_EVENT_TIMEOUT_AUTOCLOSE] = sp->autoclose * HZ;
 	return 0;
 }
 
@@ -2306,16 +2327,14 @@ static int sctp_setsockopt_maxseg(struct sock *sk, char __user *optval, int optl
 		return -EINVAL;
 	if (get_user(val, (int __user *)optval))
 		return -EFAULT;
-	if ((val < 8) || (val > SCTP_MAX_CHUNK_LEN))
+	if ((val != 0) && ((val < 8) || (val > SCTP_MAX_CHUNK_LEN)))
 		return -EINVAL;
 	sp->user_frag = val;
 
-	if (val) {
-		/* Update the frag_point of the existing associations. */
-		list_for_each(pos, &(sp->ep->asocs)) {
-			asoc = list_entry(pos, struct sctp_association, asocs);
-			asoc->frag_point = sctp_frag_point(sp, asoc->pmtu); 
-		}
+	/* Update the frag_point of the existing associations. */
+	list_for_each(pos, &(sp->ep->asocs)) {
+		asoc = list_entry(pos, struct sctp_association, asocs);
+		asoc->frag_point = sctp_frag_point(sp, asoc->pmtu); 
 	}
 
 	return 0;
@@ -2384,14 +2403,14 @@ static int sctp_setsockopt_peer_primary_addr(struct sock *sk, char __user *optva
 static int sctp_setsockopt_adaption_layer(struct sock *sk, char __user *optval,
 					  int optlen)
 {
-	__u32 val;
+	struct sctp_setadaption adaption;
 
-	if (optlen < sizeof(__u32))
+	if (optlen != sizeof(struct sctp_setadaption))
 		return -EINVAL;
-	if (copy_from_user(&val, optval, sizeof(__u32)))
+	if (copy_from_user(&adaption, optval, optlen)) 
 		return -EFAULT;
 
-	sctp_sk(sk)->adaption_ind = val;
+	sctp_sk(sk)->adaption_ind = adaption.ssb_adaption_ind;
 
 	return 0;
 }
@@ -3402,7 +3421,7 @@ static int sctp_copy_laddrs_to_user_old(struct sock *sk, __u16 port, int max_add
 }
 
 static int sctp_copy_laddrs_to_user(struct sock *sk, __u16 port,
-				    void * __user *to, size_t space_left)
+				    void __user **to, size_t space_left)
 {
 	struct list_head *pos;
 	struct sctp_sockaddr_entry *addr;
@@ -3672,17 +3691,15 @@ static int sctp_getsockopt_primary_addr(struct sock *sk, int len,
 static int sctp_getsockopt_adaption_layer(struct sock *sk, int len,
 				  char __user *optval, int __user *optlen)
 {
-	__u32 val;
+	struct sctp_setadaption adaption;
 
-	if (len < sizeof(__u32))
+	if (len != sizeof(struct sctp_setadaption))
 		return -EINVAL;
 
-	len = sizeof(__u32);
-	val = sctp_sk(sk)->adaption_ind;
-	if (put_user(len, optlen))
+	adaption.ssb_adaption_ind = sctp_sk(sk)->adaption_ind;
+	if (copy_to_user(optval, &adaption, len))
 		return -EFAULT;
-	if (copy_to_user(optval, &val, len))
-		return -EFAULT;
+
 	return 0;
 }
 
@@ -4405,7 +4422,7 @@ cleanup:
  * tcp_poll().  Note that, based on these implementations, we don't
  * lock the socket in this function, even though it seems that,
  * ideally, locking or some other mechanisms can be used to ensure
- * the integrity of the counters (sndbuf and wmem_queued) used
+ * the integrity of the counters (sndbuf and wmem_alloc) used
  * in this place.  We assume that we don't need locks either until proven
  * otherwise.
  *
@@ -4640,8 +4657,8 @@ SCTP_STATIC int sctp_msghdr_parse(const struct msghdr *msg,
 
 			/* Minimally, validate the sinfo_flags. */
 			if (cmsgs->info->sinfo_flags &
-			    ~(MSG_UNORDERED | MSG_ADDR_OVER |
-			      MSG_ABORT | MSG_EOF))
+			    ~(SCTP_UNORDERED | SCTP_ADDR_OVER |
+			      SCTP_ABORT | SCTP_EOF))
 				return -EINVAL;
 			break;
 
@@ -4722,11 +4739,6 @@ static struct sk_buff *sctp_skb_recv_datagram(struct sock *sk, int flags,
 	struct sk_buff *skb;
 	long timeo;
 
-	/* Caller is allowed not to check sk->sk_err before calling.  */
-	error = sock_error(sk);
-	if (error)
-		goto no_packet;
-
 	timeo = sock_rcvtimeo(sk, noblock);
 
 	SCTP_DEBUG_PRINTK("Timeout: timeo: %ld, MAX: %ld.\n",
@@ -4752,6 +4764,11 @@ static struct sk_buff *sctp_skb_recv_datagram(struct sock *sk, int flags,
 
 		if (skb)
 			return skb;
+
+		/* Caller is allowed not to check sk->sk_err before calling. */
+		error = sock_error(sk);
+		if (error)
+			goto no_packet;
 
 		if (sk->sk_shutdown & RCV_SHUTDOWN)
 			break;
@@ -4809,10 +4826,6 @@ static void sctp_wfree(struct sk_buff *skb)
 	asoc = chunk->asoc;
 	sk = asoc->base.sk;
 	asoc->sndbuf_used -= SCTP_DATA_SNDSIZE(chunk) +
-				sizeof(struct sk_buff) +
-				sizeof(struct sctp_chunk);
-
-	sk->sk_wmem_queued -= SCTP_DATA_SNDSIZE(chunk) +
 				sizeof(struct sk_buff) +
 				sizeof(struct sctp_chunk);
 
@@ -4899,7 +4912,7 @@ void sctp_write_space(struct sock *sk)
 
 /* Is there any sndbuf space available on the socket?
  *
- * Note that wmem_queued is the sum of the send buffers on all of the
+ * Note that sk_wmem_alloc is the sum of the send buffers on all of the
  * associations on the same socket.  For a UDP-style socket with
  * multiple associations, it is possible for it to be "unwriteable"
  * prematurely.  I assume that this is acceptable because
@@ -4912,7 +4925,7 @@ static int sctp_writeable(struct sock *sk)
 {
 	int amt = 0;
 
-	amt = sk->sk_sndbuf - sk->sk_wmem_queued;
+	amt = sk->sk_sndbuf - atomic_read(&sk->sk_wmem_alloc);
 	if (amt < 0)
 		amt = 0;
 	return amt;
@@ -5093,8 +5106,10 @@ static void sctp_sock_migrate(struct sock *oldsk, struct sock *newsk,
 	sctp_skb_for_each(skb, &oldsk->sk_receive_queue, tmp) {
 		event = sctp_skb2event(skb);
 		if (event->asoc == assoc) {
+			sock_rfree(skb);
 			__skb_unlink(skb, &oldsk->sk_receive_queue);
 			__skb_queue_tail(&newsk->sk_receive_queue, skb);
+			skb_set_owner_r(skb, newsk);
 		}
 	}
 
@@ -5122,8 +5137,10 @@ static void sctp_sock_migrate(struct sock *oldsk, struct sock *newsk,
 		sctp_skb_for_each(skb, &oldsp->pd_lobby, tmp) {
 			event = sctp_skb2event(skb);
 			if (event->asoc == assoc) {
+				sock_rfree(skb);
 				__skb_unlink(skb, &oldsp->pd_lobby);
 				__skb_queue_tail(queue, skb);
+				skb_set_owner_r(skb, newsk);
 			}
 		}
 

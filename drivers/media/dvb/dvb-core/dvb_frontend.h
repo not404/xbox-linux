@@ -41,10 +41,10 @@
 #include "dvbdev.h"
 
 struct dvb_frontend_tune_settings {
-        int min_delay_ms;
-        int step_size;
-        int max_drift;
-        struct dvb_frontend_parameters parameters;
+	int min_delay_ms;
+	int step_size;
+	int max_drift;
+	struct dvb_frontend_parameters parameters;
 };
 
 struct dvb_frontend;
@@ -100,5 +100,8 @@ extern int dvb_register_frontend(struct dvb_adapter* dvb,
 				 struct dvb_frontend* fe);
 
 extern int dvb_unregister_frontend(struct dvb_frontend* fe);
+
+extern void dvb_frontend_sleep_until(struct timeval *waketime, u32 add_usec);
+extern s32 timeval_usec_diff(struct timeval lasttime, struct timeval curtime);
 
 #endif

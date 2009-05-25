@@ -338,30 +338,20 @@ int do_adjtimex(struct timex *txc)
 		        if (mtemp >= MINSEC) {
 			    ltemp = (time_offset / mtemp) << (SHIFT_USEC -
 							      SHIFT_UPDATE);
-			    if (ltemp < 0)
-			        time_freq -= -ltemp >> SHIFT_KH;
-			    else
-			        time_freq += ltemp >> SHIFT_KH;
+			    time_freq += shift_right(ltemp, SHIFT_KH);
 			} else /* calibration interval too short (p. 12) */
 				result = TIME_ERROR;
 		    } else {	/* PLL mode */
 		        if (mtemp < MAXSEC) {
 			    ltemp *= mtemp;
-			    if (ltemp < 0)
-			        time_freq -= -ltemp >> (time_constant +
-							time_constant +
-							SHIFT_KF - SHIFT_USEC);
-			    else
-			        time_freq += ltemp >> (time_constant +
+			    time_freq += shift_right(ltemp,(time_constant +
 						       time_constant +
-						       SHIFT_KF - SHIFT_USEC);
+						       SHIFT_KF - SHIFT_USEC));
 			} else /* calibration interval too long (p. 12) */
 				result = TIME_ERROR;
 		    }
-		    if (time_freq > time_tolerance)
-		        time_freq = time_tolerance;
-		    else if (time_freq < -time_tolerance)
-		        time_freq = -time_tolerance;
+		    time_freq = min(time_freq, time_tolerance);
+		    time_freq = max(time_freq, -time_tolerance);
 		} /* STA_PLL || STA_PPSTIME */
 	    } /* txc->modes & ADJ_OFFSET */
 	    if (txc->modes & ADJ_TICK) {
@@ -384,10 +374,7 @@ leave:	if ((time_status & (STA_UNSYNC|STA_CLOCKERR)) != 0
 	if ((txc->modes & ADJ_OFFSET_SINGLESHOT) == ADJ_OFFSET_SINGLESHOT)
 	    txc->offset	   = save_adjust;
 	else {
-	    if (time_offset < 0)
-		txc->offset = -(-time_offset >> SHIFT_UPDATE);
-	    else
-		txc->offset = time_offset >> SHIFT_UPDATE;
+	    txc->offset = shift_right(time_offset, SHIFT_UPDATE);
 	}
 	txc->freq	   = time_freq + pps_freq;
 	txc->maxerror	   = time_maxerror;
@@ -532,6 +519,7 @@ int do_settimeofday (struct timespec *tv)
 	clock_was_set();
 	return 0;
 }
+EXPORT_SYMBOL(do_settimeofday);
 
 void do_gettimeofday (struct timeval *tv)
 {
@@ -572,6 +560,28 @@ void getnstimeofday(struct timespec *tv)
 }
 EXPORT_SYMBOL_GPL(getnstimeofday);
 #endif
+
+void getnstimestamp(struct timespec *ts)
+{
+	unsigned int seq;
+	struct timespec wall2mono;
+
+	/* synchronize with settimeofday() changes */
+	do {
+		seq = read_seqbegin(&xtime_lock);
+		getnstimeofday(ts);
+		wall2mono = wall_to_monotonic;
+	} while(unlikely(read_seqretry(&xtime_lock, seq)));
+
+	/* adjust to monotonicaly-increasing values */
+	ts->tv_sec += wall2mono.tv_sec;
+	ts->tv_nsec += wall2mono.tv_nsec;
+	while (unlikely(ts->tv_nsec >= NSEC_PER_SEC)) {
+		ts->tv_nsec -= NSEC_PER_SEC;
+		ts->tv_sec++;
+	}
+}
+EXPORT_SYMBOL_GPL(getnstimestamp);
 
 #if (BITS_PER_LONG < 64)
 u64 get_jiffies_64(void)

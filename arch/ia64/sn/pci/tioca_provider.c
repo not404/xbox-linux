@@ -11,6 +11,7 @@
 #include <linux/pci.h>
 #include <asm/sn/sn_sal.h>
 #include <asm/sn/addrs.h>
+#include <asm/sn/io.h>
 #include <asm/sn/pcidev.h>
 #include <asm/sn/pcibus_provider_defs.h>
 #include <asm/sn/tioca_provider.h>
@@ -37,10 +38,10 @@ tioca_gart_init(struct tioca_kernel *tioca_kern)
 	uint64_t offset;
 	struct page *tmp;
 	struct tioca_common *tioca_common;
-	volatile struct tioca *ca_base;
+	struct tioca __iomem *ca_base;
 
 	tioca_common = tioca_kern->ca_common;
-	ca_base = (struct tioca *)tioca_common->ca_common.bs_base;
+	ca_base = (struct tioca __iomem *)tioca_common->ca_common.bs_base;
 
 	if (list_empty(tioca_kern->ca_devices))
 		return 0;
@@ -174,27 +175,29 @@ tioca_gart_init(struct tioca_kernel *tioca_kern)
 	 * 	DISABLE GART PREFETCHING due to hw bug tracked in SGI PV930029
 	 */
 
-	ca_base->ca_control1 |= CA_AGPDMA_OP_ENB_COMBDELAY;	/* PV895469 ? */
-	ca_base->ca_control2 &= ~(CA_GART_MEM_PARAM);
-	ca_base->ca_control2 |= (0x2ull << CA_GART_MEM_PARAM_SHFT);
+	__sn_setq_relaxed(&ca_base->ca_control1,
+			CA_AGPDMA_OP_ENB_COMBDELAY);	/* PV895469 ? */
+	__sn_clrq_relaxed(&ca_base->ca_control2, CA_GART_MEM_PARAM);
+	__sn_setq_relaxed(&ca_base->ca_control2,
+			(0x2ull << CA_GART_MEM_PARAM_SHFT));
 	tioca_kern->ca_gart_iscoherent = 1;
-	ca_base->ca_control2 &=
-	    ~(CA_GART_WR_PREFETCH_ENB | CA_GART_RD_PREFETCH_ENB);
+	__sn_clrq_relaxed(&ca_base->ca_control2,
+	    		(CA_GART_WR_PREFETCH_ENB | CA_GART_RD_PREFETCH_ENB));
 
 	/*
 	 * Unmask GART fetch error interrupts.  Clear residual errors first.
 	 */
 
-	ca_base->ca_int_status_alias = CA_GART_FETCH_ERR;
-	ca_base->ca_mult_error_alias = CA_GART_FETCH_ERR;
-	ca_base->ca_int_mask &= ~CA_GART_FETCH_ERR;
+	writeq(CA_GART_FETCH_ERR, &ca_base->ca_int_status_alias);
+	writeq(CA_GART_FETCH_ERR, &ca_base->ca_mult_error_alias);
+	__sn_clrq_relaxed(&ca_base->ca_int_mask, CA_GART_FETCH_ERR);
 
 	/*
 	 * Program the aperature and gart registers in TIOCA
 	 */
 
-	ca_base->ca_gart_aperature = ap_reg;
-	ca_base->ca_gart_ptr_table = tioca_kern->ca_gart_coretalk_addr | 1;
+	writeq(ap_reg, &ca_base->ca_gart_aperature);
+	writeq(tioca_kern->ca_gart_coretalk_addr|1, &ca_base->ca_gart_ptr_table);
 
 	return 0;
 }
@@ -211,9 +214,8 @@ void
 tioca_fastwrite_enable(struct tioca_kernel *tioca_kern)
 {
 	int cap_ptr;
-	uint64_t ca_control1;
 	uint32_t reg;
-	struct tioca *tioca_base;
+	struct tioca __iomem *tioca_base;
 	struct pci_dev *pdev;
 	struct tioca_common *common;
 
@@ -255,10 +257,8 @@ tioca_fastwrite_enable(struct tioca_kernel *tioca_kern)
 	 * Set ca's fw to match
 	 */
 
-	tioca_base = (struct tioca *)common->ca_common.bs_base;
-	ca_control1 = tioca_base->ca_control1;
-	ca_control1 |= CA_AGP_FW_ENABLE;
-	tioca_base->ca_control1 = ca_control1;
+	tioca_base = (struct tioca __iomem*)common->ca_common.bs_base;
+	__sn_setq_relaxed(&tioca_base->ca_control1, CA_AGP_FW_ENABLE);
 }
 
 EXPORT_SYMBOL(tioca_fastwrite_enable);	/* used by agp-sgi */
@@ -322,7 +322,7 @@ static uint64_t
 tioca_dma_d48(struct pci_dev *pdev, uint64_t paddr)
 {
 	struct tioca_common *tioca_common;
-	struct tioca *ca_base;
+	struct tioca __iomem *ca_base;
 	uint64_t ct_addr;
 	dma_addr_t bus_addr;
 	uint32_t node_upper;
@@ -330,7 +330,7 @@ tioca_dma_d48(struct pci_dev *pdev, uint64_t paddr)
 	struct pcidev_info *pcidev_info = SN_PCIDEV_INFO(pdev);
 
 	tioca_common = (struct tioca_common *)pcidev_info->pdi_pcibus_info;
-	ca_base = (struct tioca *)tioca_common->ca_common.bs_base;
+	ca_base = (struct tioca __iomem *)tioca_common->ca_common.bs_base;
 
 	ct_addr = PHYS_TO_TIODMA(paddr);
 	if (!ct_addr)
@@ -345,7 +345,7 @@ tioca_dma_d48(struct pci_dev *pdev, uint64_t paddr)
 		return 0;
 	}
 
-	agp_dma_extn = ca_base->ca_agp_dma_addr_extn;
+	agp_dma_extn = __sn_readq_relaxed(&ca_base->ca_agp_dma_addr_extn);
 	if (node_upper != (agp_dma_extn >> CA_AGP_DMA_NODE_ID_SHFT)) {
 		printk(KERN_ERR "%s:  coretalk upper node (%u) "
 		       "mismatch with ca_agp_dma_addr_extn (%lu)\n",

@@ -655,7 +655,6 @@ nfs_file_direct_read(struct kiocb *iocb, char __user *buf, size_t count, loff_t 
 	struct file *file = iocb->ki_filp;
 	struct nfs_open_context *ctx =
 			(struct nfs_open_context *) file->private_data;
-	struct dentry *dentry = file->f_dentry;
 	struct address_space *mapping = file->f_mapping;
 	struct inode *inode = mapping->host;
 	struct iovec iov = {
@@ -664,7 +663,8 @@ nfs_file_direct_read(struct kiocb *iocb, char __user *buf, size_t count, loff_t 
 	};
 
 	dprintk("nfs: direct read(%s/%s, %lu@%lu)\n",
-		dentry->d_parent->d_name.name, dentry->d_name.name,
+		file->f_dentry->d_parent->d_name.name,
+		file->f_dentry->d_name.name,
 		(unsigned long) count, (unsigned long) pos);
 
 	if (!is_sync_kiocb(iocb))
@@ -678,15 +678,9 @@ nfs_file_direct_read(struct kiocb *iocb, char __user *buf, size_t count, loff_t 
 	if (!count)
 		goto out;
 
-	if (mapping->nrpages) {
-		retval = filemap_fdatawrite(mapping);
-		if (retval == 0)
-			retval = nfs_wb_all(inode);
-		if (retval == 0)
-			retval = filemap_fdatawait(mapping);
-		if (retval)
-			goto out;
-	}
+	retval = nfs_sync_mapping(mapping);
+	if (retval)
+		goto out;
 
 	retval = nfs_direct_read(inode, ctx, &iov, pos, 1);
 	if (retval > 0)
@@ -730,7 +724,6 @@ nfs_file_direct_write(struct kiocb *iocb, const char __user *buf, size_t count, 
 	struct file *file = iocb->ki_filp;
 	struct nfs_open_context *ctx =
 			(struct nfs_open_context *) file->private_data;
-	struct dentry *dentry = file->f_dentry;
 	struct address_space *mapping = file->f_mapping;
 	struct inode *inode = mapping->host;
 	struct iovec iov = {
@@ -739,8 +732,9 @@ nfs_file_direct_write(struct kiocb *iocb, const char __user *buf, size_t count, 
 	};
 
 	dfprintk(VFS, "nfs: direct write(%s/%s(%ld), %lu@%lu)\n",
-		dentry->d_parent->d_name.name, dentry->d_name.name,
-		inode->i_ino, (unsigned long) count, (unsigned long) pos);
+		file->f_dentry->d_parent->d_name.name,
+		file->f_dentry->d_name.name, inode->i_ino,
+		(unsigned long) count, (unsigned long) pos);
 
 	if (!is_sync_kiocb(iocb))
 		goto out;
@@ -764,15 +758,9 @@ nfs_file_direct_write(struct kiocb *iocb, const char __user *buf, size_t count, 
 	if (!count)
 		goto out;
 
-	if (mapping->nrpages) {
-		retval = filemap_fdatawrite(mapping);
-		if (retval == 0)
-			retval = nfs_wb_all(inode);
-		if (retval == 0)
-			retval = filemap_fdatawait(mapping);
-		if (retval)
-			goto out;
-	}
+	retval = nfs_sync_mapping(mapping);
+	if (retval)
+		goto out;
 
 	retval = nfs_direct_write(inode, ctx, &iov, pos, 1);
 	if (mapping->nrpages)

@@ -1808,7 +1808,7 @@ static int xboxfb_cursor(struct fb_info *info, struct fb_cursor *cursor)
 
 	if (cursor->image.width > MAX_CURS ||
 	    cursor->image.height > MAX_CURS)
-		return soft_cursor(info, cursor);
+		return -ENXIO;
 
 	par->riva.ShowHideCursor(&par->riva, 0);
 
