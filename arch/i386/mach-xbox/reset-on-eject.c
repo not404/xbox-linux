@@ -57,7 +57,12 @@ static DECLARE_MUTEX(extsmi_sem);
 static DECLARE_COMPLETION(extsmi_exited);
 static int extsmi_pid=0;
 
-static irqreturn_t extsmi_interrupt(int unused, void *dev_id, struct pt_regs *regs) {
+/* 2009-May-25
+ * LALEE: Apparently, extsmi_interrupt() uses neither of the parameters passed in.
+ * naming them as "unused_<foo>" to maintain the prototype signature and eliminate a
+ * compiler warning, though.
+ */
+static irqreturn_t extsmi_interrupt(int unused_irq, void *unused_dev_id) {
 	int reason;
 
 	reason=inw(0x8020);
