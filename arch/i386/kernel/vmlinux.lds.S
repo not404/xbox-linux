@@ -13,6 +13,12 @@ OUTPUT_FORMAT("elf32-i386", "elf32-i386", "elf32-i386")
 OUTPUT_ARCH(i386)
 ENTRY(phys_startup_32)
 jiffies = jiffies_64;
+
+PHDRS {
+	text PT_LOAD FLAGS(5);	/* R_E */
+	data PT_LOAD FLAGS(7);	/* RWE */
+	note PT_NOTE FLAGS(4);	/* R__ */
+}
 SECTIONS
 {
   . = __KERNEL_START;
@@ -26,7 +32,7 @@ SECTIONS
 	KPROBES_TEXT
 	*(.fixup)
 	*(.gnu.warning)
-	} = 0x9090
+	} :text = 0x9090
 
   _etext = .;			/* End of text section */
 
@@ -45,10 +51,11 @@ SECTIONS
   __tracedata_end = .;
 
   /* writeable */
+  . = ALIGN(4096);
   .data : AT(ADDR(.data) - LOAD_OFFSET) {	/* Data */
 	*(.data)
 	CONSTRUCTORS
-	}
+	} :data
 
   . = ALIGN(4096);
   __nosave_begin = .;
@@ -120,13 +127,7 @@ SECTIONS
   __setup_end = .;
   __initcall_start = .;
   .initcall.init : AT(ADDR(.initcall.init) - LOAD_OFFSET) {
-	*(.initcall1.init) 
-	*(.initcall2.init) 
-	*(.initcall3.init) 
-	*(.initcall4.init) 
-	*(.initcall5.init) 
-	*(.initcall6.init) 
-	*(.initcall7.init)
+	INITCALLS
   }
   __initcall_end = .;
   __con_initcall_start = .;
@@ -184,4 +185,6 @@ SECTIONS
   STABS_DEBUG
 
   DWARF_DEBUG
+
+  NOTES
 }
