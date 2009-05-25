@@ -131,6 +131,8 @@ config NET_SB1000
 
 	source "drivers/net/arcnet/Kconfig"
 
+source "drivers/net/phy/Kconfig"
+
 #
 #	Ethernet
 #
@@ -395,7 +397,7 @@ config SUN3LANCE
 	  If you're not building a kernel for a Sun 3, say N.
 
 config SUN3_82586
-	tristate "Sun3 on-board Intel 82586 support"
+	bool "Sun3 on-board Intel 82586 support"
 	depends on NET_ETHERNET && SUN3
 	help
 	  This driver enables support for the on-board Intel 82586 based
@@ -445,7 +447,7 @@ config NET_SB1250_MAC
 
 config SGI_IOC3_ETH
 	bool "SGI IOC3 Ethernet"
-	depends on NET_ETHERNET && PCI && SGI_IP27
+	depends on NET_ETHERNET && PCI && SGI_IP27 && BROKEN
 	select CRC32
 	select MII
 	help
@@ -545,6 +547,14 @@ config SUNGEM
 	help
 	  Support for the Sun GEM chip, aka Sun GigabitEthernet/P 2.0.  See also
 	  <http://www.sun.com/products-n-solutions/hardware/docs/pdf/806-3985-10.pdf>.
+
+config CASSINI
+	tristate "Sun Cassini support"
+	depends on NET_ETHERNET && PCI
+	select CRC32
+	help
+	  Support for the Sun Cassini chip, aka Sun GigaSwift Ethernet. See also
+	  <http://www.sun.com/products-n-solutions/hardware/docs/pdf/817-4341-10.pdf>
 
 config NET_VENDOR_3COM
 	bool "3COM cards"
@@ -1645,7 +1655,7 @@ config LAN_SAA9730
 
 config NET_POCKET
 	bool "Pocket and portable adapters"
-	depends on NET_ETHERNET && ISA
+	depends on NET_ETHERNET && PARPORT
 	---help---
 	  Cute little network (Ethernet) devices which attach to the parallel
 	  port ("pocket adapters"), commonly used with laptops. If you have
@@ -1669,7 +1679,7 @@ config NET_POCKET
 
 config ATP
 	tristate "AT-LAN-TEC/RealTek pocket adapter support"
-	depends on NET_POCKET && ISA && X86
+	depends on NET_POCKET && PARPORT && X86
 	select CRC32
 	---help---
 	  This is a network (Ethernet) device which attaches to your parallel
@@ -1684,7 +1694,7 @@ config ATP
 
 config DE600
 	tristate "D-Link DE600 pocket adapter support"
-	depends on NET_POCKET && ISA
+	depends on NET_POCKET && PARPORT
 	---help---
 	  This is a network (Ethernet) device which attaches to your parallel
 	  port. Read <file:Documentation/networking/DLINK.txt> as well as the
@@ -1699,7 +1709,7 @@ config DE600
 
 config DE620
 	tristate "D-Link DE620 pocket adapter support"
-	depends on NET_POCKET && ISA
+	depends on NET_POCKET && PARPORT
 	---help---
 	  This is a network (Ethernet) device which attaches to your parallel
 	  port. Read <file:Documentation/networking/DLINK.txt> as well as the
@@ -1736,11 +1746,18 @@ config 68360_ENET
 	  the Motorola 68360 processor.
 
 config FEC
-	bool "FEC ethernet controller (of ColdFire 5272)"
-	depends on M5272 || M5282
+	bool "FEC ethernet controller (of ColdFire CPUs)"
+	depends on M523x || M527x || M5272 || M528x
 	help
 	  Say Y here if you want to use the built-in 10/100 Fast ethernet
-	  controller on the Motorola ColdFire 5272 processor.
+	  controller on some Motorola ColdFire processors.
+
+config FEC2
+	bool "Second FEC ethernet controller (on some ColdFire CPUs)"
+	depends on FEC
+	help
+	  Say Y here if you want to use the second built-in 10/100 Fast
+	  ethernet controller on some Motorola ColdFire processors.
 
 config NE_H8300
 	tristate "NE2000 compatible support for H8/300"
@@ -1921,6 +1938,20 @@ config R8169_VLAN
 	  
 	  If in doubt, say Y.
 
+config SIS190
+	tristate "SiS190/SiS191 gigabit ethernet support"
+	depends on PCI
+	select CRC32
+	select MII
+	---help---
+	  Say Y here if you have a SiS 190 PCI Fast Ethernet adapter or
+	  a SiS 191 PCI Gigabit Ethernet adapter. Both are expected to
+	  appear in lan on motherboard designs which are based on SiS 965
+	  and SiS 966 south bridge.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called sis190.  This is recommended.
+
 config SKGE
 	tristate "New SysKonnect GigaEthernet support (EXPERIMENTAL)"
 	depends on PCI && EXPERIMENTAL
@@ -1928,7 +1959,7 @@ config SKGE
 	---help---
 	  This driver support the Marvell Yukon or SysKonnect SK-98xx/SK-95xx
 	  and related Gigabit Ethernet adapters. It is a new smaller driver
-	  driver with better performance and more complete ethtool support.
+	  with better performance and more complete ethtool support.
 
 	  It does not support the link failover and network management 
 	  features that "portable" vendor supplied sk98lin driver does.
@@ -2042,6 +2073,13 @@ config BNX2
 	  To compile this driver as a module, choose M here: the module
 	  will be called bnx2.  This is recommended.
 
+config SPIDER_NET
+	tristate "Spider Gigabit Ethernet driver"
+	depends on PCI && PPC_BPA
+	help
+	  This driver supports the Gigabit Ethernet chips present on the
+	  Cell Processor-Based Blades from IBM.
+
 config GIANFAR
 	tristate "Gianfar Ethernet"
 	depends on 85xx || 83xx
@@ -2090,6 +2128,25 @@ endmenu
 
 menu "Ethernet (10000 Mbit)"
 	depends on !UML
+
+config CHELSIO_T1
+        tristate "Chelsio 10Gb Ethernet support"
+        depends on PCI
+        help
+          This driver supports Chelsio N110 and N210 models 10Gb Ethernet
+          cards. More information about adapter features and performance
+          tuning is in <file:Documentation/networking/cxgb.txt>.
+
+          For general information about Chelsio and our products, visit
+          our website at <http://www.chelsio.com>.
+
+          For customer support, please visit our customer support page at
+          <http://www.chelsio.com/support.htm>.
+
+          Please send feedback to <linux-bugs@chelsio.com>.
+
+          To compile this driver as a module, choose M here: the module
+          will be called cxgb.
 
 config IXGB
 	tristate "Intel(R) PRO/10GbE support"

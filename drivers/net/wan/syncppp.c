@@ -769,7 +769,7 @@ static void sppp_cisco_input (struct sppp *sp, struct sk_buff *skb)
 		u32 addr = 0, mask = ~0; /* FIXME: is the mask correct? */
 #ifdef CONFIG_INET
 		rcu_read_lock();
-		if ((in_dev = __in_dev_get(dev)) != NULL)
+		if ((in_dev = __in_dev_get_rcu(dev)) != NULL)
 		{
 			for (ifa=in_dev->ifa_list; ifa != NULL;
 				ifa=ifa->ifa_next) {
@@ -1440,6 +1440,7 @@ static void sppp_print_bytes (u_char *p, u16 len)
  *	@skb:	The buffer to process
  *	@dev:	The device it arrived on
  *	@p: Unused
+ *	@orig_dev: Unused
  *
  *	Protocol glue. This drives the deferred processing mode the poorer
  *	cards use. This can be called directly by cards that do not have
@@ -1447,7 +1448,7 @@ static void sppp_print_bytes (u_char *p, u16 len)
  *	after interrupt servicing to process frames queued via netif_rx.
  */
 
-static int sppp_rcv(struct sk_buff *skb, struct net_device *dev, struct packet_type *p)
+static int sppp_rcv(struct sk_buff *skb, struct net_device *dev, struct packet_type *p, struct net_device *orig_dev)
 {
 	if ((skb = skb_share_check(skb, GFP_ATOMIC)) == NULL)
 		return NET_RX_DROP;

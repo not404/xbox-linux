@@ -30,6 +30,8 @@
  *  Revision history
  *    22.12.1999   0.1   Initial release (split from proc_usb.c)
  *    04.01.2000   0.2   Turned into its own filesystem
+ *    30.09.2005   0.3   Fix user-triggerable oops in async URB delivery
+ *    			 (CAN-2005-3055)
  */
 
 /*****************************************************************************/
@@ -43,6 +45,7 @@
 #include <linux/module.h>
 #include <linux/usb.h>
 #include <linux/usbdevice_fs.h>
+#include <linux/cdev.h>
 #include <asm/uaccess.h>
 #include <asm/byteorder.h>
 #include <linux/moduleparam.h>
@@ -50,10 +53,15 @@
 #include "hcd.h"	/* for usbcore internals */
 #include "usb.h"
 
+#define USB_MAXBUS			64
+#define USB_DEVICE_MAX			USB_MAXBUS * 128
+static struct class *usb_device_class;
+
 struct async {
 	struct list_head asynclist;
 	struct dev_state *ps;
-	struct task_struct *task;
+	pid_t pid;
+	uid_t uid, euid;
 	unsigned int signr;
 	unsigned int ifnum;
 	void __user *userbuffer;
@@ -70,6 +78,8 @@ MODULE_PARM_DESC (usbfs_snoop, "true to log all usbfs traffic");
 		if (usbfs_snoop)				\
 			dev_info( dev , format , ## arg);	\
 	} while (0)
+
+#define USB_DEVICE_DEV		MKDEV(USB_DEVICE_MAJOR, 0)
 
 
 #define	MAX_USBFS_BUFFER_SIZE	16384
@@ -283,7 +293,8 @@ static void async_completed(struct urb *urb, struct pt_regs *regs)
 		sinfo.si_errno = as->urb->status;
 		sinfo.si_code = SI_ASYNCIO;
 		sinfo.si_addr = as->userurb;
-		send_sig_info(as->signr, &sinfo, as->task);
+		kill_proc_info_as_uid(as->signr, &sinfo, as->pid, as->uid, 
+				      as->euid);
 	}
         wake_up(&ps->wait);
 }
@@ -487,7 +498,7 @@ static int check_ctrlrecip(struct dev_state *ps, unsigned int requesttype, unsig
  */
 static int usbdev_open(struct inode *inode, struct file *file)
 {
-	struct usb_device *dev;
+	struct usb_device *dev = NULL;
 	struct dev_state *ps;
 	int ret;
 
@@ -501,11 +512,16 @@ static int usbdev_open(struct inode *inode, struct file *file)
 
 	lock_kernel();
 	ret = -ENOENT;
-	dev = usb_get_dev(inode->u.generic_ip);
+	/* check if we are called from a real node or usbfs */
+	if (imajor(inode) == USB_DEVICE_MAJOR)
+		dev = usbdev_lookup_minor(iminor(inode));
+	if (!dev)
+		dev = inode->u.generic_ip;
 	if (!dev) {
 		kfree(ps);
 		goto out;
 	}
+	usb_get_dev(dev);
 	ret = 0;
 	ps->dev = dev;
 	ps->file = file;
@@ -514,7 +530,9 @@ static int usbdev_open(struct inode *inode, struct file *file)
 	INIT_LIST_HEAD(&ps->async_completed);
 	init_waitqueue_head(&ps->wait);
 	ps->discsignr = 0;
-	ps->disctask = current;
+	ps->disc_pid = current->pid;
+	ps->disc_uid = current->uid;
+	ps->disc_euid = current->euid;
 	ps->disccontext = NULL;
 	ps->ifclaimed = 0;
 	wmb();
@@ -976,7 +994,9 @@ static int proc_do_submiturb(struct dev_state *ps, struct usbdevfs_urb *uurb,
 		as->userbuffer = NULL;
 	as->signr = uurb->signr;
 	as->ifnum = ifnum;
-	as->task = current;
+	as->pid = current->pid;
+	as->uid = current->uid;
+	as->euid = current->euid;
 	if (!(uurb->endpoint & USB_DIR_IN)) {
 		if (copy_from_user(as->urb->transfer_buffer, uurb->buffer, as->urb->transfer_buffer_length)) {
 			free_async(as);
@@ -1226,7 +1246,6 @@ static int proc_ioctl (struct dev_state *ps, void __user *arg)
 	int			retval = 0;
 	struct usb_interface    *intf = NULL;
 	struct usb_driver       *driver = NULL;
-	int			i;
 
 	/* get input parameters and alloc buffer */
 	if (copy_from_user(&ctrl, arg, sizeof (ctrl)))
@@ -1257,15 +1276,6 @@ static int proc_ioctl (struct dev_state *ps, void __user *arg)
 
 	/* disconnect kernel driver from interface */
 	case USBDEVFS_DISCONNECT:
-
-		/* don't allow the user to unbind the hub driver from
-		 * a hub with children to manage */
-		for (i = 0; i < ps->dev->maxchild; ++i) {
-			if (ps->dev->children[i])
-				retval = -EBUSY;
-		}
-		if (retval)
-			break;
 
 		down_write(&usb_bus_type.subsys.rwsem);
 		if (intf->dev.driver) {
@@ -1477,3 +1487,79 @@ struct file_operations usbfs_device_file_operations = {
 	.open =		usbdev_open,
 	.release =	usbdev_release,
 };
+
+struct usb_device *usbdev_lookup_minor(int minor)
+{
+	struct class_device *class_dev;
+	struct usb_device *dev = NULL;
+
+	down(&usb_device_class->sem);
+	list_for_each_entry(class_dev, &usb_device_class->children, node) {
+		if (class_dev->devt == MKDEV(USB_DEVICE_MAJOR, minor)) {
+			dev = class_dev->class_data;
+			break;
+		}
+	}
+	up(&usb_device_class->sem);
+
+	return dev;
+};
+
+void usbdev_add(struct usb_device *dev)
+{
+	int minor = ((dev->bus->busnum-1) * 128) + (dev->devnum-1);
+
+	dev->class_dev = class_device_create(usb_device_class,
+				MKDEV(USB_DEVICE_MAJOR, minor), &dev->dev,
+				"usbdev%d.%d", dev->bus->busnum, dev->devnum);
+
+	dev->class_dev->class_data = dev;
+}
+
+void usbdev_remove(struct usb_device *dev)
+{
+	class_device_unregister(dev->class_dev);
+}
+
+static struct cdev usb_device_cdev = {
+	.kobj   = {.name = "usb_device", },
+	.owner  = THIS_MODULE,
+};
+
+int __init usbdev_init(void)
+{
+	int retval;
+
+	retval = register_chrdev_region(USB_DEVICE_DEV, USB_DEVICE_MAX,
+			"usb_device");
+	if (retval) {
+		err("unable to register minors for usb_device");
+		goto out;
+	}
+	cdev_init(&usb_device_cdev, &usbfs_device_file_operations);
+	retval = cdev_add(&usb_device_cdev, USB_DEVICE_DEV, USB_DEVICE_MAX);
+	if (retval) {
+		err("unable to get usb_device major %d", USB_DEVICE_MAJOR);
+		unregister_chrdev_region(USB_DEVICE_DEV, USB_DEVICE_MAX);
+		goto out;
+	}
+	usb_device_class = class_create(THIS_MODULE, "usb_device");
+	if (IS_ERR(usb_device_class)) {
+		err("unable to register usb_device class");
+		retval = PTR_ERR(usb_device_class);
+		usb_device_class = NULL;
+		cdev_del(&usb_device_cdev);
+		unregister_chrdev_region(USB_DEVICE_DEV, USB_DEVICE_MAX);
+	}
+
+out:
+	return retval;
+}
+
+void usbdev_cleanup(void)
+{
+	class_destroy(usb_device_class);
+	cdev_del(&usb_device_cdev);
+	unregister_chrdev_region(USB_DEVICE_DEV, USB_DEVICE_MAX);
+}
+

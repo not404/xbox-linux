@@ -22,6 +22,7 @@
 #include <linux/pagemap.h>
 #include <linux/bootmem.h>
 #include <linux/compiler.h>
+#include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/suspend.h>
 #include <linux/pagevec.h>
@@ -42,13 +43,13 @@
  * MCD - HACK: Find somewhere to initialize this EARLY, or make this
  * initializer cleaner
  */
-nodemask_t node_online_map = { { [0] = 1UL } };
+nodemask_t node_online_map __read_mostly = { { [0] = 1UL } };
 EXPORT_SYMBOL(node_online_map);
-nodemask_t node_possible_map = NODE_MASK_ALL;
+nodemask_t node_possible_map __read_mostly = NODE_MASK_ALL;
 EXPORT_SYMBOL(node_possible_map);
-struct pglist_data *pgdat_list;
-unsigned long totalram_pages;
-unsigned long totalhigh_pages;
+struct pglist_data *pgdat_list __read_mostly;
+unsigned long totalram_pages __read_mostly;
+unsigned long totalhigh_pages __read_mostly;
 long nr_swap_pages;
 
 /*
@@ -68,7 +69,7 @@ EXPORT_SYMBOL(nr_swap_pages);
  * Used by page_zone() to look up the address of the struct zone whose
  * id is encoded in the upper bits of page->flags
  */
-struct zone *zone_table[1 << ZONETABLE_SHIFT];
+struct zone *zone_table[1 << ZONETABLE_SHIFT] __read_mostly;
 EXPORT_SYMBOL(zone_table);
 
 static char *zone_names[MAX_NR_ZONES] = { "DMA", "Normal", "HighMem" };
@@ -117,7 +118,7 @@ static void bad_page(const char *function, struct page *page)
 	set_page_count(page, 0);
 	reset_page_mapcount(page);
 	page->mapping = NULL;
-	tainted |= TAINT_BAD_PAGE;
+	add_taint(TAINT_BAD_PAGE);
 }
 
 #ifndef CONFIG_HUGETLB_PAGE
@@ -329,13 +330,13 @@ static inline void free_pages_check(const char *function, struct page *page)
 			1 << PG_writeback )))
 		bad_page(function, page);
 	if (PageDirty(page))
-		ClearPageDirty(page);
+		__ClearPageDirty(page);
 }
 
 /*
  * Frees a list of pages. 
  * Assumes all pages on list are in same zone, and of same order.
- * count is the number of pages to free, or 0 for all on the list.
+ * count is the number of pages to free.
  *
  * If the zone was previously in an "all pages pinned" state then look to
  * see if this freeing clears that state.
@@ -670,7 +671,7 @@ void fastcall free_cold_page(struct page *page)
 	free_hot_cold_page(page, 1);
 }
 
-static inline void prep_zero_page(struct page *page, int order, unsigned int __nocast gfp_flags)
+static inline void prep_zero_page(struct page *page, int order, gfp_t gfp_flags)
 {
 	int i;
 
@@ -685,7 +686,7 @@ static inline void prep_zero_page(struct page *page, int order, unsigned int __n
  * or two.
  */
 static struct page *
-buffered_rmqueue(struct zone *zone, int order, unsigned int __nocast gfp_flags)
+buffered_rmqueue(struct zone *zone, int order, gfp_t gfp_flags)
 {
 	unsigned long flags;
 	struct page *page = NULL;
@@ -760,7 +761,7 @@ int zone_watermark_ok(struct zone *z, int order, unsigned long mark,
 }
 
 static inline int
-should_reclaim_zone(struct zone *z, unsigned int gfp_mask)
+should_reclaim_zone(struct zone *z, gfp_t gfp_mask)
 {
 	if (!z->reclaim_pages)
 		return 0;
@@ -773,7 +774,7 @@ should_reclaim_zone(struct zone *z, unsigned int gfp_mask)
  * This is the 'heart' of the zoned buddy allocator.
  */
 struct page * fastcall
-__alloc_pages(unsigned int __nocast gfp_mask, unsigned int order,
+__alloc_pages(gfp_t gfp_mask, unsigned int order,
 		struct zonelist *zonelist)
 {
 	const int wait = gfp_mask & __GFP_WAIT;
@@ -806,11 +807,14 @@ __alloc_pages(unsigned int __nocast gfp_mask, unsigned int order,
 	classzone_idx = zone_idx(zones[0]);
 
 restart:
-	/* Go through the zonelist once, looking for a zone with enough free */
+	/*
+	 * Go through the zonelist once, looking for a zone with enough free.
+	 * See also cpuset_zone_allowed() comment in kernel/cpuset.c.
+	 */
 	for (i = 0; (z = zones[i]) != NULL; i++) {
 		int do_reclaim = should_reclaim_zone(z, gfp_mask);
 
-		if (!cpuset_zone_allowed(z))
+		if (!cpuset_zone_allowed(z, __GFP_HARDWALL))
 			continue;
 
 		/*
@@ -845,6 +849,7 @@ zone_reclaim_retry:
 	 *
 	 * This is the last chance, in general, before the goto nopage.
 	 * Ignore cpuset if GFP_ATOMIC (!wait) rather than fail alloc.
+	 * See also cpuset_zone_allowed() comment in kernel/cpuset.c.
 	 */
 	for (i = 0; (z = zones[i]) != NULL; i++) {
 		if (!zone_watermark_ok(z, order, z->pages_min,
@@ -852,7 +857,7 @@ zone_reclaim_retry:
 				       gfp_mask & __GFP_HIGH))
 			continue;
 
-		if (wait && !cpuset_zone_allowed(z))
+		if (wait && !cpuset_zone_allowed(z, gfp_mask))
 			continue;
 
 		page = buffered_rmqueue(z, order, gfp_mask);
@@ -867,7 +872,7 @@ zone_reclaim_retry:
 		if (!(gfp_mask & __GFP_NOMEMALLOC)) {
 			/* go through the zonelist yet again, ignoring mins */
 			for (i = 0; (z = zones[i]) != NULL; i++) {
-				if (!cpuset_zone_allowed(z))
+				if (!cpuset_zone_allowed(z, gfp_mask))
 					continue;
 				page = buffered_rmqueue(z, order, gfp_mask);
 				if (page)
@@ -903,7 +908,7 @@ rebalance:
 					       gfp_mask & __GFP_HIGH))
 				continue;
 
-			if (!cpuset_zone_allowed(z))
+			if (!cpuset_zone_allowed(z, gfp_mask))
 				continue;
 
 			page = buffered_rmqueue(z, order, gfp_mask);
@@ -922,7 +927,7 @@ rebalance:
 					       classzone_idx, 0, 0))
 				continue;
 
-			if (!cpuset_zone_allowed(z))
+			if (!cpuset_zone_allowed(z, __GFP_HARDWALL))
 				continue;
 
 			page = buffered_rmqueue(z, order, gfp_mask);
@@ -972,7 +977,7 @@ EXPORT_SYMBOL(__alloc_pages);
 /*
  * Common helper functions.
  */
-fastcall unsigned long __get_free_pages(unsigned int __nocast gfp_mask, unsigned int order)
+fastcall unsigned long __get_free_pages(gfp_t gfp_mask, unsigned int order)
 {
 	struct page * page;
 	page = alloc_pages(gfp_mask, order);
@@ -983,7 +988,7 @@ fastcall unsigned long __get_free_pages(unsigned int __nocast gfp_mask, unsigned
 
 EXPORT_SYMBOL(__get_free_pages);
 
-fastcall unsigned long get_zeroed_page(unsigned int __nocast gfp_mask)
+fastcall unsigned long get_zeroed_page(gfp_t gfp_mask)
 {
 	struct page * page;
 
@@ -1130,19 +1135,20 @@ EXPORT_SYMBOL(nr_pagecache);
 DEFINE_PER_CPU(long, nr_pagecache_local) = 0;
 #endif
 
-void __get_page_state(struct page_state *ret, int nr)
+void __get_page_state(struct page_state *ret, int nr, cpumask_t *cpumask)
 {
 	int cpu = 0;
 
 	memset(ret, 0, sizeof(*ret));
+	cpus_and(*cpumask, *cpumask, cpu_online_map);
 
-	cpu = first_cpu(cpu_online_map);
+	cpu = first_cpu(*cpumask);
 	while (cpu < NR_CPUS) {
 		unsigned long *in, *out, off;
 
 		in = (unsigned long *)&per_cpu(page_states, cpu);
 
-		cpu = next_cpu(cpu, cpu_online_map);
+		cpu = next_cpu(cpu, *cpumask);
 
 		if (cpu < NR_CPUS)
 			prefetch(&per_cpu(page_states, cpu));
@@ -1153,19 +1159,33 @@ void __get_page_state(struct page_state *ret, int nr)
 	}
 }
 
-void get_page_state(struct page_state *ret)
+void get_page_state_node(struct page_state *ret, int node)
 {
 	int nr;
+	cpumask_t mask = node_to_cpumask(node);
 
 	nr = offsetof(struct page_state, GET_PAGE_STATE_LAST);
 	nr /= sizeof(unsigned long);
 
-	__get_page_state(ret, nr + 1);
+	__get_page_state(ret, nr+1, &mask);
+}
+
+void get_page_state(struct page_state *ret)
+{
+	int nr;
+	cpumask_t mask = CPU_MASK_ALL;
+
+	nr = offsetof(struct page_state, GET_PAGE_STATE_LAST);
+	nr /= sizeof(unsigned long);
+
+	__get_page_state(ret, nr + 1, &mask);
 }
 
 void get_full_page_state(struct page_state *ret)
 {
-	__get_page_state(ret, sizeof(*ret) / sizeof(unsigned long));
+	cpumask_t mask = CPU_MASK_ALL;
+
+	__get_page_state(ret, sizeof(*ret) / sizeof(unsigned long), &mask);
 }
 
 unsigned long __read_page_state(unsigned long offset)
@@ -1730,6 +1750,8 @@ inline void setup_pageset(struct per_cpu_pageset *p, unsigned long batch)
 {
 	struct per_cpu_pages *pcp;
 
+	memset(p, 0, sizeof(*p));
+
 	pcp = &p->pcp[0];		/* hot */
 	pcp->count = 0;
 	pcp->low = 2 * batch;
@@ -1909,7 +1931,7 @@ static void __init free_area_init_core(struct pglist_data *pgdat,
 		zone->nr_scan_inactive = 0;
 		zone->nr_active = 0;
 		zone->nr_inactive = 0;
-		atomic_set(&zone->reclaim_in_progress, -1);
+		atomic_set(&zone->reclaim_in_progress, 0);
 		if (!size)
 			continue;
 

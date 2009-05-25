@@ -93,8 +93,7 @@ static int __init
 setup_io_tlb_npages(char *str)
 {
 	if (isdigit(*str)) {
-		io_tlb_nslabs = simple_strtoul(str, &str, 0) <<
-			(PAGE_SHIFT - IO_TLB_SHIFT);
+		io_tlb_nslabs = simple_strtoul(str, &str, 0);
 		/* avoid tail segment of size < IO_TLB_SEGSIZE */
 		io_tlb_nslabs = ALIGN(io_tlb_nslabs, IO_TLB_SEGSIZE);
 	}
@@ -117,15 +116,15 @@ swiotlb_init_with_default_size (size_t default_size)
 	unsigned long i;
 
 	if (!io_tlb_nslabs) {
-		io_tlb_nslabs = (default_size >> PAGE_SHIFT);
+		io_tlb_nslabs = (default_size >> IO_TLB_SHIFT);
 		io_tlb_nslabs = ALIGN(io_tlb_nslabs, IO_TLB_SEGSIZE);
 	}
 
 	/*
 	 * Get IO TLB memory from the low pages
 	 */
-	io_tlb_start = alloc_bootmem_low_pages(io_tlb_nslabs *
-					       (1 << IO_TLB_SHIFT));
+	io_tlb_start = alloc_bootmem_low_pages_limit(io_tlb_nslabs *
+					     (1 << IO_TLB_SHIFT), 0x100000000);
 	if (!io_tlb_start)
 		panic("Cannot allocate SWIOTLB buffer");
 	io_tlb_end = io_tlb_start + io_tlb_nslabs * (1 << IO_TLB_SHIFT);

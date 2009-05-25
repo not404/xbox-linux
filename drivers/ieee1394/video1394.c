@@ -883,7 +883,7 @@ static int __video1394_ioctl(struct file *file,
 			      v.channel);
 		}
 
-		if (copy_to_user((void *)arg, &v, sizeof(v))) {
+		if (copy_to_user(argp, &v, sizeof(v))) {
 			/* FIXME : free allocated dma resources */
 			return -EFAULT;
 		}
@@ -1571,4 +1571,3 @@ static int __init video1394_init_module (void)
 
 module_init(video1394_init_module);
 module_exit(video1394_exit_module);
-MODULE_ALIAS_CHARDEV(IEEE1394_MAJOR, IEEE1394_MINOR_BLOCK_VIDEO1394 * 16);

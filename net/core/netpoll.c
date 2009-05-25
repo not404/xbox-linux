@@ -645,10 +645,10 @@ int netpoll_setup(struct netpoll *np)
 
 		npinfo->rx_flags = 0;
 		npinfo->rx_np = NULL;
-		npinfo->poll_lock = SPIN_LOCK_UNLOCKED;
+		spin_lock_init(&npinfo->poll_lock);
 		npinfo->poll_owner = -1;
 		npinfo->tries = MAX_RETRIES;
-		npinfo->rx_lock = SPIN_LOCK_UNLOCKED;
+		spin_lock_init(&npinfo->rx_lock);
 	} else
 		npinfo = ndev->npinfo;
 
@@ -703,7 +703,7 @@ int netpoll_setup(struct netpoll *np)
 
 	if (!np->local_ip) {
 		rcu_read_lock();
-		in_dev = __in_dev_get(ndev);
+		in_dev = __in_dev_get_rcu(ndev);
 
 		if (!in_dev || !in_dev->ifa_list) {
 			rcu_read_unlock();

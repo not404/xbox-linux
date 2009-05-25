@@ -41,6 +41,7 @@ static long iSeries_hpte_insert(unsigned long hpte_group, unsigned long va,
 				unsigned long prpn, unsigned long vflags,
 				unsigned long rflags)
 {
+	unsigned long arpn;
 	long slot;
 	hpte_t lhpte;
 	int secondary = 0;
@@ -65,13 +66,15 @@ static long iSeries_hpte_insert(unsigned long hpte_group, unsigned long va,
 	}
 
 	if (slot < 0) {		/* MSB set means secondary group */
-		vflags |= HPTE_V_VALID;
+		vflags |= HPTE_V_SECONDARY;
 		secondary = 1;
 		slot &= 0x7fffffffffffffff;
 	}
 
+	arpn = phys_to_abs(prpn << PAGE_SHIFT) >> PAGE_SHIFT;
+
 	lhpte.v = (va >> 23) << HPTE_V_AVPN_SHIFT | vflags | HPTE_V_VALID;
-	lhpte.r = (physRpn_to_absRpn(prpn) << HPTE_R_RPN_SHIFT) | rflags;
+	lhpte.r = (arpn << HPTE_R_RPN_SHIFT) | rflags;
 
 	/* Now fill in the actual HPTE */
 	HvCallHpt_addValidate(slot, secondary, &lhpte);

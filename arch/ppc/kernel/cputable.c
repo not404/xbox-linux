@@ -91,7 +91,7 @@ struct cpu_spec	cpu_specs[] = {
 		.cpu_features		= CPU_FTR_COMMON | CPU_FTR_601 |
 			CPU_FTR_HPTE_TABLE,
 		.cpu_user_features 	= COMMON_PPC | PPC_FEATURE_601_INSTR |
-			PPC_FEATURE_UNIFIED_CACHE,
+			PPC_FEATURE_UNIFIED_CACHE | PPC_FEATURE_NO_TB,
 		.icache_bsize		= 32,
 		.dcache_bsize		= 32,
 		.cpu_setup		= __setup_cpu_601
@@ -198,20 +198,6 @@ struct cpu_spec	cpu_specs[] = {
 		.num_pmcs		= 4,
 		.cpu_setup		= __setup_cpu_750
 	},
-	{	/* 745/755 */
-		.pvr_mask		= 0xfffff000,
-		.pvr_value		= 0x00083000,
-		.cpu_name		= "745/755",
-		.cpu_features		= CPU_FTR_COMMON |
-			CPU_FTR_SPLIT_ID_CACHE | CPU_FTR_MAYBE_CAN_DOZE |
-			CPU_FTR_USE_TB | CPU_FTR_L2CR | CPU_FTR_TAU |
-			CPU_FTR_HPTE_TABLE | CPU_FTR_MAYBE_CAN_NAP,
-		.cpu_user_features	= COMMON_PPC,
-		.icache_bsize		= 32,
-		.dcache_bsize		= 32,
-		.num_pmcs		= 4,
-		.cpu_setup		= __setup_cpu_750
-	},
 	{	/* 750CX (80100 and 8010x?) */
 		.pvr_mask		= 0xfffffff0,
 		.pvr_value		= 0x00080100,
@@ -253,6 +239,34 @@ struct cpu_spec	cpu_specs[] = {
 		.dcache_bsize		= 32,
 		.num_pmcs		= 4,
 		.cpu_setup		= __setup_cpu_750cx
+	},
+	{	/* 750CXe "Gekko" (83214) */
+		.pvr_mask		= 0xffffffff,
+		.pvr_value		= 0x00083214,
+		.cpu_name		= "750CXe",
+		.cpu_features		= CPU_FTR_COMMON |
+			CPU_FTR_SPLIT_ID_CACHE | CPU_FTR_MAYBE_CAN_DOZE |
+			CPU_FTR_USE_TB | CPU_FTR_L2CR | CPU_FTR_TAU |
+			CPU_FTR_HPTE_TABLE | CPU_FTR_MAYBE_CAN_NAP,
+		.cpu_user_features	= COMMON_PPC,
+		.icache_bsize		= 32,
+		.dcache_bsize		= 32,
+		.num_pmcs		= 4,
+		.cpu_setup		= __setup_cpu_750cx
+	},
+	{	/* 745/755 */
+		.pvr_mask		= 0xfffff000,
+		.pvr_value		= 0x00083000,
+		.cpu_name		= "745/755",
+		.cpu_features		= CPU_FTR_COMMON |
+			CPU_FTR_SPLIT_ID_CACHE | CPU_FTR_MAYBE_CAN_DOZE |
+			CPU_FTR_USE_TB | CPU_FTR_L2CR | CPU_FTR_TAU |
+			CPU_FTR_HPTE_TABLE | CPU_FTR_MAYBE_CAN_NAP,
+		.cpu_user_features	= COMMON_PPC,
+		.icache_bsize		= 32,
+		.dcache_bsize		= 32,
+		.num_pmcs		= 4,
+		.cpu_setup		= __setup_cpu_750
 	},
 	{	/* 750FX rev 1.x */
 		.pvr_mask		= 0xffffff00,
@@ -536,6 +550,22 @@ struct cpu_spec	cpu_specs[] = {
 		.num_pmcs		= 6,
 		.cpu_setup		= __setup_cpu_745x
 	},
+	{	/* 7448 */
+		.pvr_mask		= 0xffff0000,
+		.pvr_value		= 0x80040000,
+		.cpu_name		= "7448",
+		.cpu_features		= CPU_FTR_COMMON |
+			CPU_FTR_SPLIT_ID_CACHE | CPU_FTR_USE_TB |
+			CPU_FTR_MAYBE_CAN_NAP | CPU_FTR_L2CR |
+			CPU_FTR_ALTIVEC_COMP | CPU_FTR_HPTE_TABLE |
+			CPU_FTR_SPEC7450 | CPU_FTR_NAP_DISABLE_L2_PR |
+			CPU_FTR_HAS_HIGH_BATS | CPU_FTR_NEED_COHERENT,
+		.cpu_user_features	= COMMON_PPC | PPC_FEATURE_ALTIVEC_COMP,
+		.icache_bsize		= 32,
+		.dcache_bsize		= 32,
+		.num_pmcs		= 6,
+		.cpu_setup		= __setup_cpu_745x
+	},
 	{	/* 82xx (8240, 8245, 8260 are all 603e cores) */
 		.pvr_mask		= 0x7fff0000,
 		.pvr_value		= 0x00810000,
@@ -715,7 +745,8 @@ struct cpu_spec	cpu_specs[] = {
 		.cpu_name		= "403GCX",
 		.cpu_features		= CPU_FTR_SPLIT_ID_CACHE |
 			CPU_FTR_USE_TB,
-		.cpu_user_features	= PPC_FEATURE_32 | PPC_FEATURE_HAS_MMU,
+		.cpu_user_features	= PPC_FEATURE_32 |
+		 	PPC_FEATURE_HAS_MMU | PPC_FEATURE_NO_TB,
 		.icache_bsize		= 16,
 		.dcache_bsize		= 16,
 	},
@@ -916,6 +947,26 @@ struct cpu_spec	cpu_specs[] = {
 		.pvr_mask		= 0xf0000fff,
 		.pvr_value		= 0x50000892,
 		.cpu_name		= "440GX Rev. C",
+		.cpu_features		= CPU_FTR_SPLIT_ID_CACHE |
+			CPU_FTR_USE_TB,
+		.cpu_user_features	= PPC_FEATURE_32 | PPC_FEATURE_HAS_MMU,
+		.icache_bsize		= 32,
+		.dcache_bsize		= 32,
+	},
+	{ /* 440GX Rev. F */
+		.pvr_mask		= 0xf0000fff,
+		.pvr_value		= 0x50000894,
+		.cpu_name		= "440GX Rev. F",
+		.cpu_features		= CPU_FTR_SPLIT_ID_CACHE |
+			CPU_FTR_USE_TB,
+		.cpu_user_features	= PPC_FEATURE_32 | PPC_FEATURE_HAS_MMU,
+		.icache_bsize		= 32,
+		.dcache_bsize		= 32,
+	},
+	{ /* 440SP Rev. A */
+		.pvr_mask		= 0xff000fff,
+		.pvr_value		= 0x53000891,
+		.cpu_name		= "440SP Rev. A",
 		.cpu_features		= CPU_FTR_SPLIT_ID_CACHE |
 			CPU_FTR_USE_TB,
 		.cpu_user_features	= PPC_FEATURE_32 | PPC_FEATURE_HAS_MMU,

@@ -38,7 +38,7 @@
 static mdk_personality_t multipath_personality;
 
 
-static void *mp_pool_alloc(unsigned int __nocast gfp_flags, void *data)
+static void *mp_pool_alloc(gfp_t gfp_flags, void *data)
 {
 	struct multipath_bh *mpb;
 	mpb = kmalloc(sizeof(*mpb), gfp_flags);
@@ -168,6 +168,11 @@ static int multipath_make_request (request_queue_t *q, struct bio * bio)
 	multipath_conf_t *conf = mddev_to_conf(mddev);
 	struct multipath_bh * mp_bh;
 	struct multipath_info *multipath;
+
+	if (unlikely(bio_barrier(bio))) {
+		bio_endio(bio, bio->bi_size, -EOPNOTSUPP);
+		return 0;
+	}
 
 	mp_bh = mempool_alloc(conf->pool, GFP_NOIO);
 

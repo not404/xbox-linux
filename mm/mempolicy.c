@@ -88,7 +88,7 @@ static kmem_cache_t *sn_cache;
    policied. */
 static int policy_zone;
 
-static struct mempolicy default_policy = {
+struct mempolicy default_policy = {
 	.refcnt = ATOMIC_INIT(1), /* never free it */
 	.policy = MPOL_DEFAULT,
 };
@@ -333,8 +333,13 @@ check_range(struct mm_struct *mm, unsigned long start, unsigned long end,
 		if (prev && prev->vm_end < vma->vm_start)
 			return ERR_PTR(-EFAULT);
 		if ((flags & MPOL_MF_STRICT) && !is_vm_hugetlb_page(vma)) {
+			unsigned long endvma = vma->vm_end;
+			if (endvma > end)
+				endvma = end;
+			if (vma->vm_start > start)
+				start = vma->vm_start;
 			err = check_pgd_range(vma->vm_mm,
-					   vma->vm_start, vma->vm_end, nodes);
+					   start, endvma, nodes);
 			if (err) {
 				first = ERR_PTR(err);
 				break;
@@ -664,10 +669,10 @@ asmlinkage long compat_sys_mbind(compat_ulong_t start, compat_ulong_t len,
 #endif
 
 /* Return effective policy for a VMA */
-static struct mempolicy *
-get_vma_policy(struct vm_area_struct *vma, unsigned long addr)
+struct mempolicy *
+get_vma_policy(struct task_struct *task, struct vm_area_struct *vma, unsigned long addr)
 {
-	struct mempolicy *pol = current->mempolicy;
+	struct mempolicy *pol = task->mempolicy;
 
 	if (vma) {
 		if (vma->vm_ops && vma->vm_ops->get_policy)
@@ -682,7 +687,7 @@ get_vma_policy(struct vm_area_struct *vma, unsigned long addr)
 }
 
 /* Return a zonelist representing a mempolicy */
-static struct zonelist *zonelist_policy(unsigned int __nocast gfp, struct mempolicy *policy)
+static struct zonelist *zonelist_policy(gfp_t gfp, struct mempolicy *policy)
 {
 	int nd;
 
@@ -746,7 +751,7 @@ static unsigned offset_il_node(struct mempolicy *pol,
 
 /* Allocate a page in interleaved policy.
    Own path because it needs to do special accounting. */
-static struct page *alloc_page_interleave(unsigned int __nocast gfp, unsigned order, unsigned nid)
+static struct page *alloc_page_interleave(gfp_t gfp, unsigned order, unsigned nid)
 {
 	struct zonelist *zl;
 	struct page *page;
@@ -784,9 +789,9 @@ static struct page *alloc_page_interleave(unsigned int __nocast gfp, unsigned or
  *	Should be called with the mm_sem of the vma hold.
  */
 struct page *
-alloc_page_vma(unsigned int __nocast gfp, struct vm_area_struct *vma, unsigned long addr)
+alloc_page_vma(gfp_t gfp, struct vm_area_struct *vma, unsigned long addr)
 {
-	struct mempolicy *pol = get_vma_policy(vma, addr);
+	struct mempolicy *pol = get_vma_policy(current, vma, addr);
 
 	cpuset_update_current_mems_allowed();
 
@@ -827,7 +832,7 @@ alloc_page_vma(unsigned int __nocast gfp, struct vm_area_struct *vma, unsigned l
  *	1) it's ok to take cpuset_sem (can WAIT), and
  *	2) allocating for current task (not interrupt).
  */
-struct page *alloc_pages_current(unsigned int __nocast gfp, unsigned order)
+struct page *alloc_pages_current(gfp_t gfp, unsigned order)
 {
 	struct mempolicy *pol = current->mempolicy;
 
@@ -908,7 +913,7 @@ void __mpol_free(struct mempolicy *p)
 /* Find first node suitable for an allocation */
 int mpol_first_node(struct vm_area_struct *vma, unsigned long addr)
 {
-	struct mempolicy *pol = get_vma_policy(vma, addr);
+	struct mempolicy *pol = get_vma_policy(current, vma, addr);
 
 	switch (pol->policy) {
 	case MPOL_DEFAULT:
@@ -928,7 +933,7 @@ int mpol_first_node(struct vm_area_struct *vma, unsigned long addr)
 /* Find secondary valid nodes for an allocation */
 int mpol_node_valid(int nid, struct vm_area_struct *vma, unsigned long addr)
 {
-	struct mempolicy *pol = get_vma_policy(vma, addr);
+	struct mempolicy *pol = get_vma_policy(current, vma, addr);
 
 	switch (pol->policy) {
 	case MPOL_PREFERRED:

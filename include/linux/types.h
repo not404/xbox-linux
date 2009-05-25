@@ -123,6 +123,9 @@ typedef		__u64		u_int64_t;
 typedef		__s64		int64_t;
 #endif
 
+/* this is a special 64bit data type that is 8-byte aligned */
+#define aligned_u64 unsigned long long __attribute__((aligned(8)))
+
 /*
  * The type used for indexing onto a disc or disc partition.
  * If required, asm/types.h can override it and define
@@ -160,6 +163,10 @@ typedef __u32 __bitwise __be32;
 #if defined(__GNUC__) && !defined(__STRICT_ANSI__)
 typedef __u64 __bitwise __le64;
 typedef __u64 __bitwise __be64;
+#endif
+
+#ifdef __KERNEL__
+typedef unsigned __nocast gfp_t;
 #endif
 
 struct ustat {
