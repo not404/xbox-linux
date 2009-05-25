@@ -98,7 +98,7 @@ static inline int fatx_get_entry(struct inode *dir, loff_t *pos,
 static int fatx_readdir(struct file *filp, void *dirent,
 			filldir_t filldir)
 {
-	struct inode *inode = filp->f_dentry->d_inode;
+	struct inode *inode = filp->f_path.dentry->d_inode;
 	struct super_block *sb = inode->i_sb;
 	struct buffer_head *bh;
 	struct fatx_dir_entry *de;

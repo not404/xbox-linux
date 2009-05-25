@@ -353,12 +353,12 @@ static void fatx_put_super(struct super_block *sb)
 	kfree(sbi);
 }
 
-static kmem_cache_t *fatx_inode_cachep;
+static struct kmem_cache *fatx_inode_cachep;
 
 static struct inode *fatx_alloc_inode(struct super_block *sb)
 {
 	struct fatx_inode_info *ei;
-	ei = kmem_cache_alloc(fatx_inode_cachep, SLAB_KERNEL);
+	ei = kmem_cache_alloc(fatx_inode_cachep, GFP_KERNEL);
 	if (!ei)
 		return NULL;
 	return &ei->vfs_inode;
@@ -369,7 +369,7 @@ static void fatx_destroy_inode(struct inode *inode)
 	kmem_cache_free(fatx_inode_cachep, FATX_I(inode));
 }
 
-static void init_once(void * foo, kmem_cache_t * cachep, unsigned long flags)
+static void init_once(void * foo, struct kmem_cache * cachep, unsigned long flags)
 {
 	struct fatx_inode_info *ei = (struct fatx_inode_info *)foo;
 
