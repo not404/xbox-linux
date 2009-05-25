@@ -53,7 +53,8 @@ void machine_restart(char *cmd)
 
 void machine_shutdown(void)
 {
-	/* Subarch-specific shutdown prior to a kexec */
+	/* Lalee Forced Halts to Shut Off */
+	xbox_pic_cmd(SMC_SUBCMD_POWER_OFF); 
 }
 
 void machine_power_off(void)
