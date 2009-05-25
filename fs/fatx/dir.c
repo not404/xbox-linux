@@ -286,7 +286,7 @@ static int __fatx_remove_entries(struct inode *dir, loff_t pos)
 	struct super_block *sb = dir->i_sb;
 	struct buffer_head *bh;
 	struct fatx_dir_entry *de, *endp;
-	int err = 0, nr_slots;
+	int err = 0, nr_slots = 0;
 
 	bh = NULL;
 	if (fatx_get_entry(dir, &pos, &bh, &de) < 0) {
