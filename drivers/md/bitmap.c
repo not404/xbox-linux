@@ -212,8 +212,8 @@ char *file_path(struct file *file, char *buf, int count)
 	if (!buf)
 		return NULL;
 
-	d = file->f_dentry;
-	v = file->f_vfsmnt;
+	d = file->f_path.dentry;
+	v = file->f_path.mnt;
 
 	buf = d_path(d, v, buf, count);
 
@@ -349,7 +349,7 @@ static struct page *read_page(struct file *file, unsigned long index,
 			      unsigned long count)
 {
 	struct page *page = NULL;
-	struct inode *inode = file->f_dentry->d_inode;
+	struct inode *inode = file->f_path.dentry->d_inode;
 	struct buffer_head *bh;
 	sector_t block;
 
@@ -479,9 +479,12 @@ static int bitmap_read_sb(struct bitmap *bitmap)
 	int err = -EINVAL;
 
 	/* page 0 is the superblock, read it... */
-	if (bitmap->file)
-		bitmap->sb_page = read_page(bitmap->file, 0, bitmap, PAGE_SIZE);
-	else {
+	if (bitmap->file) {
+		loff_t isize = i_size_read(bitmap->file->f_mapping->host);
+		int bytes = isize > PAGE_SIZE ? PAGE_SIZE : isize;
+
+		bitmap->sb_page = read_page(bitmap->file, 0, bitmap, bytes);
+	} else {
 		bitmap->sb_page = read_sb_page(bitmap->mddev, bitmap->offset, 0);
 	}
 	if (IS_ERR(bitmap->sb_page)) {
@@ -662,7 +665,7 @@ static void bitmap_file_put(struct bitmap *bitmap)
 	bitmap_file_unmap(bitmap);
 
 	if (file) {
-		struct inode *inode = file->f_dentry->d_inode;
+		struct inode *inode = file->f_path.dentry->d_inode;
 		invalidate_inode_pages(inode->i_mapping);
 		fput(file);
 	}
@@ -877,7 +880,8 @@ static int bitmap_init_from_disk(struct bitmap *bitmap, sector_t start)
 			int count;
 			/* unmap the old page, we're done with it */
 			if (index == num_pages-1)
-				count = bytes - index * PAGE_SIZE;
+				count = bytes + sizeof(bitmap_super_t)
+					- index * PAGE_SIZE;
 			else
 				count = PAGE_SIZE;
 			if (index == 0) {

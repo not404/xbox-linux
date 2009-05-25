@@ -32,6 +32,7 @@
 #include <linux/netdevice.h>
 #include <linux/skbuff.h>
 #include <linux/file.h>
+#include <linux/freezer.h>
 #include <net/sock.h>
 #include <net/checksum.h>
 #include <net/ip.h>
@@ -83,6 +84,35 @@ static struct cache_deferred_req *svc_defer(struct cache_req *req);
  *   http://www.connectathon.org/talks96/nfstcp.pdf
  */
 static int svc_conn_age_period = 6*60;
+
+#ifdef CONFIG_DEBUG_LOCK_ALLOC
+static struct lock_class_key svc_key[2];
+static struct lock_class_key svc_slock_key[2];
+
+static inline void svc_reclassify_socket(struct socket *sock)
+{
+	struct sock *sk = sock->sk;
+	BUG_ON(sk->sk_lock.owner != NULL);
+	switch (sk->sk_family) {
+	case AF_INET:
+		sock_lock_init_class_and_name(sk, "slock-AF_INET-NFSD",
+		    &svc_slock_key[0], "sk_lock-AF_INET-NFSD", &svc_key[0]);
+		break;
+
+	case AF_INET6:
+		sock_lock_init_class_and_name(sk, "slock-AF_INET6-NFSD",
+		    &svc_slock_key[1], "sk_lock-AF_INET6-NFSD", &svc_key[1]);
+		break;
+
+	default:
+		BUG();
+	}
+}
+#else
+static inline void svc_reclassify_socket(struct socket *sock)
+{
+}
+#endif
 
 /*
  * Queue up an idle server thread.  Must have pool->sp_lock held.
@@ -1032,15 +1062,19 @@ svc_tcp_recvfrom(struct svc_rqst *rqstp)
 			 *  bit set in the fragment length header.
 			 *  But apparently no known nfs clients send fragmented
 			 *  records. */
-			printk(KERN_NOTICE "RPC: bad TCP reclen 0x%08lx (non-terminal)\n",
-			       (unsigned long) svsk->sk_reclen);
+			if (net_ratelimit())
+				printk(KERN_NOTICE "RPC: bad TCP reclen 0x%08lx"
+				       " (non-terminal)\n",
+				       (unsigned long) svsk->sk_reclen);
 			goto err_delete;
 		}
 		svsk->sk_reclen &= 0x7fffffff;
 		dprintk("svc: TCP record, %d bytes\n", svsk->sk_reclen);
 		if (svsk->sk_reclen > serv->sv_max_mesg) {
-			printk(KERN_NOTICE "RPC: bad TCP reclen 0x%08lx (large)\n",
-			       (unsigned long) svsk->sk_reclen);
+			if (net_ratelimit())
+				printk(KERN_NOTICE "RPC: bad TCP reclen 0x%08lx"
+				       " (large)\n",
+				       (unsigned long) svsk->sk_reclen);
 			goto err_delete;
 		}
 	}
@@ -1248,6 +1282,8 @@ svc_recv(struct svc_rqst *rqstp, long timeout)
 				schedule_timeout_uninterruptible(msecs_to_jiffies(500));
 			rqstp->rq_pages[i] = p;
 		}
+	rqstp->rq_pages[i++] = NULL; /* this might be seen in nfs_read_actor */
+	BUG_ON(pages >= RPCSVC_MAXPAGES);
 
 	/* Make arg->head point to first page and arg->pages point to rest */
 	arg = &rqstp->rq_arg;
@@ -1555,6 +1591,8 @@ svc_create_socket(struct svc_serv *serv, int protocol, struct sockaddr_in *sin)
 
 	if ((error = sock_create_kern(PF_INET, type, protocol, &sock)) < 0)
 		return error;
+
+	svc_reclassify_socket(sock);
 
 	if (type == SOCK_STREAM)
 		sock->sk->sk_reuse = 1; /* allow address reuse */
