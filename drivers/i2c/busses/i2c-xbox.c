@@ -127,9 +127,7 @@ static u32 xbox_func(struct i2c_adapter *adapter);
 
 static struct i2c_algorithm smbus_algorithm = {
 	/* master_xfer */ NULL,
-	/* smbus_access */ xbox_access,
-	/* slave;_send */ NULL,
-	/* slave_rcv */ NULL,
+	/* smbus_xfer  */ xbox_access,
 	/* algo_control */ NULL,
 	/* functionality */ xbox_func,
 };
