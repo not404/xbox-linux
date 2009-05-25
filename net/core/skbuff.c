@@ -41,7 +41,6 @@
 #include <linux/module.h>
 #include <linux/types.h>
 #include <linux/kernel.h>
-#include <linux/sched.h>
 #include <linux/mm.h>
 #include <linux/interrupt.h>
 #include <linux/in.h>
@@ -88,7 +87,7 @@ static struct kmem_cache *skbuff_fclone_cache __read_mostly;
 void skb_over_panic(struct sk_buff *skb, int sz, void *here)
 {
 	printk(KERN_EMERG "skb_over_panic: text:%p len:%d put:%d head:%p "
-	                  "data:%p tail:%p end:%p dev:%s\n",
+			  "data:%p tail:%p end:%p dev:%s\n",
 	       here, skb->len, sz, skb->head, skb->data, skb->tail, skb->end,
 	       skb->dev ? skb->dev->name : "<NULL>");
 	BUG();
@@ -106,7 +105,7 @@ void skb_over_panic(struct sk_buff *skb, int sz, void *here)
 void skb_under_panic(struct sk_buff *skb, int sz, void *here)
 {
 	printk(KERN_EMERG "skb_under_panic: text:%p len:%d put:%d head:%p "
-	                  "data:%p tail:%p end:%p dev:%s\n",
+			  "data:%p tail:%p end:%p dev:%s\n",
 	       here, skb->len, sz, skb->head, skb->data, skb->tail, skb->end,
 	       skb->dev ? skb->dev->name : "<NULL>");
 	BUG();
@@ -198,61 +197,6 @@ nodata:
 }
 
 /**
- *	alloc_skb_from_cache	-	allocate a network buffer
- *	@cp: kmem_cache from which to allocate the data area
- *           (object size must be big enough for @size bytes + skb overheads)
- *	@size: size to allocate
- *	@gfp_mask: allocation mask
- *
- *	Allocate a new &sk_buff. The returned buffer has no headroom and
- *	tail room of size bytes. The object has a reference count of one.
- *	The return is the buffer. On a failure the return is %NULL.
- *
- *	Buffers may only be allocated from interrupts using a @gfp_mask of
- *	%GFP_ATOMIC.
- */
-struct sk_buff *alloc_skb_from_cache(struct kmem_cache *cp,
-				     unsigned int size,
-				     gfp_t gfp_mask)
-{
-	struct sk_buff *skb;
-	u8 *data;
-
-	/* Get the HEAD */
-	skb = kmem_cache_alloc(skbuff_head_cache,
-			       gfp_mask & ~__GFP_DMA);
-	if (!skb)
-		goto out;
-
-	/* Get the DATA. */
-	size = SKB_DATA_ALIGN(size);
-	data = kmem_cache_alloc(cp, gfp_mask);
-	if (!data)
-		goto nodata;
-
-	memset(skb, 0, offsetof(struct sk_buff, truesize));
-	skb->truesize = size + sizeof(struct sk_buff);
-	atomic_set(&skb->users, 1);
-	skb->head = data;
-	skb->data = data;
-	skb->tail = data;
-	skb->end  = data + size;
-
-	atomic_set(&(skb_shinfo(skb)->dataref), 1);
-	skb_shinfo(skb)->nr_frags  = 0;
-	skb_shinfo(skb)->gso_size = 0;
-	skb_shinfo(skb)->gso_segs = 0;
-	skb_shinfo(skb)->gso_type = 0;
-	skb_shinfo(skb)->frag_list = NULL;
-out:
-	return skb;
-nodata:
-	kmem_cache_free(skbuff_head_cache, skb);
-	skb = NULL;
-	goto out;
-}
-
-/**
  *	__netdev_alloc_skb - allocate an skbuff for rx on a specific device
  *	@dev: network device to receive on
  *	@length: length to allocate
@@ -268,10 +212,10 @@ nodata:
 struct sk_buff *__netdev_alloc_skb(struct net_device *dev,
 		unsigned int length, gfp_t gfp_mask)
 {
-	int node = dev->class_dev.dev ? dev_to_node(dev->class_dev.dev) : -1;
+	int node = dev->dev.parent ? dev_to_node(dev->dev.parent) : -1;
 	struct sk_buff *skb;
 
- 	skb = __alloc_skb(length + NET_SKB_PAD, gfp_mask, 0, node);
+	skb = __alloc_skb(length + NET_SKB_PAD, gfp_mask, 0, node);
 	if (likely(skb)) {
 		skb_reserve(skb, NET_SKB_PAD);
 		skb->dev = dev;
@@ -464,6 +408,7 @@ struct sk_buff *skb_clone(struct sk_buff *skb, gfp_t gfp_mask)
 	memcpy(n->cb, skb->cb, sizeof(skb->cb));
 	C(len);
 	C(data_len);
+	C(mac_len);
 	C(csum);
 	C(local_df);
 	n->cloned = 1;
@@ -496,7 +441,7 @@ struct sk_buff *skb_clone(struct sk_buff *skb, gfp_t gfp_mask)
 	n->tc_verd = SET_TC_VERD(skb->tc_verd,0);
 	n->tc_verd = CLR_TC_OK2MUNGE(n->tc_verd);
 	n->tc_verd = CLR_TC_MUNGED(n->tc_verd);
-	C(input_dev);
+	C(iif);
 #endif
 	skb_copy_secmark(n, skb);
 #endif
@@ -819,12 +764,12 @@ struct sk_buff *skb_copy_expand(const struct sk_buff *skb,
  *
  *	May return error in out of memory cases. The skb is freed on error.
  */
- 
+
 int skb_pad(struct sk_buff *skb, int pad)
 {
 	int err;
 	int ntail;
-	
+
 	/* If the skbuff is non linear tailroom is always zero.. */
 	if (!skb_cloned(skb) && skb_tailroom(skb) >= pad) {
 		memset(skb->data+skb->len, 0, pad);
@@ -851,8 +796,8 @@ int skb_pad(struct sk_buff *skb, int pad)
 free_skb:
 	kfree_skb(skb);
 	return err;
-}	
- 
+}
+
 /* Trims skb to length len. It can change skb pointers.
  */
 
@@ -2038,7 +1983,7 @@ struct sk_buff *skb_segment(struct sk_buff *skb, int features)
 err:
 	while ((skb = segs)) {
 		segs = skb->next;
-		kfree(skb);
+		kfree_skb(skb);
 	}
 	return ERR_PTR(err);
 }

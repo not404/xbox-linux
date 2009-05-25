@@ -149,6 +149,27 @@ decode_sattr3(__be32 *p, struct iattr *iap)
 	return p;
 }
 
+static __be32 *encode_fsid(__be32 *p, struct svc_fh *fhp)
+{
+	u64 f;
+	switch(fsid_source(fhp)) {
+	default:
+	case FSIDSOURCE_DEV:
+		p = xdr_encode_hyper(p, (u64)huge_encode_dev
+				     (fhp->fh_dentry->d_inode->i_sb->s_dev));
+		break;
+	case FSIDSOURCE_FSID:
+		p = xdr_encode_hyper(p, (u64) fhp->fh_export->ex_fsid);
+		break;
+	case FSIDSOURCE_UUID:
+		f = ((u64*)fhp->fh_export->ex_uuid)[0];
+		f ^= ((u64*)fhp->fh_export->ex_uuid)[1];
+		p = xdr_encode_hyper(p, f);
+		break;
+	}
+	return p;
+}
+
 static __be32 *
 encode_fattr3(struct svc_rqst *rqstp, __be32 *p, struct svc_fh *fhp,
 	      struct kstat *stat)
@@ -169,10 +190,7 @@ encode_fattr3(struct svc_rqst *rqstp, __be32 *p, struct svc_fh *fhp,
 	p = xdr_encode_hyper(p, ((u64)stat->blocks) << 9);
 	*p++ = htonl((u32) MAJOR(stat->rdev));
 	*p++ = htonl((u32) MINOR(stat->rdev));
-	if (is_fsid(fhp, rqstp->rq_reffh))
-		p = xdr_encode_hyper(p, (u64) fhp->fh_export->ex_fsid);
-	else
-		p = xdr_encode_hyper(p, (u64) huge_encode_dev(stat->dev));
+	p = encode_fsid(p, fhp);
 	p = xdr_encode_hyper(p, (u64) stat->ino);
 	p = encode_time3(p, &stat->atime);
 	lease_get_mtime(dentry->d_inode, &time); 
@@ -203,10 +221,7 @@ encode_saved_post_attr(struct svc_rqst *rqstp, __be32 *p, struct svc_fh *fhp)
 	p = xdr_encode_hyper(p, ((u64)fhp->fh_post_blocks) << 9);
 	*p++ = fhp->fh_post_rdev[0];
 	*p++ = fhp->fh_post_rdev[1];
-	if (is_fsid(fhp, rqstp->rq_reffh))
-		p = xdr_encode_hyper(p, (u64) fhp->fh_export->ex_fsid);
-	else
-		p = xdr_encode_hyper(p, (u64)huge_encode_dev(inode->i_sb->s_dev));
+	p = encode_fsid(p, fhp);
 	p = xdr_encode_hyper(p, (u64) inode->i_ino);
 	p = encode_time3(p, &fhp->fh_post_atime);
 	p = encode_time3(p, &fhp->fh_post_mtime);
@@ -844,8 +859,8 @@ compose_entry_fh(struct nfsd3_readdirres *cd, struct svc_fh *fhp,
 #define NFS3_ENTRY_BAGGAGE	(2 + 1 + 2 + 1)
 #define NFS3_ENTRYPLUS_BAGGAGE	(1 + 21 + 1 + (NFS3_FHSIZE >> 2))
 static int
-encode_entry(struct readdir_cd *ccd, const char *name,
-	     int namlen, off_t offset, ino_t ino, unsigned int d_type, int plus)
+encode_entry(struct readdir_cd *ccd, const char *name, int namlen,
+	     loff_t offset, ino_t ino, unsigned int d_type, int plus)
 {
 	struct nfsd3_readdirres *cd = container_of(ccd, struct nfsd3_readdirres,
 		       					common);
@@ -865,7 +880,7 @@ encode_entry(struct readdir_cd *ccd, const char *name,
 			*cd->offset1 = htonl(offset64 & 0xffffffff);
 			cd->offset1 = NULL;
 		} else {
-			xdr_encode_hyper(cd->offset, (u64) offset);
+			xdr_encode_hyper(cd->offset, offset64);
 		}
 	}
 

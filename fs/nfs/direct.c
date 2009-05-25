@@ -309,7 +309,8 @@ static ssize_t nfs_direct_read_schedule(struct nfs_direct_req *dreq, unsigned lo
 
 		rpc_execute(&data->task);
 
-		dfprintk(VFS, "NFS: %5u initiated direct read call (req %s/%Ld, %zu bytes @ offset %Lu)\n",
+		dprintk("NFS: %5u initiated direct read call "
+			"(req %s/%Ld, %zu bytes @ offset %Lu)\n",
 				data->task.tk_pid,
 				inode->i_sb->s_id,
 				(long long)NFS_FILEID(inode),
@@ -431,10 +432,10 @@ static void nfs_direct_commit_result(struct rpc_task *task, void *calldata)
 	if (NFS_PROTO(data->inode)->commit_done(task, data) != 0)
 		return;
 	if (unlikely(task->tk_status < 0)) {
-		dreq->error = task->tk_status;
+		dprintk("NFS: %5u commit failed with error %d.\n",
+				task->tk_pid, task->tk_status);
 		dreq->flags = NFS_ODIRECT_RESCHED_WRITES;
-	}
-	if (memcmp(&dreq->verf, &data->verf, sizeof(data->verf))) {
+	} else if (memcmp(&dreq->verf, &data->verf, sizeof(data->verf))) {
 		dprintk("NFS: %5u commit verify failed\n", task->tk_pid);
 		dreq->flags = NFS_ODIRECT_RESCHED_WRITES;
 	}
@@ -530,9 +531,12 @@ static void nfs_direct_write_result(struct rpc_task *task, void *calldata)
 
 	spin_lock(&dreq->lock);
 
-	if (unlikely(status < 0)) {
-		dreq->error = status;
+	if (unlikely(dreq->error != 0))
 		goto out_unlock;
+	if (unlikely(status < 0)) {
+		/* An error has occured, so we should not commit */
+		dreq->flags = 0;
+		dreq->error = status;
 	}
 
 	dreq->count += data->res.count;
@@ -639,7 +643,8 @@ static ssize_t nfs_direct_write_schedule(struct nfs_direct_req *dreq, unsigned l
 
 		rpc_execute(&data->task);
 
-		dfprintk(VFS, "NFS: %5u initiated direct write call (req %s/%Ld, %zu bytes @ offset %Lu)\n",
+		dprintk("NFS: %5u initiated direct write call "
+			"(req %s/%Ld, %zu bytes @ offset %Lu)\n",
 				data->task.tk_pid,
 				inode->i_sb->s_id,
 				(long long)NFS_FILEID(inode),
@@ -797,7 +802,7 @@ ssize_t nfs_file_direct_write(struct kiocb *iocb, const struct iovec *iov,
 	const char __user *buf = iov[0].iov_base;
 	size_t count = iov[0].iov_len;
 
-	dfprintk(VFS, "nfs: direct write(%s/%s, %lu@%Ld)\n",
+	dprintk("nfs: direct write(%s/%s, %lu@%Ld)\n",
 		file->f_path.dentry->d_parent->d_name.name,
 		file->f_path.dentry->d_name.name,
 		(unsigned long) count, (long long) pos);

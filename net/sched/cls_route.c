@@ -15,7 +15,6 @@
 #include <linux/bitops.h>
 #include <linux/types.h>
 #include <linux/kernel.h>
-#include <linux/sched.h>
 #include <linux/string.h>
 #include <linux/mm.h>
 #include <linux/socket.h>
@@ -94,7 +93,7 @@ void route4_reset_fastmap(struct net_device *dev, struct route4_head *head, u32 
 	spin_unlock_bh(&dev->queue_lock);
 }
 
-static void __inline__
+static inline void
 route4_set_fastmap(struct route4_head *head, u32 id, int iif,
 		   struct route4_filter *f)
 {

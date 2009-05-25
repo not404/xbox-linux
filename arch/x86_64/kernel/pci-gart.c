@@ -185,7 +185,7 @@ static void iommu_full(struct device *dev, size_t size, int dir)
 static inline int need_iommu(struct device *dev, unsigned long addr, size_t size)
 { 
 	u64 mask = *dev->dma_mask;
-	int high = addr + size >= mask;
+	int high = addr + size > mask;
 	int mmu = high;
 	if (force_iommu) 
 		mmu = 1; 
@@ -195,7 +195,7 @@ static inline int need_iommu(struct device *dev, unsigned long addr, size_t size
 static inline int nonforced_iommu(struct device *dev, unsigned long addr, size_t size)
 { 
 	u64 mask = *dev->dma_mask;
-	int high = addr + size >= mask;
+	int high = addr + size > mask;
 	int mmu = high;
 	return mmu; 
 }
@@ -519,7 +519,11 @@ static __init int init_k8_gatt(struct agp_kern_info *info)
 	gatt_size = (aper_size >> PAGE_SHIFT) * sizeof(u32); 
 	gatt = (void *)__get_free_pages(GFP_KERNEL, get_order(gatt_size)); 
 	if (!gatt) 
-		panic("Cannot allocate GATT table"); 
+		panic("Cannot allocate GATT table");
+	if (change_page_attr_addr((unsigned long)gatt, gatt_size >> PAGE_SHIFT, PAGE_KERNEL_NOCACHE))
+		panic("Could not set GART PTEs to uncacheable pages");
+	global_flush_tlb();
+
 	memset(gatt, 0, gatt_size); 
 	agp_gatt_table = gatt;
 
@@ -675,7 +679,7 @@ void __init gart_iommu_init(void)
 	dma_ops = &gart_dma_ops;
 } 
 
-void gart_parse_options(char *p)
+void __init gart_parse_options(char *p)
 {
 	int arg;
 

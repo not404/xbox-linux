@@ -31,7 +31,6 @@
 
 #include <linux/module.h>
 #include <linux/kernel.h>
-#include <linux/sched.h>
 #include <linux/errno.h>
 #include <linux/slab.h>
 #include <linux/string.h>
@@ -250,7 +249,7 @@ static int oprompci2node(void __user *argp, struct device_node *dp, struct openp
 #ifdef CONFIG_PCI
 		struct pci_dev *pdev;
 		struct pcidev_cookie *pcp;
-		pdev = pci_find_slot (((int *) op->oprom_array)[0],
+		pdev = pci_get_bus_and_slot (((int *) op->oprom_array)[0],
 				      ((int *) op->oprom_array)[1]);
 
 		pcp = pdev->sysdata;
@@ -261,6 +260,7 @@ static int oprompci2node(void __user *argp, struct device_node *dp, struct openp
 			op->oprom_size = sizeof(int);
 			err = copyout(argp, op, bufsize + sizeof(int));
 		}
+		pci_dev_put(pdev);
 #endif
 	}
 
@@ -704,7 +704,7 @@ static int openprom_release(struct inode * inode, struct file * file)
 	return 0;
 }
 
-static struct file_operations openprom_fops = {
+static const struct file_operations openprom_fops = {
 	.owner =	THIS_MODULE,
 	.llseek =	no_llseek,
 	.ioctl =	openprom_ioctl,

@@ -81,8 +81,8 @@ static void flush_kernel_map(void *arg)
 		void *adr = page_address(pg);
 		if (cpu_has_clflush)
 			cache_flush_page(adr);
-		__flush_tlb_one(adr);
 	}
+	__flush_tlb_all();
 }
 
 static inline void flush_map(struct list_head *l)
@@ -107,6 +107,7 @@ static void revert_page(unsigned long address, pgprot_t ref_prot)
 	pud_t *pud;
 	pmd_t *pmd;
 	pte_t large_pte;
+	unsigned long pfn;
 
 	pgd = pgd_offset_k(address);
 	BUG_ON(pgd_none(*pgd));
@@ -114,7 +115,8 @@ static void revert_page(unsigned long address, pgprot_t ref_prot)
 	BUG_ON(pud_none(*pud));
 	pmd = pmd_offset(pud, address);
 	BUG_ON(pmd_val(*pmd) & _PAGE_PSE);
-	large_pte = mk_pte_phys(__pa(address) & LARGE_PAGE_MASK, ref_prot);
+	pfn = (__pa(address) & LARGE_PAGE_MASK) >> PAGE_SHIFT;
+	large_pte = pfn_pte(pfn, ref_prot);
 	large_pte = pte_mkhuge(large_pte);
 	set_pte((pte_t *)pmd, large_pte);
 }      

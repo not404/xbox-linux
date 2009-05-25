@@ -66,11 +66,7 @@
 /* 3. OFFCHIP_NR_IRQS */
 #if defined(CONFIG_HD64461)
 # define OFFCHIP_NR_IRQS 18
-#elif defined (CONFIG_SH_BIGSUR) /* must be before CONFIG_HD64465 */
-# define OFFCHIP_NR_IRQS 48
 #elif defined(CONFIG_HD64465)
-# define OFFCHIP_NR_IRQS 16
-#elif defined (CONFIG_SH_EC3104)
 # define OFFCHIP_NR_IRQS 16
 #elif defined (CONFIG_SH_DREAMCAST)
 # define OFFCHIP_NR_IRQS 96
@@ -98,8 +94,13 @@
 /*
  * Convert back and forth between INTEVT and IRQ values.
  */
+#ifdef CONFIG_CPU_HAS_INTEVT
 #define evt2irq(evt)		(((evt) >> 5) - 16)
 #define irq2evt(irq)		(((irq) + 16) << 5)
+#else
+#define evt2irq(evt)		(evt)
+#define irq2evt(irq)		(irq)
+#endif
 
 /*
  * Simple Mask Register Support

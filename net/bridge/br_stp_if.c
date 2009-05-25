@@ -28,7 +28,7 @@
  */
 static inline port_id br_make_port_id(__u8 priority, __u16 port_no)
 {
-	return ((u16)priority << BR_PORT_BITS) 
+	return ((u16)priority << BR_PORT_BITS)
 		| (port_no & ((1<<BR_PORT_BITS)-1));
 }
 
@@ -50,7 +50,7 @@ void br_stp_enable_bridge(struct net_bridge *br)
 	spin_lock_bh(&br->lock);
 	mod_timer(&br->hello_timer, jiffies + br->hello_time);
 	mod_timer(&br->gc_timer, jiffies + HZ/10);
-	
+
 	br_config_bpdu_generation(br);
 
 	list_for_each_entry(p, &br->port_list, list) {
@@ -126,7 +126,9 @@ void br_stp_disable_port(struct net_bridge_port *p)
 /* called under bridge lock */
 void br_stp_change_bridge_id(struct net_bridge *br, const unsigned char *addr)
 {
-	unsigned char oldaddr[6];
+	/* should be aligned on 2 bytes for compare_ether_addr() */
+	unsigned short oldaddr_aligned[ETH_ALEN >> 1];
+	unsigned char *oldaddr = (unsigned char *)oldaddr_aligned;
 	struct net_bridge_port *p;
 	int wasroot;
 
@@ -151,11 +153,14 @@ void br_stp_change_bridge_id(struct net_bridge *br, const unsigned char *addr)
 		br_become_root_bridge(br);
 }
 
-static const unsigned char br_mac_zero[6];
+/* should be aligned on 2 bytes for compare_ether_addr() */
+static const unsigned short br_mac_zero_aligned[ETH_ALEN >> 1];
 
 /* called under bridge lock */
 void br_stp_recalculate_bridge_id(struct net_bridge *br)
 {
+	const unsigned char *br_mac_zero =
+			(const unsigned char *)br_mac_zero_aligned;
 	const unsigned char *addr = br_mac_zero;
 	struct net_bridge_port *p;
 

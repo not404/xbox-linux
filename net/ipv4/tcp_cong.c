@@ -29,7 +29,7 @@ static struct tcp_congestion_ops *tcp_ca_find(const char *name)
 }
 
 /*
- * Attach new congestion control algorthim to the list
+ * Attach new congestion control algorithm to the list
  * of available options.
  */
 int tcp_register_congestion_control(struct tcp_congestion_ops *ca)
@@ -77,18 +77,19 @@ void tcp_init_congestion_control(struct sock *sk)
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	struct tcp_congestion_ops *ca;
 
-	if (icsk->icsk_ca_ops != &tcp_init_congestion_ops)
-		return;
+	/* if no choice made yet assign the current value set as default */
+	if (icsk->icsk_ca_ops == &tcp_init_congestion_ops) {
+		rcu_read_lock();
+		list_for_each_entry_rcu(ca, &tcp_cong_list, list) {
+			if (try_module_get(ca->owner)) {
+				icsk->icsk_ca_ops = ca;
+				break;
+			}
 
-	rcu_read_lock();
-	list_for_each_entry_rcu(ca, &tcp_cong_list, list) {
-		if (try_module_get(ca->owner)) {
-			icsk->icsk_ca_ops = ca;
-			break;
+			/* fallback to next available */
 		}
-
+		rcu_read_unlock();
 	}
-	rcu_read_unlock();
 
 	if (icsk->icsk_ca_ops->init)
 		icsk->icsk_ca_ops->init(sk);
@@ -236,6 +237,7 @@ int tcp_set_congestion_control(struct sock *sk, const char *name)
 
 	rcu_read_lock();
 	ca = tcp_ca_find(name);
+
 	/* no change asking for existing value */
 	if (ca == icsk->icsk_ca_ops)
 		goto out;
@@ -261,7 +263,8 @@ int tcp_set_congestion_control(struct sock *sk, const char *name)
 	else {
 		tcp_cleanup_congestion_control(sk);
 		icsk->icsk_ca_ops = ca;
-		if (icsk->icsk_ca_ops->init)
+
+		if (sk->sk_state != TCP_CLOSE && icsk->icsk_ca_ops->init)
 			icsk->icsk_ca_ops->init(sk);
 	}
  out:
@@ -313,28 +316,28 @@ void tcp_reno_cong_avoid(struct sock *sk, u32 ack, u32 rtt, u32 in_flight,
 		return;
 
 	/* In "safe" area, increase. */
-        if (tp->snd_cwnd <= tp->snd_ssthresh)
+	if (tp->snd_cwnd <= tp->snd_ssthresh)
 		tcp_slow_start(tp);
 
- 	/* In dangerous area, increase slowly. */
+	/* In dangerous area, increase slowly. */
 	else if (sysctl_tcp_abc) {
- 		/* RFC3465: Appropriate Byte Count
- 		 * increase once for each full cwnd acked
- 		 */
- 		if (tp->bytes_acked >= tp->snd_cwnd*tp->mss_cache) {
- 			tp->bytes_acked -= tp->snd_cwnd*tp->mss_cache;
- 			if (tp->snd_cwnd < tp->snd_cwnd_clamp)
- 				tp->snd_cwnd++;
- 		}
- 	} else {
- 		/* In theory this is tp->snd_cwnd += 1 / tp->snd_cwnd */
- 		if (tp->snd_cwnd_cnt >= tp->snd_cwnd) {
- 			if (tp->snd_cwnd < tp->snd_cwnd_clamp)
- 				tp->snd_cwnd++;
- 			tp->snd_cwnd_cnt = 0;
- 		} else
- 			tp->snd_cwnd_cnt++;
- 	}
+		/* RFC3465: Appropriate Byte Count
+		 * increase once for each full cwnd acked
+		 */
+		if (tp->bytes_acked >= tp->snd_cwnd*tp->mss_cache) {
+			tp->bytes_acked -= tp->snd_cwnd*tp->mss_cache;
+			if (tp->snd_cwnd < tp->snd_cwnd_clamp)
+				tp->snd_cwnd++;
+		}
+	} else {
+		/* In theory this is tp->snd_cwnd += 1 / tp->snd_cwnd */
+		if (tp->snd_cwnd_cnt >= tp->snd_cwnd) {
+			if (tp->snd_cwnd < tp->snd_cwnd_clamp)
+				tp->snd_cwnd++;
+			tp->snd_cwnd_cnt = 0;
+		} else
+			tp->snd_cwnd_cnt++;
+	}
 }
 EXPORT_SYMBOL_GPL(tcp_reno_cong_avoid);
 

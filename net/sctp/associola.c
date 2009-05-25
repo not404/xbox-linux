@@ -52,7 +52,6 @@
 #include <linux/fcntl.h>
 #include <linux/poll.h>
 #include <linux/init.h>
-#include <linux/sched.h>
 
 #include <linux/slab.h>
 #include <linux/in.h>
@@ -158,14 +157,14 @@ static struct sctp_association *sctp_association_init(struct sctp_association *a
 	 * If the 'T5-shutdown-guard' timer is used, it SHOULD be set to the
 	 * recommended value of 5 times 'RTO.Max'.
 	 */
-        asoc->timeouts[SCTP_EVENT_TIMEOUT_T5_SHUTDOWN_GUARD]
+	asoc->timeouts[SCTP_EVENT_TIMEOUT_T5_SHUTDOWN_GUARD]
 		= 5 * asoc->rto_max;
 
 	asoc->timeouts[SCTP_EVENT_TIMEOUT_HEARTBEAT] = 0;
 	asoc->timeouts[SCTP_EVENT_TIMEOUT_SACK] = asoc->sackdelay;
 	asoc->timeouts[SCTP_EVENT_TIMEOUT_AUTOCLOSE] =
 		sp->autoclose * HZ;
-	
+
 	/* Initilizes the timers */
 	for (i = SCTP_EVENT_TIMEOUT_NONE; i < SCTP_NUM_TIMEOUT_TYPES; ++i) {
 		init_timer(&asoc->timers[i]);
@@ -1047,6 +1046,9 @@ void sctp_assoc_update(struct sctp_association *asoc,
 		trans = list_entry(pos, struct sctp_transport, transports);
 		if (!sctp_assoc_lookup_paddr(new, &trans->ipaddr))
 			sctp_assoc_del_peer(asoc, &trans->ipaddr);
+
+		if (asoc->state >= SCTP_STATE_ESTABLISHED)
+			sctp_transport_reset(trans);
 	}
 
 	/* If the case is A (association restart), use
@@ -1063,6 +1065,18 @@ void sctp_assoc_update(struct sctp_association *asoc,
 		 * and peer's streams.
 		 */
 		sctp_ssnmap_clear(asoc->ssnmap);
+
+		/* Flush the ULP reassembly and ordered queue.
+		 * Any data there will now be stale and will
+		 * cause problems.
+		 */
+		sctp_ulpq_flush(&asoc->ulpq);
+
+		/* reset the overall association error count so
+		 * that the restarted association doesn't get torn
+		 * down on the next retransmission timer.
+		 */
+		asoc->overall_error_count = 0;
 
 	} else {
 		/* Add any peer addresses from the new association. */
@@ -1334,8 +1348,8 @@ int sctp_assoc_set_bind_addr_from_cookie(struct sctp_association *asoc,
 				      asoc->ep->base.bind_addr.port, gfp);
 }
 
-/* Lookup laddr in the bind address list of an association. */ 
-int sctp_assoc_lookup_laddr(struct sctp_association *asoc, 
+/* Lookup laddr in the bind address list of an association. */
+int sctp_assoc_lookup_laddr(struct sctp_association *asoc,
 			    const union sctp_addr *laddr)
 {
 	int found;
@@ -1343,7 +1357,7 @@ int sctp_assoc_lookup_laddr(struct sctp_association *asoc,
 	sctp_read_lock(&asoc->base.addr_lock);
 	if ((asoc->base.bind_addr.port == ntohs(laddr->v4.sin_port)) &&
 	    sctp_bind_addr_match(&asoc->base.bind_addr, laddr,
-			         sctp_sk(asoc->base.sk))) {
+				 sctp_sk(asoc->base.sk))) {
 		found = 1;
 		goto out;
 	}

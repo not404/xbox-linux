@@ -13,6 +13,8 @@
 #include <linux/capability.h>
 #include <linux/errno.h>
 #include <linux/smp_lock.h>
+#include <linux/msi.h>
+#include <linux/irq.h>
 #include <linux/init.h>
 
 #include <asm/uaccess.h>
@@ -325,7 +327,7 @@ static int __init pcibios_init(void)
 
 subsys_initcall(pcibios_init);
 
-void pcibios_fixup_bus(struct pci_bus *pbus)
+void __devinit pcibios_fixup_bus(struct pci_bus *pbus)
 {
 	struct pci_pbm_info *pbm = pbus->sysdata;
 
@@ -403,7 +405,7 @@ void pcibios_bus_to_resource(struct pci_dev *pdev, struct resource *res,
 }
 EXPORT_SYMBOL(pcibios_bus_to_resource);
 
-char * __init pcibios_setup(char *str)
+char * __devinit pcibios_setup(char *str)
 {
 	return str;
 }
@@ -645,5 +647,46 @@ int pci_domain_nr(struct pci_bus *pbus)
 	return ret;
 }
 EXPORT_SYMBOL(pci_domain_nr);
+
+#ifdef CONFIG_PCI_MSI
+int arch_setup_msi_irq(struct pci_dev *pdev, struct msi_desc *desc)
+{
+	struct pcidev_cookie *pcp = pdev->sysdata;
+	struct pci_pbm_info *pbm = pcp->pbm;
+	struct pci_controller_info *p = pbm->parent;
+	int virt_irq, err;
+
+	if (!pbm->msi_num || !p->setup_msi_irq)
+		return -EINVAL;
+
+	err = p->setup_msi_irq(&virt_irq, pdev, desc);
+	if (err < 0)
+		return err;
+
+	return virt_irq;
+}
+
+void arch_teardown_msi_irq(unsigned int virt_irq)
+{
+	struct msi_desc *entry = get_irq_msi(virt_irq);
+	struct pci_dev *pdev = entry->dev;
+	struct pcidev_cookie *pcp = pdev->sysdata;
+	struct pci_pbm_info *pbm = pcp->pbm;
+	struct pci_controller_info *p = pbm->parent;
+
+	if (!pbm->msi_num || !p->setup_msi_irq)
+		return;
+
+	return p->teardown_msi_irq(virt_irq, pdev);
+}
+#endif /* !(CONFIG_PCI_MSI) */
+
+struct device_node *pci_device_to_OF_node(struct pci_dev *pdev)
+{
+	struct pcidev_cookie *pc = pdev->sysdata;
+
+	return pc->op->node;
+}
+EXPORT_SYMBOL(pci_device_to_OF_node);
 
 #endif /* !(CONFIG_PCI) */

@@ -296,10 +296,20 @@ void balance_dirty_pages_ratelimited_nr(struct address_space *mapping,
 }
 EXPORT_SYMBOL(balance_dirty_pages_ratelimited_nr);
 
-void throttle_vm_writeout(void)
+void throttle_vm_writeout(gfp_t gfp_mask)
 {
 	long background_thresh;
 	long dirty_thresh;
+
+	if ((gfp_mask & (__GFP_FS|__GFP_IO)) != (__GFP_FS|__GFP_IO)) {
+		/*
+		 * The caller might hold locks which can prevent IO completion
+		 * or progress in the filesystem.  So we cannot just sit here
+		 * waiting for IO to complete.
+		 */
+		congestion_wait(WRITE, HZ/10);
+		return;
+	}
 
         for ( ; ; ) {
 		get_dirty_limits(&background_thresh, &dirty_thresh, NULL);
@@ -316,7 +326,6 @@ void throttle_vm_writeout(void)
                 congestion_wait(WRITE, HZ/10);
         }
 }
-
 
 /*
  * writeback at least _min_pages, and keep writing until the amount of dirty
@@ -515,7 +524,7 @@ static int __cpuinit
 ratelimit_handler(struct notifier_block *self, unsigned long u, void *v)
 {
 	writeback_set_ratelimit();
-	return 0;
+	return NOTIFY_DONE;
 }
 
 static struct notifier_block __cpuinitdata ratelimit_nb = {
@@ -549,9 +558,7 @@ void __init page_writeback_init(void)
 }
 
 /**
- * generic_writepages - walk the list of dirty pages of the given
- *                      address space and writepage() all of them.
- *
+ * generic_writepages - walk the list of dirty pages of the given address space and writepage() all of them.
  * @mapping: address space structure to write
  * @wbc: subtract the number of written pages from *@wbc->nr_to_write
  *
@@ -698,7 +705,6 @@ int do_writepages(struct address_space *mapping, struct writeback_control *wbc)
 
 /**
  * write_one_page - write out a single page and optionally wait on I/O
- *
  * @page: the page to write
  * @wait: if true, wait on writeout
  *
@@ -735,6 +741,16 @@ int write_one_page(struct page *page, int wait)
 	return ret;
 }
 EXPORT_SYMBOL(write_one_page);
+
+/*
+ * For address_spaces which do not use buffers nor write back.
+ */
+int __set_page_dirty_no_writeback(struct page *page)
+{
+	if (!PageDirty(page))
+		SetPageDirty(page);
+	return 0;
+}
 
 /*
  * For address_spaces which do not use buffers.  Just tag the page as dirty in
