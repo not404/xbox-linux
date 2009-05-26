@@ -129,7 +129,7 @@ static int extsmi_init(void){
 	Xbox_SMC_write(SMC_CMD_RESET_ON_EJECT, SMC_SUBCMD_RESET_ON_EJECT_DISABLE);
 
 	/* FIXME! retval! */
-	request_irq(IRQ,extsmi_interrupt,SA_INTERRUPT|SA_SHIRQ,"xboxejectfix",dev);
+	request_irq(IRQ,extsmi_interrupt,IRQF_DISABLED|IRQF_SHARED,"xboxejectfix",dev);
 	return 0;
 }
 

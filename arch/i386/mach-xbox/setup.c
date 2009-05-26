@@ -76,7 +76,7 @@ void __init trap_init_hook(void)
 
 static struct irqaction irq0  = {
 	.handler	= timer_interrupt,
-	.flags		= SA_INTERRUPT,
+	.flags		= IRQF_DISABLED,
 	.mask		= CPU_MASK_NONE,
 	.name		= "timer",
 };
