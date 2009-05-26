@@ -167,13 +167,13 @@ int xcalibur_i2c_read_reg(unsigned char adr) {
 	return i2c_smbus_read_byte_data(&xcalibur_client, adr);
 }
 
-int xcalibur_i2c_read_block(unsigned char adr, unsigned char *data) {
+int xcalibur_i2c_read_block(unsigned char adr, unsigned char *data, int len) {
 	if (!xcalibur_client.adapter) {
 		printk(KERN_ERR DRIVER_NAME " : No Xcalibur client attached.\n");
 		return -1;
 	}
 	udelay(500);
-	return i2c_smbus_read_i2c_block_data(&xcalibur_client, adr, data);
+	return i2c_smbus_read_i2c_block_data(&xcalibur_client, adr, len, data);
 }
 
 int xcalibur_i2c_write_block(unsigned char adr, unsigned char *data, int len){

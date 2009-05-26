@@ -1256,7 +1256,9 @@ int CalcStateExt
     int            dotClock
 )
 {
-    int pixelDepth, VClk=0, m=0, n=0, p=0;
+    int pixelDepth;
+    int uninitialized_var(VClk),uninitialized_var(m),
+        uninitialized_var(n),  uninitialized_var(p);
     /*
      * Save mode parameters.
      */

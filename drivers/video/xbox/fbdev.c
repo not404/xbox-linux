@@ -2388,7 +2388,7 @@ static void __devexit xboxfb_remove(struct pci_dev *pd)
  *
  * ------------------------------------------------------------------------- */
 
-static int __init xboxfb_setup(char *options)
+static int __devinit xboxfb_setup(char *options)
 {
 	char *this_opt;
 
