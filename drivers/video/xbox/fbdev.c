@@ -941,7 +941,8 @@ out:
 	return rc;
 }
 
-static void riva_update_var(struct fb_var_screeninfo *var, struct fb_videomode *modedb)
+static void riva_update_var(struct fb_var_screeninfo *var,
+			    const struct fb_videomode *modedb)
 {
 	NVTRACE_ENTER();
 	var->xres = var->xres_virtual = modedb->xres;
@@ -1196,9 +1197,8 @@ static int riva_set_backlight_level(int level, void *data)
 static int xboxfb_open(struct fb_info *info, int user)
 {
 	struct riva_par *par = (struct riva_par *) info->par;
-	int cnt = atomic_read(&par->ref_count);
-
-	if (!cnt) {
+	mutex_lock(&par->open_lock);
+	if (!par->ref_count) {
 		memset(&par->state, 0, sizeof(struct vgastate));
 		par->state.flags = VGA_SAVE_MODE  | VGA_SAVE_FONTS;
 		/* save the DAC for Riva128 */
@@ -1227,18 +1227,20 @@ static int xboxfb_open(struct fb_info *info, int user)
 	
 		riva_save_state(par, &par->initial_state);
 	}
-	atomic_inc(&par->ref_count);
+	par->ref_count++;
+	mutex_unlock(&par->open_lock);
 	return 0;
 }
 
 static int xboxfb_release(struct fb_info *info, int user)
 {
 	struct riva_par *par = (struct riva_par *) info->par;
-	int cnt = atomic_read(&par->ref_count);
-
-	if (!cnt)
+	mutex_lock(&par->open_lock);
+	if (!par->ref_count) {
+		mutex_unlock(&par->open_lock);
 		return -EINVAL;
-	if (cnt == 1) {
+	}
+	if (par->ref_count == 1) {
 		par->riva.LockUnlock(&par->riva, 0);
 		par->riva.LoadStateExt(&par->riva, &par->initial_state.ext);
 		riva_load_state(par, &par->initial_state);
@@ -1247,13 +1249,14 @@ static int xboxfb_release(struct fb_info *info, int user)
 #endif
 		par->riva.LockUnlock(&par->riva, 1);
 	}
-	atomic_dec(&par->ref_count);
+	par->ref_count--;
+	mutex_unlock(&par->open_lock);
 	return 0;
 }
 
 static int xboxfb_check_var(struct fb_var_screeninfo *var, struct fb_info *info)
 {
-	struct fb_videomode *mode;
+	const struct fb_videomode *mode;
 	struct riva_par *par = (struct riva_par *) info->par;
 	int nom, den;		/* translating from pixels->bytes */
 	int mode_valid = 0;
@@ -2146,12 +2149,12 @@ static int __devinit xboxfb_probe(struct pci_dev *pd,
 	memset(info, 0, sizeof(struct fb_info));
 	memset(default_par, 0, sizeof(struct riva_par));
 
-	info->pixmap.addr = kmalloc(64 * 1024, GFP_KERNEL);
+	info->pixmap.addr = kzalloc(64 * 1024, GFP_KERNEL);
 	if (info->pixmap.addr == NULL)
 		goto err_out_kfree1;
-	memset(info->pixmap.addr, 0, 64 * 1024);
 
 	strcat(xboxfb_fix.id, rci->name);
+	mutex_init(&default_par->open_lock);
 	default_par->riva.Architecture = rci->arch_rev;
 
 	default_par->Chipset = (pd->vendor << 16) | pd->device;

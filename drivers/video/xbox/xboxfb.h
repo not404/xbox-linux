@@ -38,7 +38,9 @@ struct riva_par {
 	struct riva_regs initial_state;	/* initial startup video mode */
 	struct riva_regs current_state;
 	struct vgastate state;
-	atomic_t ref_count;
+	struct mutex open_lock;
+	unsigned int ref_count;
+
 	u32 cursor_data[32 * 32/4];
 	unsigned char *EDID;
 
