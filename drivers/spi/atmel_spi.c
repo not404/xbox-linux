@@ -22,10 +22,7 @@
 #include <asm/io.h>
 #include <asm/arch/board.h>
 #include <asm/arch/gpio.h>
-
-#ifdef CONFIG_ARCH_AT91
 #include <asm/arch/cpu.h>
-#endif
 
 #include "atmel_spi.h"
 
@@ -116,16 +113,16 @@ static void atmel_spi_next_xfer(struct spi_master *master,
 
 	len = as->remaining_bytes;
 
-	tx_dma = xfer->tx_dma;
-	rx_dma = xfer->rx_dma;
+	tx_dma = xfer->tx_dma + xfer->len - len;
+	rx_dma = xfer->rx_dma + xfer->len - len;
 
 	/* use scratch buffer only when rx or tx data is unspecified */
-	if (rx_dma == INVALID_DMA_ADDRESS) {
+	if (!xfer->rx_buf) {
 		rx_dma = as->buffer_dma;
 		if (len > BUFFER_SIZE)
 			len = BUFFER_SIZE;
 	}
-	if (tx_dma == INVALID_DMA_ADDRESS) {
+	if (!xfer->tx_buf) {
 		tx_dma = as->buffer_dma;
 		if (len > BUFFER_SIZE)
 			len = BUFFER_SIZE;
@@ -552,10 +549,8 @@ static int __init atmel_spi_probe(struct platform_device *pdev)
 		goto out_free_buffer;
 	as->irq = irq;
 	as->clk = clk;
-#ifdef CONFIG_ARCH_AT91
 	if (!cpu_is_at91rm9200())
 		as->new_1 = 1;
-#endif
 
 	ret = request_irq(irq, atmel_spi_interrupt, 0,
 			pdev->dev.bus_id, master);

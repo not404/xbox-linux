@@ -37,12 +37,12 @@ static
 int ipv4_sysctl_forward(ctl_table *ctl, int write, struct file * filp,
 			void __user *buffer, size_t *lenp, loff_t *ppos)
 {
-	int val = ipv4_devconf.forwarding;
+	int val = IPV4_DEVCONF_ALL(FORWARDING);
 	int ret;
 
 	ret = proc_dointvec(ctl, write, filp, buffer, lenp, ppos);
 
-	if (write && ipv4_devconf.forwarding != val)
+	if (write && IPV4_DEVCONF_ALL(FORWARDING) != val)
 		inet_forward_change();
 
 	return ret;
@@ -222,7 +222,7 @@ ctl_table ipv4_table[] = {
 	{
 		.ctl_name	= NET_IPV4_FORWARD,
 		.procname	= "ip_forward",
-		.data		= &ipv4_devconf.forwarding,
+		.data		= &IPV4_DEVCONF_ALL(FORWARDING),
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= &ipv4_sysctl_forward,
@@ -647,6 +647,14 @@ ctl_table ipv4_table[] = {
 		.proc_handler	= &proc_dointvec
 	},
 	{
+		.ctl_name	= NET_TCP_FRTO_RESPONSE,
+		.procname	= "tcp_frto_response",
+		.data		= &sysctl_tcp_frto_response,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &proc_dointvec
+	},
+	{
 		.ctl_name	= NET_TCP_LOW_LATENCY,
 		.procname	= "tcp_low_latency",
 		.data		= &sysctl_tcp_low_latency,
@@ -802,6 +810,14 @@ ctl_table ipv4_table[] = {
 		.mode		= 0644,
 		.proc_handler   = &proc_allowed_congestion_control,
 		.strategy	= &strategy_allowed_congestion_control,
+	},
+	{
+		.ctl_name	= NET_TCP_MAX_SSTHRESH,
+		.procname	= "tcp_max_ssthresh",
+		.data		= &sysctl_tcp_max_ssthresh,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &proc_dointvec,
 	},
 	{ .ctl_name = 0 }
 };

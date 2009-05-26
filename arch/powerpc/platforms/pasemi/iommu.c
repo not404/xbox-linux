@@ -31,8 +31,6 @@
 #define IOBMAP_PAGE_SIZE	(1 << IOBMAP_PAGE_SHIFT)
 #define IOBMAP_PAGE_MASK	(IOBMAP_PAGE_SIZE - 1)
 
-#define IOBMAP_PAGE_FACTOR	(PAGE_SHIFT - IOBMAP_PAGE_SHIFT)
-
 #define IOB_BASE		0xe0000000
 #define IOB_SIZE		0x3000
 /* Configuration registers */
@@ -97,9 +95,6 @@ static void iobmap_build(struct iommu_table *tbl, long index,
 
 	bus_addr = (tbl->it_offset + index) << PAGE_SHIFT;
 
-	npages <<= IOBMAP_PAGE_FACTOR;
-	index <<= IOBMAP_PAGE_FACTOR;
-
 	ip = ((u32 *)tbl->it_base) + index;
 
 	while (npages--) {
@@ -124,9 +119,6 @@ static void iobmap_free(struct iommu_table *tbl, long index,
 	pr_debug("iobmap: free at: %lx, %lx\n", index, npages);
 
 	bus_addr = (tbl->it_offset + index) << PAGE_SHIFT;
-
-	npages <<= IOBMAP_PAGE_FACTOR;
-	index <<= IOBMAP_PAGE_FACTOR;
 
 	ip = ((u32 *)tbl->it_base) + index;
 
@@ -249,13 +241,13 @@ void iommu_init_early_pasemi(void)
 	iommu_off = 1;
 #else
 	iommu_off = of_chosen &&
-			get_property(of_chosen, "linux,iommu-off", NULL);
+			of_get_property(of_chosen, "linux,iommu-off", NULL);
 #endif
 	if (iommu_off) {
 		/* Direct I/O, IOMMU off */
 		ppc_md.pci_dma_dev_setup = pci_dma_dev_setup_null;
 		ppc_md.pci_dma_bus_setup = pci_dma_bus_setup_null;
-		pci_dma_ops = &dma_direct_ops;
+		set_pci_dma_ops(&dma_direct_ops);
 
 		return;
 	}
@@ -266,7 +258,7 @@ void iommu_init_early_pasemi(void)
 	ppc_md.pci_dma_bus_setup = pci_dma_bus_setup_pasemi;
 	ppc_md.tce_build = iobmap_build;
 	ppc_md.tce_free  = iobmap_free;
-	pci_dma_ops = &dma_iommu_ops;
+	set_pci_dma_ops(&dma_iommu_ops);
 }
 
 void __init alloc_iobmap_l2(void)

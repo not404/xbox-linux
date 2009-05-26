@@ -11,6 +11,8 @@
 #include <linux/mm.h>
 #include <linux/time.h>
 #include <linux/timex.h>
+#include <linux/jiffies.h>
+#include <linux/hrtimer.h>
 
 #include <asm/div64.h>
 #include <asm/timex.h>
@@ -120,7 +122,6 @@ void second_overflow(void)
 			 */
 			time_interpolator_update(-NSEC_PER_SEC);
 			time_state = TIME_OOP;
-			clock_was_set();
 			printk(KERN_NOTICE "Clock: inserting leap second "
 					"23:59:60 UTC\n");
 		}
@@ -135,7 +136,6 @@ void second_overflow(void)
 			 */
 			time_interpolator_update(NSEC_PER_SEC);
 			time_state = TIME_WAIT;
-			clock_was_set();
 			printk(KERN_NOTICE "Clock: deleting leap second "
 					"23:59:59 UTC\n");
 		}

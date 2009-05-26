@@ -43,7 +43,7 @@
 #include <linux/libata.h>
 
 #define DRV_NAME		"pata_scc"
-#define DRV_VERSION		"0.1"
+#define DRV_VERSION		"0.2"
 
 #define PCI_DEVICE_ID_TOSHIBA_SCC_ATA		0x01b4
 
@@ -489,23 +489,26 @@ static unsigned int scc_devchk (struct ata_port *ap,
  *	Note: Original code is ata_bus_post_reset().
  */
 
-static void scc_bus_post_reset (struct ata_port *ap, unsigned int devmask)
+static int scc_bus_post_reset(struct ata_port *ap, unsigned int devmask,
+                              unsigned long deadline)
 {
 	struct ata_ioports *ioaddr = &ap->ioaddr;
 	unsigned int dev0 = devmask & (1 << 0);
 	unsigned int dev1 = devmask & (1 << 1);
-	unsigned long timeout;
+	int rc;
 
 	/* if device 0 was found in ata_devchk, wait for its
 	 * BSY bit to clear
 	 */
-	if (dev0)
-		ata_busy_sleep(ap, ATA_TMOUT_BOOT_QUICK, ATA_TMOUT_BOOT);
+	if (dev0) {
+		rc = ata_wait_ready(ap, deadline);
+		if (rc && rc != -ENODEV)
+			return rc;
+	}
 
 	/* if device 1 was found in ata_devchk, wait for
 	 * register access, then wait for BSY to clear
 	 */
-	timeout = jiffies + ATA_TMOUT_BOOT;
 	while (dev1) {
 		u8 nsect, lbal;
 
@@ -514,14 +517,15 @@ static void scc_bus_post_reset (struct ata_port *ap, unsigned int devmask)
 		lbal = in_be32(ioaddr->lbal_addr);
 		if ((nsect == 1) && (lbal == 1))
 			break;
-		if (time_after(jiffies, timeout)) {
-			dev1 = 0;
-			break;
-		}
+		if (time_after(jiffies, deadline))
+			return -EBUSY;
 		msleep(50);	/* give drive a breather */
 	}
-	if (dev1)
-		ata_busy_sleep(ap, ATA_TMOUT_BOOT_QUICK, ATA_TMOUT_BOOT);
+	if (dev1) {
+		rc = ata_wait_ready(ap, deadline);
+		if (rc && rc != -ENODEV)
+			return rc;
+	}
 
 	/* is all this really necessary? */
 	ap->ops->dev_select(ap, 0);
@@ -529,6 +533,8 @@ static void scc_bus_post_reset (struct ata_port *ap, unsigned int devmask)
 		ap->ops->dev_select(ap, 1);
 	if (dev0)
 		ap->ops->dev_select(ap, 0);
+
+	return 0;
 }
 
 /**
@@ -537,8 +543,8 @@ static void scc_bus_post_reset (struct ata_port *ap, unsigned int devmask)
  *	Note: Original code is ata_bus_softreset().
  */
 
-static unsigned int scc_bus_softreset (struct ata_port *ap,
-				       unsigned int devmask)
+static unsigned int scc_bus_softreset(struct ata_port *ap, unsigned int devmask,
+                                      unsigned long deadline)
 {
 	struct ata_ioports *ioaddr = &ap->ioaddr;
 
@@ -570,7 +576,7 @@ static unsigned int scc_bus_softreset (struct ata_port *ap,
 	if (scc_check_status(ap) == 0xFF)
 		return 0;
 
-	scc_bus_post_reset(ap, devmask);
+	scc_bus_post_reset(ap, devmask, deadline);
 
 	return 0;
 }
@@ -579,11 +585,13 @@ static unsigned int scc_bus_softreset (struct ata_port *ap,
  *	scc_std_softreset - reset host port via ATA SRST
  *	@ap: port to reset
  *	@classes: resulting classes of attached devices
+ *	@deadline: deadline jiffies for the operation
  *
  *	Note: Original code is ata_std_softreset().
  */
 
-static int scc_std_softreset (struct ata_port *ap, unsigned int *classes)
+static int scc_std_softreset (struct ata_port *ap, unsigned int *classes,
+                              unsigned long deadline)
 {
 	unsigned int slave_possible = ap->flags & ATA_FLAG_SLAVE_POSS;
 	unsigned int devmask = 0, err_mask;
@@ -607,7 +615,7 @@ static int scc_std_softreset (struct ata_port *ap, unsigned int *classes)
 
 	/* issue bus reset */
 	DPRINTK("about to softreset, devmask=%x\n", devmask);
-	err_mask = scc_bus_softreset(ap, devmask);
+	err_mask = scc_bus_softreset(ap, devmask, deadline);
 	if (err_mask) {
 		ata_port_printk(ap, KERN_ERR, "SRST failed (err_mask=0x%x)\n",
 				err_mask);
@@ -676,10 +684,11 @@ static void scc_bmdma_stop (struct ata_queued_cmd *qc)
 
 		if (reg & INTSTS_BMSINT) {
 			unsigned int classes;
+			unsigned long deadline = jiffies + ATA_TMOUT_BOOT;
 			printk(KERN_WARNING "%s: Internal Bus Error\n", DRV_NAME);
 			out_be32(bmid_base + SCC_DMA_INTST, INTSTS_BMSINT);
 			/* TBD: SW reset */
-			scc_std_softreset(ap, &classes);
+			scc_std_softreset(ap, &classes, deadline);
 			continue;
 		}
 
@@ -862,12 +871,13 @@ static void scc_bmdma_freeze (struct ata_port *ap)
 /**
  *	scc_pata_prereset - prepare for reset
  *	@ap: ATA port to be reset
+ *	@deadline: deadline jiffies for the operation
  */
 
-static int scc_pata_prereset (struct ata_port *ap)
+static int scc_pata_prereset(struct ata_port *ap, unsigned long deadline)
 {
 	ap->cbl = ATA_CBL_PATA80;
-	return ata_std_prereset(ap);
+	return ata_std_prereset(ap, deadline);
 }
 
 /**
@@ -984,10 +994,6 @@ static struct scsi_host_template scc_sht = {
 	.slave_configure	= ata_scsi_slave_config,
 	.slave_destroy		= ata_scsi_slave_destroy,
 	.bios_param		= ata_std_bios_param,
-#ifdef CONFIG_PM
-	.resume			= ata_scsi_device_resume,
-	.suspend		= ata_scsi_device_suspend,
-#endif
 };
 
 static const struct ata_port_operations scc_pata_ops = {
@@ -1016,7 +1022,6 @@ static const struct ata_port_operations scc_pata_ops = {
 	.error_handler		= scc_error_handler,
 	.post_internal_cmd	= scc_bmdma_stop,
 
-	.irq_handler		= ata_interrupt,
 	.irq_clear		= scc_bmdma_irq_clear,
 	.irq_on			= scc_irq_on,
 	.irq_ack		= scc_irq_ack,
@@ -1027,7 +1032,6 @@ static const struct ata_port_operations scc_pata_ops = {
 
 static struct ata_port_info scc_port_info[] = {
 	{
-		.sht		= &scc_sht,
 		.flags		= ATA_FLAG_SLAVE_POSS | ATA_FLAG_MMIO | ATA_FLAG_NO_LEGACY,
 		.pio_mask	= 0x1f,	/* pio0-4 */
 		.mwdma_mask	= 0x00,
@@ -1040,10 +1044,10 @@ static struct ata_port_info scc_port_info[] = {
  *	scc_reset_controller - initialize SCC PATA controller.
  */
 
-static int scc_reset_controller(struct ata_probe_ent *probe_ent)
+static int scc_reset_controller(struct ata_host *host)
 {
-	void __iomem *ctrl_base = probe_ent->iomap[SCC_CTRL_BAR];
-	void __iomem *bmid_base = probe_ent->iomap[SCC_BMID_BAR];
+	void __iomem *ctrl_base = host->iomap[SCC_CTRL_BAR];
+	void __iomem *bmid_base = host->iomap[SCC_BMID_BAR];
 	void __iomem *cckctrl_port = ctrl_base + SCC_CTL_CCKCTRL;
 	void __iomem *mode_port = ctrl_base + SCC_CTL_MODEREG;
 	void __iomem *ecmode_port = ctrl_base + SCC_CTL_ECMODE;
@@ -1104,16 +1108,14 @@ static void scc_setup_ports (struct ata_ioports *ioaddr, void __iomem *base)
 	ioaddr->command_addr = ioaddr->cmd_addr + SCC_REG_CMD;
 }
 
-static int scc_host_init(struct ata_probe_ent *probe_ent)
+static int scc_host_init(struct ata_host *host)
 {
-	struct pci_dev *pdev = to_pci_dev(probe_ent->dev);
+	struct pci_dev *pdev = to_pci_dev(host->dev);
 	int rc;
 
-	rc = scc_reset_controller(probe_ent);
+	rc = scc_reset_controller(host);
 	if (rc)
 		return rc;
-
-	probe_ent->n_ports = 1;
 
 	rc = pci_set_dma_mask(pdev, ATA_DMA_MASK);
 	if (rc)
@@ -1122,7 +1124,7 @@ static int scc_host_init(struct ata_probe_ent *probe_ent)
 	if (rc)
 		return rc;
 
-	scc_setup_ports(&probe_ent->port[0], probe_ent->iomap[SCC_BMID_BAR]);
+	scc_setup_ports(&host->ports[0]->ioaddr, host->iomap[SCC_BMID_BAR]);
 
 	pci_set_master(pdev);
 
@@ -1145,13 +1147,17 @@ static int scc_init_one (struct pci_dev *pdev, const struct pci_device_id *ent)
 {
 	static int printed_version;
 	unsigned int board_idx = (unsigned int) ent->driver_data;
-	struct device *dev = &pdev->dev;
-	struct ata_probe_ent *probe_ent;
+	const struct ata_port_info *ppi[] = { &scc_port_info[board_idx], NULL };
+	struct ata_host *host;
 	int rc;
 
 	if (!printed_version++)
 		dev_printk(KERN_DEBUG, &pdev->dev,
 			   "version " DRV_VERSION "\n");
+
+	host = ata_host_alloc_pinfo(&pdev->dev, ppi, 1);
+	if (!host)
+		return -ENOMEM;
 
 	rc = pcim_enable_device(pdev);
 	if (rc)
@@ -1162,33 +1168,14 @@ static int scc_init_one (struct pci_dev *pdev, const struct pci_device_id *ent)
 		pcim_pin_device(pdev);
 	if (rc)
 		return rc;
+	host->iomap = pcim_iomap_table(pdev);
 
-	probe_ent = devm_kzalloc(dev, sizeof(*probe_ent), GFP_KERNEL);
-	if (!probe_ent)
-		return -ENOMEM;
-
-	probe_ent->dev = dev;
-	INIT_LIST_HEAD(&probe_ent->node);
-
-	probe_ent->sht 		= scc_port_info[board_idx].sht;
-	probe_ent->port_flags 	= scc_port_info[board_idx].flags;
-	probe_ent->pio_mask 	= scc_port_info[board_idx].pio_mask;
-	probe_ent->udma_mask 	= scc_port_info[board_idx].udma_mask;
-	probe_ent->port_ops 	= scc_port_info[board_idx].port_ops;
-
-	probe_ent->irq = pdev->irq;
-	probe_ent->irq_flags = IRQF_SHARED;
-	probe_ent->iomap = pcim_iomap_table(pdev);
-
-	rc = scc_host_init(probe_ent);
+	rc = scc_host_init(host);
 	if (rc)
 		return rc;
 
-	if (!ata_device_add(probe_ent))
-		return -ENODEV;
-
-	devm_kfree(dev, probe_ent);
-	return 0;
+	return ata_host_activate(host, pdev->irq, ata_interrupt, IRQF_SHARED,
+				 &scc_sht);
 }
 
 static struct pci_driver scc_pci_driver = {

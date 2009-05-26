@@ -68,14 +68,23 @@ static struct page *split_large_page(unsigned long address, pgprot_t prot,
 	return base;
 } 
 
-static void flush_kernel_map(void *arg)
+static void cache_flush_page(struct page *p)
 { 
-	unsigned long adr = (unsigned long)arg;
+	unsigned long adr = (unsigned long)page_address(p);
+	int i;
+	for (i = 0; i < PAGE_SIZE; i += boot_cpu_data.x86_clflush_size)
+		asm volatile("clflush (%0)" :: "r" (adr + i));
+}
 
-	if (adr && cpu_has_clflush) {
-		int i;
-		for (i = 0; i < PAGE_SIZE; i += boot_cpu_data.x86_clflush_size)
-			asm volatile("clflush (%0)" :: "r" (adr + i));
+static void flush_kernel_map(void *arg)
+{
+	struct list_head *lh = (struct list_head *)arg;
+	struct page *p;
+
+	/* High level code is not ready for clflush yet */
+	if (0 && cpu_has_clflush) {
+		list_for_each_entry (p, lh, lru)
+			cache_flush_page(p);
 	} else if (boot_cpu_data.x86_model >= 4)
 		wbinvd();
 
@@ -91,7 +100,7 @@ static void set_pmd_pte(pte_t *kpte, unsigned long address, pte_t pte)
 	unsigned long flags;
 
 	set_pte_atomic(kpte, pte); 	/* change init_mm */
-	if (PTRS_PER_PMD > 1)
+	if (SHARED_KERNEL_PMD)
 		return;
 
 	spin_lock_irqsave(&pgd_lock, flags);
@@ -142,7 +151,7 @@ __change_page_attr(struct page *page, pgprot_t prot)
 		return -EINVAL;
 	kpte_page = virt_to_page(kpte);
 	if (pgprot_val(prot) != pgprot_val(PAGE_KERNEL)) { 
-		if ((pte_val(*kpte) & _PAGE_PSE) == 0) { 
+		if (!pte_huge(*kpte)) {
 			set_pte_atomic(kpte, mk_pte(page, prot)); 
 		} else {
 			pgprot_t ref_prot;
@@ -158,7 +167,7 @@ __change_page_attr(struct page *page, pgprot_t prot)
 			kpte_page = split;
 		}
 		page_private(kpte_page)++;
-	} else if ((pte_val(*kpte) & _PAGE_PSE) == 0) { 
+	} else if (!pte_huge(*kpte)) {
 		set_pte_atomic(kpte, mk_pte(page, PAGE_KERNEL));
 		BUG_ON(page_private(kpte_page) == 0);
 		page_private(kpte_page)--;
@@ -181,9 +190,9 @@ __change_page_attr(struct page *page, pgprot_t prot)
 	return 0;
 } 
 
-static inline void flush_map(void *adr)
+static inline void flush_map(struct list_head *l)
 {
-	on_each_cpu(flush_kernel_map, adr, 1, 1);
+	on_each_cpu(flush_kernel_map, l, 1, 1);
 }
 
 /*
@@ -225,11 +234,8 @@ void global_flush_tlb(void)
 	spin_lock_irq(&cpa_lock);
 	list_replace_init(&df_list, &l);
 	spin_unlock_irq(&cpa_lock);
-	if (!cpu_has_clflush)
-		flush_map(NULL);
+	flush_map(&l);
 	list_for_each_entry_safe(pg, next, &l, lru) {
-		if (cpu_has_clflush)
-			flush_map(page_address(pg));
 		__free_page(pg);
 	}
 }

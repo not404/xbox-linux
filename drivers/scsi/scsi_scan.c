@@ -181,9 +181,16 @@ int scsi_complete_async_scans(void)
 	return 0;
 }
 
-#ifdef MODULE
 /* Only exported for the benefit of scsi_wait_scan */
 EXPORT_SYMBOL_GPL(scsi_complete_async_scans);
+
+#ifndef MODULE
+/*
+ * For async scanning we need to wait for all the scans to complete before
+ * trying to mount the root fs.  Otherwise non-modular drivers may not be ready
+ * yet.
+ */
+late_initcall(scsi_complete_async_scans);
 #endif
 
 /**

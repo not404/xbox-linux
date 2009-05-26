@@ -164,6 +164,24 @@ static ssize_t show_card(struct class_device *cd, char *buf)
 static CLASS_DEVICE_ATTR(card, S_IRUGO, show_card, NULL);
 
 /* ----------------------------------------------------------------------- */
+/* dvb auto-load setup                                                     */
+#if defined(CONFIG_MODULES) && defined(MODULE)
+static void request_module_async(struct work_struct *work)
+{
+	request_module("dvb-bt8xx");
+}
+
+static void request_modules(struct bttv *dev)
+{
+	INIT_WORK(&dev->request_module_wk, request_module_async);
+	schedule_work(&dev->request_module_wk);
+}
+#else
+#define request_modules(dev)
+#endif /* CONFIG_MODULES */
+
+
+/* ----------------------------------------------------------------------- */
 /* static data                                                             */
 
 /* special timing tables from conexant... */
@@ -1313,7 +1331,7 @@ set_tvnorm(struct bttv *btv, unsigned int norm)
 
 /* Call with btv->lock down. */
 static void
-set_input(struct bttv *btv, unsigned int input)
+set_input(struct bttv *btv, unsigned int input, unsigned int norm)
 {
 	unsigned long flags;
 
@@ -1332,7 +1350,7 @@ set_input(struct bttv *btv, unsigned int input)
 	}
 	audio_input(btv,(input == bttv_tvcards[btv->c.type].tuner ?
 		       TVAUDIO_INPUT_TUNER : TVAUDIO_INPUT_EXTERN));
-	set_tvnorm(btv,btv->tvnorm);
+	set_tvnorm(btv, norm);
 	i2c_vidiocschan(btv);
 }
 
@@ -1423,7 +1441,7 @@ static void bttv_reinit_bt848(struct bttv *btv)
 
 	init_bt848(btv);
 	btv->pll.pll_current = -1;
-	set_input(btv,btv->input);
+	set_input(btv, btv->input, btv->tvnorm);
 }
 
 static int get_control(struct bttv *btv, struct v4l2_control *c)
@@ -1993,8 +2011,7 @@ static int bttv_common_ioctls(struct bttv *btv, unsigned int cmd, void *arg)
 			return 0;
 		}
 
-		btv->tvnorm = v->norm;
-		set_input(btv,v->channel);
+		set_input(btv, v->channel, v->norm);
 		mutex_unlock(&btv->lock);
 		return 0;
 	}
@@ -2130,7 +2147,7 @@ static int bttv_common_ioctls(struct bttv *btv, unsigned int cmd, void *arg)
 		if (*i > bttv_tvcards[btv->c.type].video_inputs)
 			return -EINVAL;
 		mutex_lock(&btv->lock);
-		set_input(btv,*i);
+		set_input(btv, *i, btv->tvnorm);
 		mutex_unlock(&btv->lock);
 		return 0;
 	}
@@ -4762,16 +4779,18 @@ static int __devinit bttv_probe(struct pci_dev *dev,
 		bt848_hue(btv,32768);
 		bt848_sat(btv,32768);
 		audio_mute(btv, 1);
-		set_input(btv,0);
+		set_input(btv, 0, btv->tvnorm);
 		bttv_crop_reset(&btv->crop[0], btv->tvnorm);
 		btv->crop[1] = btv->crop[0]; /* current = default */
 		disclaim_vbi_lines(btv);
 		disclaim_video_lines(btv);
 	}
 
-	/* add subdevices */
-	if (bttv_tvcards[btv->c.type].has_dvb)
+	/* add subdevices and autoload dvb-bt8xx if needed */
+	if (bttv_tvcards[btv->c.type].has_dvb) {
 		bttv_sub_add_device(&btv->c, "dvb");
+		request_modules(btv);
+	}
 
 	bttv_input_init(btv);
 

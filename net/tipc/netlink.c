@@ -57,10 +57,10 @@ static int handle_cmd(struct sk_buff *skb, struct genl_info *info)
 
 	if (rep_buf) {
 		skb_push(rep_buf, hdr_space);
-		rep_nlh = (struct nlmsghdr *)rep_buf->data;
+		rep_nlh = nlmsg_hdr(rep_buf);
 		memcpy(rep_nlh, req_nlh, hdr_space);
 		rep_nlh->nlmsg_len = rep_buf->len;
-		genlmsg_unicast(rep_buf, req_nlh->nlmsg_pid);
+		genlmsg_unicast(rep_buf, NETLINK_CB(skb).pid);
 	}
 
 	return 0;

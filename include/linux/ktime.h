@@ -43,7 +43,7 @@
  * plain scalar nanosecond based representation can be selected by the
  * config switch CONFIG_KTIME_SCALAR.
  */
-typedef union {
+union ktime {
 	s64	tv64;
 #if BITS_PER_LONG != 64 && !defined(CONFIG_KTIME_SCALAR)
 	struct {
@@ -54,7 +54,9 @@ typedef union {
 # endif
 	} tv;
 #endif
-} ktime_t;
+};
+
+typedef union ktime ktime_t;		/* Kill this */
 
 #define KTIME_MAX			((s64)~((u64)1 << 63))
 #if (BITS_PER_LONG == 64)
@@ -258,6 +260,24 @@ static inline s64 ktime_to_ns(const ktime_t kt)
 }
 
 #endif
+
+/**
+ * ktime_equal - Compares two ktime_t variables to see if they are equal
+ * @cmp1:	comparable1
+ * @cmp2:	comparable2
+ *
+ * Compare two ktime_t variables, returns 1 if equal
+ */
+static inline int ktime_equal(const ktime_t cmp1, const ktime_t cmp2)
+{
+	return cmp1.tv64 == cmp2.tv64;
+}
+
+static inline s64 ktime_to_us(const ktime_t kt)
+{
+	struct timeval tv = ktime_to_timeval(kt);
+	return (s64) tv.tv_sec * USEC_PER_SEC + tv.tv_usec;
+}
 
 /*
  * The resolution of the clocks. The resolution value is returned in

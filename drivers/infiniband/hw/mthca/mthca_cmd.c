@@ -37,6 +37,7 @@
 #include <linux/completion.h>
 #include <linux/pci.h>
 #include <linux/errno.h>
+#include <linux/sched.h>
 #include <asm/io.h>
 #include <rdma/ib_mad.h>
 
@@ -771,7 +772,7 @@ int mthca_QUERY_FW(struct mthca_dev *dev, u8 *status)
 
 	MTHCA_GET(dev->fw_ver,   outbox, QUERY_FW_VER_OFFSET);
 	/*
-	 * FW subminor version is at more signifant bits than minor
+	 * FW subminor version is at more significant bits than minor
 	 * version, so swap here.
 	 */
 	dev->fw_ver = (dev->fw_ver & 0xffff00000000ull) |

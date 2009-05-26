@@ -59,8 +59,10 @@
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/list.h>
+#include <linux/mm.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
+#include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/stat.h>
@@ -68,6 +70,7 @@
 #include <linux/stringify.h>
 #include <linux/types.h>
 #include <linux/wait.h>
+#include <linux/workqueue.h>
 
 #include <asm/byteorder.h>
 #include <asm/errno.h>
@@ -190,6 +193,27 @@ MODULE_PARM_DESC(workarounds, "Work around device bugs (default = 0"
 	", fix capacity = "       __stringify(SBP2_WORKAROUND_FIX_CAPACITY)
 	", override internal blacklist = " __stringify(SBP2_WORKAROUND_OVERRIDE)
 	", or a combination)");
+
+/*
+ * This influences the format of the sysfs attribute
+ * /sys/bus/scsi/devices/.../ieee1394_id.
+ *
+ * The default format is like in older kernels:  %016Lx:%d:%d
+ * It contains the target's EUI-64, a number given to the logical unit by
+ * the ieee1394 driver's nodemgr (starting at 0), and the LUN.
+ *
+ * The long format is:  %016Lx:%06x:%04x
+ * It contains the target's EUI-64, the unit directory's directory_ID as per
+ * IEEE 1212 clause 7.7.19, and the LUN.  This format comes closest to the
+ * format of SBP(-3) target port and logical unit identifier as per SAM (SCSI
+ * Architecture Model) rev.2 to 4 annex A.  Therefore and because it is
+ * independent of the implementation of the ieee1394 nodemgr, the longer format
+ * is recommended for future use.
+ */
+static int sbp2_long_sysfs_ieee1394_id;
+module_param_named(long_ieee1394_id, sbp2_long_sysfs_ieee1394_id, bool, 0644);
+MODULE_PARM_DESC(long_ieee1394_id, "8+3+2 bytes format of ieee1394_id in sysfs "
+		 "(default = backwards-compatible = N, SAM-conforming = Y)");
 
 
 #define SBP2_INFO(fmt, args...)	HPSB_INFO("sbp2: "fmt, ## args)
@@ -469,19 +493,13 @@ static void sbp2util_write_doorbell(struct work_struct *work)
 static int sbp2util_create_command_orb_pool(struct sbp2_lu *lu)
 {
 	struct sbp2_fwhost_info *hi = lu->hi;
-	int i;
-	unsigned long flags, orbs;
 	struct sbp2_command_info *cmd;
+	int i, orbs = sbp2_serialize_io ? 2 : SBP2_MAX_CMDS;
 
-	orbs = sbp2_serialize_io ? 2 : SBP2_MAX_CMDS;
-
-	spin_lock_irqsave(&lu->cmd_orb_lock, flags);
 	for (i = 0; i < orbs; i++) {
-		cmd = kzalloc(sizeof(*cmd), GFP_ATOMIC);
-		if (!cmd) {
-			spin_unlock_irqrestore(&lu->cmd_orb_lock, flags);
+		cmd = kzalloc(sizeof(*cmd), GFP_KERNEL);
+		if (!cmd)
 			return -ENOMEM;
-		}
 		cmd->command_orb_dma = dma_map_single(hi->host->device.parent,
 						&cmd->command_orb,
 						sizeof(struct sbp2_command_orb),
@@ -489,11 +507,10 @@ static int sbp2util_create_command_orb_pool(struct sbp2_lu *lu)
 		cmd->sge_dma = dma_map_single(hi->host->device.parent,
 					&cmd->scatter_gather_element,
 					sizeof(cmd->scatter_gather_element),
-					DMA_BIDIRECTIONAL);
+					DMA_TO_DEVICE);
 		INIT_LIST_HEAD(&cmd->list);
 		list_add_tail(&cmd->list, &lu->cmd_orb_completed);
 	}
-	spin_unlock_irqrestore(&lu->cmd_orb_lock, flags);
 	return 0;
 }
 
@@ -514,7 +531,7 @@ static void sbp2util_remove_command_orb_pool(struct sbp2_lu *lu)
 					 DMA_TO_DEVICE);
 			dma_unmap_single(host->device.parent, cmd->sge_dma,
 					 sizeof(cmd->scatter_gather_element),
-					 DMA_BIDIRECTIONAL);
+					 DMA_TO_DEVICE);
 			kfree(cmd);
 		}
 	spin_unlock_irqrestore(&lu->cmd_orb_lock, flags);
@@ -757,6 +774,11 @@ static struct sbp2_lu *sbp2_alloc_device(struct unit_directory *ud)
 			SBP2_ERR("failed to register lower 4GB address range");
 			goto failed_alloc;
 		}
+#else
+		if (dma_set_mask(hi->host->device.parent, DMA_32BIT_MASK)) {
+			SBP2_ERR("failed to set 4GB DMA mask");
+			goto failed_alloc;
+		}
 #endif
 	}
 
@@ -865,11 +887,8 @@ static int sbp2_start_device(struct sbp2_lu *lu)
 	if (!lu->login_orb)
 		goto alloc_fail;
 
-	if (sbp2util_create_command_orb_pool(lu)) {
-		SBP2_ERR("sbp2util_create_command_orb_pool failed!");
-		sbp2_remove_device(lu);
-		return -ENOMEM;
-	}
+	if (sbp2util_create_command_orb_pool(lu))
+		goto alloc_fail;
 
 	/* Wait a second before trying to log in. Previously logged in
 	 * initiators need a chance to reconnect. */
@@ -1628,7 +1647,7 @@ static void sbp2_link_orb_command(struct sbp2_lu *lu,
 				   DMA_TO_DEVICE);
 	dma_sync_single_for_device(hi->host->device.parent, cmd->sge_dma,
 				   sizeof(cmd->scatter_gather_element),
-				   DMA_BIDIRECTIONAL);
+				   DMA_TO_DEVICE);
 
 	/* check to see if there are any previous orbs to use */
 	spin_lock_irqsave(&lu->cmd_orb_lock, flags);
@@ -1794,7 +1813,7 @@ static int sbp2_handle_status_write(struct hpsb_host *host, int nodeid,
 					DMA_TO_DEVICE);
 		dma_sync_single_for_cpu(hi->host->device.parent, cmd->sge_dma,
 					sizeof(cmd->scatter_gather_element),
-					DMA_BIDIRECTIONAL);
+					DMA_TO_DEVICE);
 		/* Grab SCSI command pointers and check status. */
 		/*
 		 * FIXME: If the src field in the status is 1, the ORB DMA must
@@ -1926,7 +1945,7 @@ static void sbp2scsi_complete_all_commands(struct sbp2_lu *lu, u32 status)
 					DMA_TO_DEVICE);
 		dma_sync_single_for_cpu(hi->host->device.parent, cmd->sge_dma,
 					sizeof(cmd->scatter_gather_element),
-					DMA_BIDIRECTIONAL);
+					DMA_TO_DEVICE);
 		sbp2util_mark_command_completed(lu, cmd);
 		if (cmd->Current_SCpnt) {
 			cmd->Current_SCpnt->result = status << 16;
@@ -2057,7 +2076,7 @@ static int sbp2scsi_abort(struct scsi_cmnd *SCpnt)
 			dma_sync_single_for_cpu(hi->host->device.parent,
 					cmd->sge_dma,
 					sizeof(cmd->scatter_gather_element),
-					DMA_BIDIRECTIONAL);
+					DMA_TO_DEVICE);
 			sbp2util_mark_command_completed(lu, cmd);
 			if (cmd->Current_SCpnt) {
 				cmd->Current_SCpnt->result = DID_ABORT << 16;
@@ -2102,8 +2121,14 @@ static ssize_t sbp2_sysfs_ieee1394_id_show(struct device *dev,
 	if (!(lu = (struct sbp2_lu *)sdev->host->hostdata[0]))
 		return 0;
 
-	return sprintf(buf, "%016Lx:%d:%d\n", (unsigned long long)lu->ne->guid,
-		       lu->ud->id, ORB_SET_LUN(lu->lun));
+	if (sbp2_long_sysfs_ieee1394_id)
+		return sprintf(buf, "%016Lx:%06x:%04x\n",
+				(unsigned long long)lu->ne->guid,
+				lu->ud->directory_id, ORB_SET_LUN(lu->lun));
+	else
+		return sprintf(buf, "%016Lx:%d:%d\n",
+				(unsigned long long)lu->ne->guid,
+				lu->ud->id, ORB_SET_LUN(lu->lun));
 }
 
 MODULE_AUTHOR("Ben Collins <bcollins@debian.org>");

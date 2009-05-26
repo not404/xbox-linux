@@ -2067,19 +2067,24 @@ static void vlan_rx_register(struct net_device *dev, struct vlan_group *grp)
 	t3_synchronize_rx(adapter, pi);
 }
 
-static void vlan_rx_kill_vid(struct net_device *dev, unsigned short vid)
-{
-	/* nothing */
-}
-
 #ifdef CONFIG_NET_POLL_CONTROLLER
 static void cxgb_netpoll(struct net_device *dev)
 {
 	struct adapter *adapter = dev->priv;
-	struct sge_qset *qs = dev2qset(dev);
+	struct port_info *pi = netdev_priv(dev);
+	int qidx;
 
-	t3_intr_handler(adapter, qs->rspq.polling) (adapter->pdev->irq,
-						    adapter);
+	for (qidx = pi->first_qset; qidx < pi->first_qset + pi->nqsets; qidx++) {
+		struct sge_qset *qs = &adapter->sge.qs[qidx];
+		void *source;
+		
+		if (adapter->flags & USING_MSIX)
+			source = qs;
+		else
+			source = adapter;
+
+		t3_intr_handler(adapter, qs->rspq.polling) (0, source);
+	}
 }
 #endif
 
@@ -2409,7 +2414,6 @@ static int __devinit init_one(struct pci_dev *pdev,
 
 		netdev->features |= NETIF_F_HW_VLAN_TX | NETIF_F_HW_VLAN_RX;
 		netdev->vlan_rx_register = vlan_rx_register;
-		netdev->vlan_rx_kill_vid = vlan_rx_kill_vid;
 
 		netdev->open = cxgb_open;
 		netdev->stop = cxgb_close;

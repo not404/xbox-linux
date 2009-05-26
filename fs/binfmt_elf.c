@@ -31,7 +31,6 @@
 #include <linux/init.h>
 #include <linux/highuid.h>
 #include <linux/smp.h>
-#include <linux/smp_lock.h>
 #include <linux/compiler.h>
 #include <linux/highmem.h>
 #include <linux/pagemap.h>
@@ -39,6 +38,7 @@
 #include <linux/syscalls.h>
 #include <linux/random.h>
 #include <linux/elf.h>
+#include <linux/utsname.h>
 #include <asm/uaccess.h>
 #include <asm/param.h>
 #include <asm/page.h>
@@ -871,6 +871,8 @@ static int load_elf_binary(struct linux_binprm *bprm, struct pt_regs *regs)
 				elf_prot, elf_flags);
 		if (BAD_ADDR(error)) {
 			send_sig(SIGKILL, current, 0);
+			retval = IS_ERR((void *)error) ?
+				PTR_ERR((void*)error) : -EINVAL;
 			goto out_free_dentry;
 		}
 
@@ -900,6 +902,7 @@ static int load_elf_binary(struct linux_binprm *bprm, struct pt_regs *regs)
 		    TASK_SIZE - elf_ppnt->p_memsz < k) {
 			/* set_brk can never work. Avoid overflows. */
 			send_sig(SIGKILL, current, 0);
+			retval = -EINVAL;
 			goto out_free_dentry;
 		}
 
@@ -1496,6 +1499,9 @@ static int elf_core_dump(long signr, struct pt_regs *regs, struct file *file)
 #endif
 	int thread_status_size = 0;
 	elf_addr_t *auxv;
+#ifdef ELF_CORE_WRITE_EXTRA_NOTES
+	int extra_notes_size;
+#endif
 
 	/*
 	 * We no longer stop all VM operations.
@@ -1625,7 +1631,8 @@ static int elf_core_dump(long signr, struct pt_regs *regs, struct file *file)
 		sz += thread_status_size;
 
 #ifdef ELF_CORE_WRITE_EXTRA_NOTES
-		sz += ELF_CORE_EXTRA_NOTES_SIZE;
+		extra_notes_size = ELF_CORE_EXTRA_NOTES_SIZE;
+		sz += extra_notes_size;
 #endif
 
 		fill_elf_note_phdr(&phdr, sz, offset);
@@ -1671,6 +1678,7 @@ static int elf_core_dump(long signr, struct pt_regs *regs, struct file *file)
 
 #ifdef ELF_CORE_WRITE_EXTRA_NOTES
 	ELF_CORE_WRITE_EXTRA_NOTES;
+	foffset += extra_notes_size;
 #endif
 
 	/* write out the thread status notes section */

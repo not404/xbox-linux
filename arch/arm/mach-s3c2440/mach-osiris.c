@@ -16,6 +16,7 @@
 #include <linux/timer.h>
 #include <linux/init.h>
 #include <linux/device.h>
+#include <linux/sysdev.h>
 #include <linux/serial_core.h>
 
 #include <asm/mach/arch.h>
@@ -45,7 +46,7 @@
 #include <asm/plat-s3c24xx/devs.h>
 #include <asm/plat-s3c24xx/cpu.h>
 
-/* onboard perihpheral map */
+/* onboard perihperal map */
 
 static struct map_desc osiris_iodesc[] __initdata = {
   /* ISA IO areas (may be over-written later) */
@@ -65,6 +66,11 @@ static struct map_desc osiris_iodesc[] __initdata = {
   /* CPLD control registers */
 
   {
+	  .virtual	= (u32)OSIRIS_VA_CTRL0,
+	  .pfn		= __phys_to_pfn(OSIRIS_PA_CTRL0),
+	  .length	= SZ_16K,
+	  .type		= MT_DEVICE,
+  }, {
 	  .virtual	= (u32)OSIRIS_VA_CTRL1,
 	  .pfn		= __phys_to_pfn(OSIRIS_PA_CTRL1),
 	  .length	= SZ_16K,
@@ -72,6 +78,11 @@ static struct map_desc osiris_iodesc[] __initdata = {
   }, {
 	  .virtual	= (u32)OSIRIS_VA_CTRL2,
 	  .pfn		= __phys_to_pfn(OSIRIS_PA_CTRL2),
+	  .length	= SZ_16K,
+	  .type		= MT_DEVICE,
+  }, {
+	  .virtual	= (u32)OSIRIS_VA_IDREG,
+	  .pfn		= __phys_to_pfn(OSIRIS_PA_IDREG),
 	  .length	= SZ_16K,
 	  .type		= MT_DEVICE,
   },
@@ -195,13 +206,13 @@ static void osiris_nand_select(struct s3c2410_nand_set *set, int slot)
 	pr_debug("osiris_nand: selecting slot %d (set %p,%p)\n",
 		 slot, set, set->nr_map);
 
-	tmp = __raw_readb(OSIRIS_VA_CTRL1);
-	tmp &= ~OSIRIS_CTRL1_NANDSEL;
+	tmp = __raw_readb(OSIRIS_VA_CTRL0);
+	tmp &= ~OSIRIS_CTRL0_NANDSEL;
 	tmp |= slot;
 
-	pr_debug("osiris_nand: ctrl1 now %02x\n", tmp);
+	pr_debug("osiris_nand: ctrl0 now %02x\n", tmp);
 
-	__raw_writeb(tmp, OSIRIS_VA_CTRL1);
+	__raw_writeb(tmp, OSIRIS_VA_CTRL0);
 }
 
 static struct s3c2410_platform_nand osiris_nand_info = {
@@ -235,10 +246,45 @@ static struct platform_device osiris_pcmcia = {
 	.resource	= osiris_pcmcia_resource,
 };
 
+/* Osiris power management device */
+
+#ifdef CONFIG_PM
+static unsigned char pm_osiris_ctrl0;
+
+static int osiris_pm_suspend(struct sys_device *sd, pm_message_t state)
+{
+	pm_osiris_ctrl0 = __raw_readb(OSIRIS_VA_CTRL0);
+	return 0;
+}
+
+static int osiris_pm_resume(struct sys_device *sd)
+{
+	if (pm_osiris_ctrl0 & OSIRIS_CTRL0_FIX8)
+		__raw_writeb(OSIRIS_CTRL1_FIX8, OSIRIS_VA_CTRL1);
+
+	return 0;
+}
+
+#else
+#define osiris_pm_suspend NULL
+#define osiris_pm_resume NULL
+#endif
+
+static struct sysdev_class osiris_pm_sysclass = {
+	set_kset_name("mach-osiris"),
+	.suspend	= osiris_pm_suspend,
+	.resume		= osiris_pm_resume,
+};
+
+static struct sys_device osiris_pm_sysdev = {
+	.cls		= &osiris_pm_sysclass,
+};
+
 /* Standard Osiris devices */
 
 static struct platform_device *osiris_devices[] __initdata = {
 	&s3c_device_i2c,
+	&s3c_device_wdt,
 	&s3c_device_nand,
 	&osiris_pcmcia,
 };
@@ -249,13 +295,6 @@ static struct clk *osiris_clocks[] = {
 	&s3c24xx_clkout0,
 	&s3c24xx_clkout1,
 	&s3c24xx_uclk,
-};
-
-static struct s3c24xx_board osiris_board __initdata = {
-	.devices       = osiris_devices,
-	.devices_count = ARRAY_SIZE(osiris_devices),
-	.clocks	       = osiris_clocks,
-	.clocks_count  = ARRAY_SIZE(osiris_clocks),
 };
 
 static void __init osiris_map_io(void)
@@ -275,12 +314,13 @@ static void __init osiris_map_io(void)
 
 	s3c24xx_uclk.parent  = &s3c24xx_clkout1;
 
+	s3c24xx_register_clocks(osiris_clocks, ARRAY_SIZE(osiris_clocks));
+
 	s3c_device_nand.dev.platform_data = &osiris_nand_info;
 
 	s3c24xx_init_io(osiris_iodesc, ARRAY_SIZE(osiris_iodesc));
 	s3c24xx_init_clocks(0);
 	s3c24xx_init_uarts(osiris_uartcfgs, ARRAY_SIZE(osiris_uartcfgs));
-	s3c24xx_set_board(&osiris_board);
 
 	/* fix bus configuration (nBE settings wrong on ABLE pre v2.20) */
 
@@ -292,12 +332,22 @@ static void __init osiris_map_io(void)
 	s3c2410_gpio_setpin(S3C2410_GPA0, 1);
 }
 
+static void __init osiris_init(void)
+{
+	sysdev_class_register(&osiris_pm_sysclass);
+	sysdev_register(&osiris_pm_sysdev);
+
+	platform_add_devices(osiris_devices, ARRAY_SIZE(osiris_devices));
+};
+
 MACHINE_START(OSIRIS, "Simtec-OSIRIS")
 	/* Maintainer: Ben Dooks <ben@simtec.co.uk> */
 	.phys_io	= S3C2410_PA_UART,
 	.io_pg_offst	= (((u32)S3C24XX_VA_UART) >> 18) & 0xfffc,
 	.boot_params	= S3C2410_SDRAM_PA + 0x100,
 	.map_io		= osiris_map_io,
+	.init_machine	= osiris_init,
 	.init_irq	= s3c24xx_init_irq,
+	.init_machine	= osiris_init,
 	.timer		= &s3c24xx_timer,
 MACHINE_END

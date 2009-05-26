@@ -1357,7 +1357,7 @@ static struct backlight_ops asus_backlight_data = {
         .update_status  = set_brightness_status,
 };
 
-static void __exit asus_acpi_exit(void)
+static void asus_acpi_exit(void)
 {
 	if (asus_backlight_device)
 		backlight_device_unregister(asus_backlight_device);
@@ -1398,7 +1398,7 @@ static int __init asus_acpi_init(void)
 	if (!asus_hotk_found) {
 		acpi_bus_unregister_driver(&asus_hotk_driver);
 		remove_proc_entry(PROC_ASUS, acpi_root_dir);
-		return result;
+		return -ENODEV;
 	}
 
 	asus_backlight_device = backlight_device_register("asus",NULL,NULL,
@@ -1407,6 +1407,7 @@ static int __init asus_acpi_init(void)
 		printk(KERN_ERR "Could not register asus backlight device\n");
 		asus_backlight_device = NULL;
 		asus_acpi_exit();
+		return -ENODEV;
 	}
         asus_backlight_device->props.max_brightness = 15;
 

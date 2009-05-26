@@ -15,6 +15,7 @@
 
 #include <asm/ccwdev.h>
 #include <asm/cio.h>
+#include <asm/chpid.h>
 
 #include "cio.h"
 #include "cio_debug.h"
@@ -22,6 +23,7 @@
 #include "device.h"
 #include "chsc.h"
 #include "ioasm.h"
+#include "chp.h"
 
 int
 device_is_online(struct subchannel *sch)
@@ -210,14 +212,18 @@ static void
 __recover_lost_chpids(struct subchannel *sch, int old_lpm)
 {
 	int mask, i;
+	struct chp_id chpid;
 
+	chp_id_init(&chpid);
 	for (i = 0; i<8; i++) {
 		mask = 0x80 >> i;
 		if (!(sch->lpm & mask))
 			continue;
 		if (old_lpm & mask)
 			continue;
-		chpid_is_actually_online(sch->schib.pmcw.chpid[i]);
+		chpid.id = sch->schib.pmcw.chpid[i];
+		if (!chp_is_registered(chpid))
+			css_schedule_eval_all();
 	}
 }
 
@@ -682,6 +688,12 @@ ccw_device_disband_done(struct ccw_device *cdev, int err)
 		ccw_device_done(cdev, DEV_STATE_BOXED);
 		break;
 	default:
+		cdev->private->flags.donotify = 0;
+		if (get_device(&cdev->dev)) {
+			PREPARE_WORK(&cdev->private->kick_work,
+				     ccw_device_call_sch_unregister);
+			queue_work(ccw_device_work, &cdev->private->kick_work);
+		}
 		ccw_device_done(cdev, DEV_STATE_NOT_OPER);
 		break;
 	}

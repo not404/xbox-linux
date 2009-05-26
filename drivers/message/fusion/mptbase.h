@@ -436,7 +436,7 @@ typedef struct _MPT_SAS_MGMT {
 typedef struct _mpt_ioctl_events {
 	u32	event;		/* Specified by define above */
 	u32	eventContext;	/* Index or counter */
-	int	data[2];	/* First 8 bytes of Event Data */
+	u32	data[2];	/* First 8 bytes of Event Data */
 } MPT_IOCTL_EVENTS;
 
 /*
@@ -994,6 +994,7 @@ typedef struct _MPT_SCSI_HOST {
 	int			  scandv_wait_done;
 	long			  last_queue_full;
 	u16			  tm_iocstatus;
+	u16			  spi_pending;
 	struct list_head	  target_reset_list;
 } MPT_SCSI_HOST;
 

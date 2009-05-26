@@ -101,7 +101,7 @@ const sctp_sm_table_entry_t *sctp_sm_lookup_event(sctp_event_t event_type,
 	default:
 		/* Yikes!  We got an illegal event type.  */
 		return &bug;
-	};
+	}
 }
 
 #define TYPE_SCTP_FUNC(func) {.fn = func, .name = #func}
@@ -960,7 +960,7 @@ static const sctp_sm_table_entry_t *sctp_chunk_event_lookup(sctp_cid_t cid,
 	if (state > SCTP_STATE_MAX)
 		return &bug;
 
-	if (cid >= 0 && cid <= SCTP_CID_BASE_MAX)
+	if (cid <= SCTP_CID_BASE_MAX)
 		return &chunk_event_table[cid][state];
 
 	if (sctp_prsctp_enable) {

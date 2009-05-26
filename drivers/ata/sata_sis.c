@@ -43,7 +43,7 @@
 #include "sis.h"
 
 #define DRV_NAME	"sata_sis"
-#define DRV_VERSION	"0.7"
+#define DRV_VERSION	"0.8"
 
 enum {
 	sis_180			= 0,
@@ -72,8 +72,8 @@ static const struct pci_device_id sis_pci_tbl[] = {
 	{ PCI_VDEVICE(SI, 0x0181), sis_180 },		/* SiS 964/180 */
 	{ PCI_VDEVICE(SI, 0x0182), sis_180 },		/* SiS 965/965L */
 	{ PCI_VDEVICE(SI, 0x0183), sis_180 },		/* SiS 965/965L */
-	{ PCI_VDEVICE(SI, 0x1182), sis_180 },		/* SiS 966/966L */
-	{ PCI_VDEVICE(SI, 0x1183), sis_180 },		/* SiS 966/966L */
+	{ PCI_VDEVICE(SI, 0x1182), sis_180 },		/* SiS 966/680 */
+	{ PCI_VDEVICE(SI, 0x1183), sis_180 },		/* SiS 966/966L/968/680 */
 
 	{ }	/* terminate list */
 };
@@ -121,7 +121,6 @@ static const struct ata_port_operations sis_ops = {
 	.thaw			= ata_bmdma_thaw,
 	.error_handler		= ata_bmdma_error_handler,
 	.post_internal_cmd	= ata_bmdma_post_internal_cmd,
-	.irq_handler		= ata_interrupt,
 	.irq_clear		= ata_bmdma_irq_clear,
 	.irq_on			= ata_irq_on,
 	.irq_ack		= ata_irq_ack,
@@ -130,8 +129,7 @@ static const struct ata_port_operations sis_ops = {
 	.port_start		= ata_port_start,
 };
 
-static struct ata_port_info sis_port_info = {
-	.sht		= &sis_sht,
+static const struct ata_port_info sis_port_info = {
 	.flags		= ATA_FLAG_SATA | ATA_FLAG_NO_LEGACY,
 	.pio_mask	= 0x1f,
 	.mwdma_mask	= 0x7,
@@ -163,7 +161,6 @@ static unsigned int get_scr_cfg_addr(struct ata_port *ap, unsigned int sc_reg)
 			case 0x0182:
 			case 0x0183:
 			case 0x1182:
-			case 0x1183:
 				addr += SIS182_SATA1_OFS;
 				break;
 		}
@@ -185,8 +182,8 @@ static u32 sis_scr_cfg_read (struct ata_port *ap, unsigned int sc_reg)
 
 	pci_read_config_dword(pdev, cfg_addr, &val);
 
-	if ((pdev->device == 0x0182) || (pdev->device == 0x0183) || (pdev->device == 0x1182) ||
-	    (pdev->device == 0x1183) || (pmr & SIS_PMR_COMBINED))
+	if ((pdev->device == 0x0182) || (pdev->device == 0x0183) ||
+	    (pdev->device == 0x1182) || (pmr & SIS_PMR_COMBINED))
 		pci_read_config_dword(pdev, cfg_addr+0x10, &val2);
 
 	return (val|val2) &  0xfffffffb; /* avoid problems with powerdowned ports */
@@ -205,8 +202,8 @@ static void sis_scr_cfg_write (struct ata_port *ap, unsigned int sc_reg, u32 val
 
 	pci_write_config_dword(pdev, cfg_addr, val);
 
-	if ((pdev->device == 0x0182) || (pdev->device == 0x0183) || (pdev->device == 0x1182) ||
-	    (pdev->device == 0x1183) || (pmr & SIS_PMR_COMBINED))
+	if ((pdev->device == 0x0182) || (pdev->device == 0x0183) ||
+	    (pdev->device == 0x1182) || (pmr & SIS_PMR_COMBINED))
 		pci_write_config_dword(pdev, cfg_addr+0x10, val);
 }
 
@@ -226,8 +223,8 @@ static u32 sis_scr_read (struct ata_port *ap, unsigned int sc_reg)
 
 	val = ioread32(ap->ioaddr.scr_addr + (sc_reg * 4));
 
-	if ((pdev->device == 0x0182) || (pdev->device == 0x0183) || (pdev->device == 0x1182) ||
-	    (pdev->device == 0x1183) || (pmr & SIS_PMR_COMBINED))
+	if ((pdev->device == 0x0182) || (pdev->device == 0x0183) ||
+	    (pdev->device == 0x1182) || (pmr & SIS_PMR_COMBINED))
 		val2 = ioread32(ap->ioaddr.scr_addr + (sc_reg * 4) + 0x10);
 
 	return (val | val2) &  0xfffffffb;
@@ -247,8 +244,8 @@ static void sis_scr_write (struct ata_port *ap, unsigned int sc_reg, u32 val)
 		sis_scr_cfg_write(ap, sc_reg, val);
 	else {
 		iowrite32(val, ap->ioaddr.scr_addr + (sc_reg * 4));
-		if ((pdev->device == 0x0182) || (pdev->device == 0x0183) || (pdev->device == 0x1182) ||
-		    (pdev->device == 0x1183) || (pmr & SIS_PMR_COMBINED))
+		if ((pdev->device == 0x0182) || (pdev->device == 0x0183) ||
+		    (pdev->device == 0x1182) || (pmr & SIS_PMR_COMBINED))
 			iowrite32(val, ap->ioaddr.scr_addr + (sc_reg * 4)+0x10);
 	}
 }
@@ -256,30 +253,18 @@ static void sis_scr_write (struct ata_port *ap, unsigned int sc_reg, u32 val)
 static int sis_init_one (struct pci_dev *pdev, const struct pci_device_id *ent)
 {
 	static int printed_version;
-	struct ata_probe_ent *probe_ent = NULL;
-	int rc;
+	struct ata_port_info pi = sis_port_info;
+	const struct ata_port_info *ppi[] = { &pi, &pi };
+	struct ata_host *host;
 	u32 genctl, val;
-	struct ata_port_info pi = sis_port_info, *ppi[2] = { &pi, &pi };
 	u8 pmr;
 	u8 port2_start = 0x20;
+	int rc;
 
 	if (!printed_version++)
 		dev_printk(KERN_INFO, &pdev->dev, "version " DRV_VERSION "\n");
 
 	rc = pcim_enable_device(pdev);
-	if (rc)
-		return rc;
-
-	rc = pci_request_regions(pdev, DRV_NAME);
-	if (rc) {
-		pcim_pin_device(pdev);
-		return rc;
-	}
-
-	rc = pci_set_dma_mask(pdev, ATA_DMA_MASK);
-	if (rc)
-		return rc;
-	rc = pci_set_consistent_dma_mask(pdev, ATA_DMA_MASK);
 	if (rc)
 		return rc;
 
@@ -307,11 +292,11 @@ static int sis_init_one (struct pci_dev *pdev, const struct pci_device_id *ent)
 		/* The PATA-handling is provided by pata_sis */
 		switch (pmr & 0x30) {
 		case 0x10:
-			ppi[1] = &sis_info133;
+			ppi[1] = &sis_info133_for_sata;
 			break;
 
 		case 0x30:
-			ppi[0] = &sis_info133;
+			ppi[0] = &sis_info133_for_sata;
 			break;
 		}
 		if ((pmr & SIS_PMR_COMBINED) == 0) {
@@ -338,41 +323,37 @@ static int sis_init_one (struct pci_dev *pdev, const struct pci_device_id *ent)
 		break;
 
 	case 0x1182:
+		dev_printk(KERN_INFO, &pdev->dev, "Detected SiS 1182/966/680 SATA controller\n");
+		pi.flags |= ATA_FLAG_SLAVE_POSS;
+		break;
+
 	case 0x1183:
-		pci_read_config_dword(pdev, 0x64, &val);
-		if (val & 0x10000000) {
-			dev_printk(KERN_INFO, &pdev->dev, "Detected SiS 1182/1183/966L SATA controller\n");
-		} else {
-			dev_printk(KERN_INFO, &pdev->dev, "Detected SiS 1182/1183/966 SATA controller\n");
-			pi.flags |= ATA_FLAG_SLAVE_POSS;
-		}
+		dev_printk(KERN_INFO, &pdev->dev, "Detected SiS 1183/966/966L/968/680 controller in PATA mode\n");
+		ppi[0] = &sis_info133_for_sata;
+		ppi[1] = &sis_info133_for_sata;
 		break;
 	}
 
-	probe_ent = ata_pci_init_native_mode(pdev, ppi, ATA_PORT_PRIMARY | ATA_PORT_SECONDARY);
-	if (!probe_ent)
-		return -ENOMEM;
+	rc = ata_pci_prepare_native_host(pdev, ppi, &host);
+	if (rc)
+		return rc;
 
-	if (!(probe_ent->port_flags & SIS_FLAG_CFGSCR)) {
+	if (!(pi.flags & SIS_FLAG_CFGSCR)) {
 		void __iomem *mmio;
 
-		mmio = pcim_iomap(pdev, SIS_SCR_PCI_BAR, 0);
-		if (!mmio)
-			return -ENOMEM;
+		rc = pcim_iomap_regions(pdev, 1 << SIS_SCR_PCI_BAR, DRV_NAME);
+		if (rc)
+			return rc;
+		mmio = host->iomap[SIS_SCR_PCI_BAR];
 
-		probe_ent->port[0].scr_addr = mmio;
-		probe_ent->port[1].scr_addr = mmio + port2_start;
+		host->ports[0]->ioaddr.scr_addr = mmio;
+		host->ports[1]->ioaddr.scr_addr = mmio + port2_start;
 	}
 
 	pci_set_master(pdev);
 	pci_intx(pdev, 1);
-
-	if (!ata_device_add(probe_ent))
-		return -EIO;
-
-	devm_kfree(&pdev->dev, probe_ent);
-	return 0;
-
+	return ata_host_activate(host, pdev->irq, ata_interrupt, IRQF_SHARED,
+				 &sis_sht);
 }
 
 static int __init sis_init(void)

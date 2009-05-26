@@ -134,18 +134,6 @@ PRINT_##importance(header "%02x %02x %02x %02x  %02x %02x %02x %02x  " \
 		   *(((char*)ptr)+28),*(((char*)ptr)+29), \
 		   *(((char*)ptr)+30),*(((char*)ptr)+31));
 
-static inline void iucv_hex_dump(unsigned char *buf, size_t len)
-{
-	size_t i;
-
-	for (i = 0; i < len; i++) {
-		if (i && !(i % 16))
-			printk("\n");
-		printk("%02x ", *(buf + i));
-	}
-	printk("\n");
-}
-
 #define PRINTK_HEADER " iucv: "       /* for debugging */
 
 static struct device_driver netiucv_driver = {
@@ -212,7 +200,7 @@ struct iucv_connection {
  */
 static struct list_head iucv_connection_list =
 	LIST_HEAD_INIT(iucv_connection_list);
-static rwlock_t iucv_connection_rwlock = RW_LOCK_UNLOCKED;
+static DEFINE_RWLOCK(iucv_connection_rwlock);
 
 /**
  * Representation of event-data for the
@@ -280,7 +268,7 @@ static u8 iucvMagic[16] = {
  *
  * @returns The printable string (static data!!)
  */
-static inline char *netiucv_printname(char *name)
+static char *netiucv_printname(char *name)
 {
 	static char tmp[9];
 	char *p = tmp;
@@ -635,7 +623,7 @@ static void netiucv_unpack_skb(struct iucv_connection *conn,
 			return;
 		}
 		skb_put(pskb, header->next);
-		pskb->mac.raw = pskb->data;
+		skb_reset_mac_header(pskb);
 		skb = dev_alloc_skb(pskb->len);
 		if (!skb) {
 			PRINT_WARN("%s Out of memory in netiucv_unpack_skb\n",
@@ -645,8 +633,9 @@ static void netiucv_unpack_skb(struct iucv_connection *conn,
 			privptr->stats.rx_dropped++;
 			return;
 		}
-		memcpy(skb_put(skb, pskb->len), pskb->data, pskb->len);
-		skb->mac.raw = skb->data;
+		skb_copy_from_linear_data(pskb, skb_put(skb, pskb->len),
+					  pskb->len);
+		skb_reset_mac_header(skb);
 		skb->dev = pskb->dev;
 		skb->protocol = pskb->protocol;
 		pskb->ip_summed = CHECKSUM_UNNECESSARY;
@@ -689,7 +678,8 @@ static void conn_action_rx(fsm_instance *fi, int event, void *arg)
 			       msg->length, conn->max_buffsize);
 		return;
 	}
-	conn->rx_buff->data = conn->rx_buff->tail = conn->rx_buff->head;
+	conn->rx_buff->data = conn->rx_buff->head;
+	skb_reset_tail_pointer(conn->rx_buff);
 	conn->rx_buff->len = 0;
 	rc = iucv_message_receive(conn->path, msg, 0, conn->rx_buff->data,
 				  msg->length, NULL);
@@ -735,14 +725,17 @@ static void conn_action_txdone(fsm_instance *fi, int event, void *arg)
 			}
 		}
 	}
-	conn->tx_buff->data = conn->tx_buff->tail = conn->tx_buff->head;
+	conn->tx_buff->data = conn->tx_buff->head;
+	skb_reset_tail_pointer(conn->tx_buff);
 	conn->tx_buff->len = 0;
 	spin_lock_irqsave(&conn->collect_lock, saveflags);
 	while ((skb = skb_dequeue(&conn->collect_queue))) {
 		header.next = conn->tx_buff->len + skb->len + NETIUCV_HDRLEN;
 		memcpy(skb_put(conn->tx_buff, NETIUCV_HDRLEN), &header,
 		       NETIUCV_HDRLEN);
-		memcpy(skb_put(conn->tx_buff, skb->len), skb->data, skb->len);
+		skb_copy_from_linear_data(skb,
+					  skb_put(conn->tx_buff, skb->len),
+					  skb->len);
 		txbytes += skb->len;
 		txpackets++;
 		stat_maxcq++;
@@ -1164,8 +1157,8 @@ static int netiucv_transmit_skb(struct iucv_connection *conn,
 		 * Copy the skb to a new allocated skb in lowmem only if the
 		 * data is located above 2G in memory or tailroom is < 2.
 		 */
-		unsigned long hi =
-			((unsigned long)(skb->tail + NETIUCV_HDRLEN)) >> 31;
+		unsigned long hi = ((unsigned long)(skb_tail_pointer(skb) +
+				    NETIUCV_HDRLEN)) >> 31;
 		int copied = 0;
 		if (hi || (skb_tailroom(skb) < 2)) {
 			nskb = alloc_skb(skb->len + NETIUCV_HDRLEN +
@@ -1310,7 +1303,8 @@ static int netiucv_tx(struct sk_buff *skb, struct net_device *dev)
 	 * and throw away packet.
 	 */
 	if (fsm_getstate(privptr->fsm) != DEV_STATE_RUNNING) {
-		fsm_event(privptr->fsm, DEV_EVENT_START, dev);
+		if (!in_atomic())
+			fsm_event(privptr->fsm, DEV_EVENT_START, dev);
 		dev_kfree_skb(skb);
 		privptr->stats.tx_dropped++;
 		privptr->stats.tx_errors++;
@@ -1724,7 +1718,7 @@ static struct attribute_group netiucv_stat_attr_group = {
 	.attrs = netiucv_stat_attrs,
 };
 
-static inline int netiucv_add_files(struct device *dev)
+static int netiucv_add_files(struct device *dev)
 {
 	int ret;
 
@@ -1738,7 +1732,7 @@ static inline int netiucv_add_files(struct device *dev)
 	return ret;
 }
 
-static inline void netiucv_remove_files(struct device *dev)
+static void netiucv_remove_files(struct device *dev)
 {
 	IUCV_DBF_TEXT(trace, 3, __FUNCTION__);
 	sysfs_remove_group(&dev->kobj, &netiucv_stat_attr_group);
@@ -1857,12 +1851,14 @@ static void netiucv_remove_connection(struct iucv_connection *conn)
 	write_lock_bh(&iucv_connection_rwlock);
 	list_del_init(&conn->list);
 	write_unlock_bh(&iucv_connection_rwlock);
+	fsm_deltimer(&conn->timer);
+	netiucv_purge_skb_queue(&conn->collect_queue);
 	if (conn->path) {
 		iucv_path_sever(conn->path, iucvMagic);
 		kfree(conn->path);
 		conn->path = NULL;
 	}
-	fsm_deltimer(&conn->timer);
+	netiucv_purge_skb_queue(&conn->commit_queue);
 	kfree_fsm(conn->fsm);
 	kfree_skb(conn->rx_buff);
 	kfree_skb(conn->tx_buff);
@@ -2110,7 +2106,6 @@ static void __exit netiucv_exit(void)
 	while (!list_empty(&iucv_connection_list)) {
 		cp = list_entry(iucv_connection_list.next,
 				struct iucv_connection, list);
-		list_del(&cp->list);
 		ndev = cp->netdev;
 		priv = netdev_priv(ndev);
 		dev = priv->dev;

@@ -148,7 +148,7 @@ irqreturn_t timer_interrupt(int irq, void *dev_id)
 }
 
 /* Kick start a stopped clock (procedure from the Sun NVRAM/hostid FAQ). */
-static void __init kick_start_clock(void)
+static void __devinit kick_start_clock(void)
 {
 	struct mostek48t02 *regs = (struct mostek48t02 *)mstk48t02_regs;
 	unsigned char sec;
@@ -223,7 +223,7 @@ static __inline__ int has_low_battery(void)
 	return (data1 == data2);	/* Was the write blocked? */
 }
 
-static void __init mostek_set_system_time(void)
+static void __devinit mostek_set_system_time(void)
 {
 	unsigned int year, mon, day, hour, min, sec;
 	struct mostek48t02 *mregs;
@@ -301,7 +301,7 @@ static __inline__ void sun4_clock_probe(void)
 static int __devinit clock_probe(struct of_device *op, const struct of_device_id *match)
 {
 	struct device_node *dp = op->node;
-	char *model = of_get_property(dp, "model", NULL);
+	const char *model = of_get_property(dp, "model", NULL);
 
 	if (!model)
 		return -ENODEV;

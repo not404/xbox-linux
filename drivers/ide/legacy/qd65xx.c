@@ -258,8 +258,7 @@ static void qd6580_tune_drive (ide_drive_t *drive, u8 pio)
 	int recovery_time = 415; /* worst case values from the dos driver */
 
 	if (drive->id && !qd_find_disk_type(drive, &active_time, &recovery_time)) {
-		pio = ide_get_best_pio_mode(drive, pio, 255, &d);
-		pio = min_t(u8, pio, 4);
+		pio = ide_get_best_pio_mode(drive, pio, 4, &d);
 
 		switch (pio) {
 			case 0: break;
@@ -427,7 +426,7 @@ static int __init qd_probe(int base)
 		qd_setup(hwif, base, config, QD6500_DEF_DATA, QD6500_DEF_DATA,
 			 &qd6500_tune_drive);
 
-		create_proc_ide_interfaces();
+		ide_proc_register_port(hwif);
 
 		return 1;
 	}
@@ -459,7 +458,7 @@ static int __init qd_probe(int base)
 				 &qd6580_tune_drive);
 			qd_write_reg(QD_DEF_CONTR,QD_CONTROL_PORT);
 
-			create_proc_ide_interfaces();
+			ide_proc_register_port(hwif);
 
 			return 1;
 		} else {
@@ -479,7 +478,8 @@ static int __init qd_probe(int base)
 				 &qd6580_tune_drive);
 			qd_write_reg(QD_DEF_CONTR,QD_CONTROL_PORT);
 
-			create_proc_ide_interfaces();
+			ide_proc_register_port(hwif);
+			ide_proc_register_port(mate);
 
 			return 0; /* no other qd65xx possible */
 		}

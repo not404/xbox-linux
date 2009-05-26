@@ -143,7 +143,7 @@ static struct sctp_association *sctp_association_init(struct sctp_association *a
 	/* Initialize the maximum mumber of new data packets that can be sent
 	 * in a burst.
 	 */
-	asoc->max_burst = sctp_max_burst;
+	asoc->max_burst = sp->max_burst;
 
 	/* initialize association timers */
 	asoc->timeouts[SCTP_EVENT_TIMEOUT_NONE] = 0;
@@ -714,8 +714,16 @@ void sctp_assoc_control_transport(struct sctp_association *asoc,
 	/* Record the transition on the transport.  */
 	switch (command) {
 	case SCTP_TRANSPORT_UP:
+		/* If we are moving from UNCONFIRMED state due
+		 * to heartbeat success, report the SCTP_ADDR_CONFIRMED
+		 * state to the user, otherwise report SCTP_ADDR_AVAILABLE.
+		 */
+		if (SCTP_UNCONFIRMED == transport->state &&
+		    SCTP_HEARTBEAT_SUCCESS == error)
+			spc_state = SCTP_ADDR_CONFIRMED;
+		else
+			spc_state = SCTP_ADDR_AVAILABLE;
 		transport->state = SCTP_ACTIVE;
-		spc_state = SCTP_ADDR_AVAILABLE;
 		break;
 
 	case SCTP_TRANSPORT_DOWN:
@@ -725,7 +733,7 @@ void sctp_assoc_control_transport(struct sctp_association *asoc,
 
 	default:
 		return;
-	};
+	}
 
 	/* Generate and send a SCTP_PEER_ADDR_CHANGE notification to the
 	 * user.
@@ -1095,6 +1103,13 @@ void sctp_assoc_update(struct sctp_association *asoc,
 			asoc->ssnmap = new->ssnmap;
 			new->ssnmap = NULL;
 		}
+
+		if (!asoc->assoc_id) {
+			/* get a new association id since we don't have one
+			 * yet.
+			 */
+			sctp_assoc_set_id(asoc, GFP_ATOMIC);
+		}
 	}
 }
 
@@ -1216,6 +1231,10 @@ void sctp_assoc_sync_pmtu(struct sctp_association *asoc)
 	/* Get the lowest pmtu of all the transports. */
 	list_for_each(pos, &asoc->peer.transport_addr_list) {
 		t = list_entry(pos, struct sctp_transport, transports);
+		if (t->pmtu_pending && t->dst) {
+			sctp_transport_update_pmtu(t, dst_mtu(t->dst));
+			t->pmtu_pending = 0;
+		}
 		if (!pmtu || (t->pathmtu < pmtu))
 			pmtu = t->pathmtu;
 	}
@@ -1366,4 +1385,26 @@ int sctp_assoc_lookup_laddr(struct sctp_association *asoc,
 out:
 	sctp_read_unlock(&asoc->base.addr_lock);
 	return found;
+}
+
+/* Set an association id for a given association */
+int sctp_assoc_set_id(struct sctp_association *asoc, gfp_t gfp)
+{
+	int assoc_id;
+	int error = 0;
+retry:
+	if (unlikely(!idr_pre_get(&sctp_assocs_id, gfp)))
+		return -ENOMEM;
+
+	spin_lock_bh(&sctp_assocs_id_lock);
+	error = idr_get_new_above(&sctp_assocs_id, (void *)asoc,
+				    1, &assoc_id);
+	spin_unlock_bh(&sctp_assocs_id_lock);
+	if (error == -EAGAIN)
+		goto retry;
+	else if (error)
+		return error;
+
+	asoc->assoc_id = (sctp_assoc_t) assoc_id;
+	return error;
 }
