@@ -43,10 +43,7 @@ static struct kmem_cache *fatx_cache_cachep;
 static void init_once(void *foo, struct kmem_cache *cachep, unsigned long flags)
 {
 	struct fatx_cache *cache = (struct fatx_cache *)foo;
-
-	if ((flags & (SLAB_CTOR_VERIFY|SLAB_CTOR_CONSTRUCTOR)) ==
-	    SLAB_CTOR_CONSTRUCTOR)
-		INIT_LIST_HEAD(&cache->cache_list);
+	INIT_LIST_HEAD(&cache->cache_list);
 }
 
 int __init fatx_cache_init(void)

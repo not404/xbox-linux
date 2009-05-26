@@ -13,6 +13,8 @@
 #include <linux/fatx_fs.h>
 #include <linux/smp_lock.h>
 #include <linux/buffer_head.h>
+#include <linux/backing-dev.h>
+#include <linux/blkdev.h>
 
 #define PRINTK(format, args...) do { if (fatx_debug) printk( format, ##args ); } while(0)
 
