@@ -148,7 +148,7 @@ struct fatx_sb_info {
 	struct fatx_mount_options options;
 	struct nls_table *nls_disk;  /* Codepage used on disk */
 	struct nls_table *nls_io;    /* Charset used for input and display */
-	void *dir_ops;		     /* Opaque; default directory operations */
+	const void *dir_ops;	     /* Opaque; default directory operations */
 	int dir_per_block;	     /* dir entries per block */
 	int dir_per_block_bits;	     /* log2(dir_per_block) */
 
@@ -274,7 +274,7 @@ extern __s64 fatx_count_free_clusters(struct super_block *sb);
 extern int fatx_generic_ioctl(struct inode *inode, struct file *filp,
 			     unsigned int cmd, unsigned long arg);
 extern const struct file_operations fatx_file_operations;
-extern struct inode_operations fatx_file_inode_operations;
+extern const struct inode_operations fatx_file_inode_operations;
 extern int fatx_notify_change(struct dentry * dentry, struct iattr * attr);
 extern void fatx_truncate(struct inode *inode);
 extern int fatx_getattr(struct vfsmount *mnt, struct dentry *dentry,
@@ -288,7 +288,7 @@ extern struct inode *fatx_build_inode(struct super_block *sb,
 			struct fatx_dir_entry *de, loff_t i_pos);
 extern int fatx_sync_inode(struct inode *inode);
 extern int fatx_fill_super_inode(struct super_block *sb, void *data, int silent,
-			struct inode_operations *fs_dir_inode_ops);
+			const struct inode_operations *fs_dir_inode_ops);
 extern int fatx_flush_inodes(struct super_block *sb, struct inode *i1,
 			struct inode *i2);
 extern unsigned int fatx_debug;

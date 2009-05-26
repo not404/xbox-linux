@@ -495,7 +495,7 @@ int fatx_sync_inode(struct inode *inode)
 EXPORT_SYMBOL(fatx_sync_inode);
 
 static int fatx_show_options(struct seq_file *m, struct vfsmount *mnt);
-static struct super_operations fatx_sops = {
+static const struct super_operations fatx_sops = {
 	.alloc_inode	= fatx_alloc_inode,
 	.destroy_inode	= fatx_destroy_inode,
 	.write_inode	= fatx_write_inode,
@@ -798,7 +798,7 @@ static int fatx_read_root(struct inode *inode)
  * Read the super block of an MS-DOS FS.
  */
 int fatx_fill_super_inode(struct super_block *sb, void *data, int silent,
-		   struct inode_operations *fs_dir_inode_ops)
+		   const struct inode_operations *fs_dir_inode_ops)
 {
 	struct inode *root_inode = NULL;
 	struct buffer_head *bh;
@@ -811,11 +811,10 @@ int fatx_fill_super_inode(struct super_block *sb, void *data, int silent,
 	unsigned long fatx_length;
 	long error;
 
-	sbi = kmalloc(sizeof(struct fatx_sb_info), GFP_KERNEL);
+	sbi = kzalloc(sizeof(struct fatx_sb_info), GFP_KERNEL);
 	if (!sbi)
 		return -ENOMEM;
 	sb->s_fs_info = sbi;
-	memset(sbi, 0, sizeof(struct fatx_sb_info));
 
 	sb->s_flags |= MS_NODIRATIME;
 	sb->s_magic = FATX_SUPER_MAGIC;

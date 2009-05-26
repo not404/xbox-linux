@@ -568,7 +568,7 @@ out:
 	return err;
 }
 
-static struct inode_operations fatx_dir_inode_operations = {
+static const struct inode_operations fatx_dir_inode_operations = {
 	.create		= fatx_create,
 	.lookup		= fatx_lookup,
 	.unlink		= fatx_unlink,

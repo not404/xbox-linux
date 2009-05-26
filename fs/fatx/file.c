@@ -209,7 +209,7 @@ int fatx_getattr(struct vfsmount *mnt, struct dentry *dentry, struct kstat *stat
 }
 
 EXPORT_SYMBOL_GPL(fatx_getattr);
-struct inode_operations fatx_file_inode_operations = {
+const struct inode_operations fatx_file_inode_operations = {
 	.truncate	= fatx_truncate,
 	.setattr	= fatx_notify_change,
 	.getattr        = fatx_getattr,
