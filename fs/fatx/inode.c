@@ -22,6 +22,7 @@
 #include <linux/fatx_fs.h>
 #include <linux/pagemap.h>
 #include <linux/buffer_head.h>
+#include <linux/exportfs.h>
 #include <linux/mount.h>
 #include <linux/vfs.h>
 #include <linux/parser.h>
@@ -387,7 +388,7 @@ static int __init fatx_init_inodecache(void)
 					     sizeof(struct fatx_inode_info),
 					     0, (SLAB_RECLAIM_ACCOUNT|
 						SLAB_MEM_SPREAD),
-					     init_once, NULL);
+					     init_once);
 	if (fatx_inode_cachep == NULL)
 		return -ENOMEM;
 	return 0;

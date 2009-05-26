@@ -52,7 +52,7 @@ const struct file_operations fatx_file_operations = {
 	.release        = fatx_file_release,
 	.ioctl		= NULL,
 	.fsync		= file_fsync,
-	.sendfile	= generic_file_sendfile,
+	.splice_read    = generic_file_splice_read,
 };
 
 int fatx_notify_change(struct dentry *dentry, struct iattr *attr)
