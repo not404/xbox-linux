@@ -38,14 +38,14 @@ static int tv_attach_adapter(struct i2c_adapter *adap);
 
 static struct i2c_driver tv_driver = {
 	.driver = {
-		.name	= "i2c xbox conexant driver",
+		.name	= "i2c xbox tv_driver",
 	},
 	.id		= I2C_DRIVERID_I2CDEV,
 	.attach_adapter	= tv_attach_adapter,
 };
 
 static struct i2c_client pic_client = {
-	.name		= "I2C xbox pic client",
+	.name		= "I2C xbox pic",
 	.flags		= 0,
 	.addr		= PIC_ADDRESS,
 	.adapter	= NULL,
@@ -53,7 +53,7 @@ static struct i2c_client pic_client = {
 };
 
 static struct i2c_client conexant_client = {
-	.name		= "I2C xbox conexant client",
+	.name		= "I2C xbox conexant",
 	.flags		= 0,
 	.addr		= CONEXANT_ADDRESS,
 	.adapter	= NULL,
@@ -61,7 +61,7 @@ static struct i2c_client conexant_client = {
 };
 
 static struct i2c_client focus_client = {
-	.name		= "I2C xbox focus client",
+	.name		= "I2C xbox focus",
 	.flags		= 0,
 	.addr		= FOCUS_ADDRESS,
 	.adapter	= NULL,
@@ -69,7 +69,7 @@ static struct i2c_client focus_client = {
 };
 
 static struct i2c_client xcalibur_client = {
-	.name		= "I2C xbox Xcalibur client",
+	.name		= "I2C xbox Xcalibur",
 	.flags		= 0,
 	.addr		= XLB_ADDRESS,
 	.adapter	= NULL,
@@ -77,7 +77,7 @@ static struct i2c_client xcalibur_client = {
 };
 
 static struct i2c_client eeprom_client = {
-	.name		= "I2C xbox eeprom client",
+	.name		= "I2C xbox eeprom",
 	.flags		= 0,
 	.addr		= EEPROM_ADDRESS,
 	.adapter	= NULL,
@@ -204,12 +204,6 @@ unsigned char eeprom_i2c_read(unsigned char adr) {
 }
 
 void tv_i2c_exit(void){
-	int res;
-	
-	if ((res = i2c_del_driver(&tv_driver))) {
-		printk(KERN_ERR DRIVER_NAME ": XBox tv Driver deregistration failed, "
-		       "module not removed.\n");
-	}
-	return;
+	i2c_del_driver(&tv_driver);
 }
 

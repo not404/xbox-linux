@@ -1094,7 +1094,7 @@ riva_set_pattern(struct riva_par *par, int clr0, int clr1, int pat0, int pat1)
 }
 
 /* acceleration routines */
-inline void wait_for_idle(struct riva_par *par)
+static inline void wait_for_idle(struct riva_par *par)
 {
 	while (par->riva.Busy(&par->riva));
 }
@@ -1111,7 +1111,7 @@ riva_set_rop_solid(struct riva_par *par, int rop)
 
 }
 
-void riva_setup_accel(struct fb_info *info)
+static void riva_setup_accel(struct fb_info *info)
 {
 	struct riva_par *par = (struct riva_par *) info->par;
 
@@ -1199,13 +1199,14 @@ static int xboxfb_open(struct fb_info *info, int user)
 	struct riva_par *par = (struct riva_par *) info->par;
 	mutex_lock(&par->open_lock);
 	if (!par->ref_count) {
+#ifdef CONFIG_X86
 		memset(&par->state, 0, sizeof(struct vgastate));
 		par->state.flags = VGA_SAVE_MODE  | VGA_SAVE_FONTS;
 		/* save the DAC for Riva128 */
 		if (par->riva.Architecture == NV_ARCH_03)
 			par->state.flags |= VGA_SAVE_CMAP;
 		save_vga(&par->state);
-
+#endif
 		RivaGetConfig(&par->riva, par->Chipset);
 		par->riva.CURSOR = (U032*)(info->screen_base + info->fix.smem_len);
 		par->riva.PCRTC[0x00000800/4] = par->riva_fb_start;
@@ -1234,7 +1235,7 @@ static int xboxfb_open(struct fb_info *info, int user)
 
 static int xboxfb_release(struct fb_info *info, int user)
 {
-	struct riva_par *par = (struct riva_par *) info->par;
+	struct riva_par *par = info->par;
 	mutex_lock(&par->open_lock);
 	if (!par->ref_count) {
 		mutex_unlock(&par->open_lock);
@@ -1257,7 +1258,7 @@ static int xboxfb_release(struct fb_info *info, int user)
 static int xboxfb_check_var(struct fb_var_screeninfo *var, struct fb_info *info)
 {
 	const struct fb_videomode *mode;
-	struct riva_par *par = (struct riva_par *) info->par;
+	struct riva_par *par = info->par;
 	int nom, den;		/* translating from pixels->bytes */
 	int mode_valid = 0;
 	
@@ -1366,7 +1367,7 @@ static int xboxfb_check_var(struct fb_var_screeninfo *var, struct fb_info *info)
 
 static int xboxfb_set_par(struct fb_info *info)
 {
-	struct riva_par *par = (struct riva_par *) info->par;
+	struct riva_par *par = info->par;
 	int rc = 0;
 
 	NVTRACE_ENTER();
@@ -1409,7 +1410,7 @@ out:
 static int xboxfb_pan_display(struct fb_var_screeninfo *var,
 			      struct fb_info *info)
 {
-	struct riva_par *par = (struct riva_par *)info->par;
+	struct riva_par *par = info->par;
 	unsigned int base;
 
 	NVTRACE_ENTER();
@@ -1446,7 +1447,7 @@ static int xboxfb_pan_display(struct fb_var_screeninfo *var,
 
 static int xboxfb_blank(int blank, struct fb_info *info)
 {
-	struct riva_par *par= (struct riva_par *)info->par;
+	struct riva_par *par= info->par;
 	unsigned char tmp, vesa;
 
 	tmp = SEQin(par, 0x01) & ~0x20;	/* screen on/off */
@@ -1509,7 +1510,7 @@ static int xboxfb_setcolreg(unsigned regno, unsigned red, unsigned green,
 			  unsigned blue, unsigned transp,
 			  struct fb_info *info)
 {
-	struct riva_par *par = (struct riva_par *)info->par;
+	struct riva_par *par = info->par;
 	RIVA_HW_INST *chip = &par->riva;
 	int i;
 
@@ -1598,7 +1599,7 @@ static int xboxfb_setcolreg(unsigned regno, unsigned red, unsigned green,
  */
 static void xboxfb_fillrect(struct fb_info *info, const struct fb_fillrect *rect)
 {
-	struct riva_par *par = (struct riva_par *) info->par;
+	struct riva_par *par = info->par;
 	u_int color, rop = 0;
 
 	if ((info->flags & FBINFO_HWACCEL_DISABLED)) {
@@ -1654,7 +1655,7 @@ static void xboxfb_fillrect(struct fb_info *info, const struct fb_fillrect *rect
  */
 static void xboxfb_copyarea(struct fb_info *info, const struct fb_copyarea *region)
 {
-	struct riva_par *par = (struct riva_par *) info->par;
+	struct riva_par *par = info->par;
 
 	if ((info->flags & FBINFO_HWACCEL_DISABLED)) {
 		cfb_copyarea(info, region);
@@ -1700,7 +1701,7 @@ static inline void convert_bgcolor_16(u32 *col)
 static void xboxfb_imageblit(struct fb_info *info, 
 			     const struct fb_image *image)
 {
-	struct riva_par *par = (struct riva_par *) info->par;
+	struct riva_par *par = info->par;
 	u32 fgx = 0, bgx = 0, width, tmp;
 	u8 *cdat = (u8 *) image->data;
 	volatile u32 __iomem *d;
@@ -1785,7 +1786,7 @@ static void xboxfb_imageblit(struct fb_info *info,
  */
 static int xboxfb_cursor(struct fb_info *info, struct fb_cursor *cursor)
 {
-	struct riva_par *par = (struct riva_par *) info->par;
+	struct riva_par *par = info->par;
 	u8 data[MAX_CURS * MAX_CURS/8];
 	u16 fg, bg;
 	int i, set = cursor->set;
@@ -1872,7 +1873,7 @@ static int xboxfb_cursor(struct fb_info *info, struct fb_cursor *cursor)
 
 static int xboxfb_sync(struct fb_info *info)
 {
-	struct riva_par *par = (struct riva_par *)info->par;
+	struct riva_par *par = info->par;
 
 	wait_for_idle(par);
 	return 0;
@@ -1881,7 +1882,7 @@ static int xboxfb_sync(struct fb_info *info)
 static int xboxfb_ioctl(struct fb_info *info, unsigned int cmd,
 		unsigned long arg)
 {
-	struct riva_par *par = (struct riva_par *) info->par;
+	struct riva_par *par = info->par;
 	
 	xbox_overscan overscan;
 	xboxfb_config config;
@@ -1967,7 +1968,7 @@ static struct fb_ops riva_fb_ops = {
 
 static int __devinit riva_set_fbinfo(struct fb_info *info)
 {
-	struct riva_par *par = (struct riva_par *) info->par;
+	struct riva_par *par = info->par;
 	unsigned int cmap_len;
 
 	info->flags = FBINFO_FLAG_DEFAULT;
@@ -2008,7 +2009,7 @@ static int __devinit riva_set_fbinfo(struct fb_info *info)
 #ifdef CONFIG_PPC_OF
 static int riva_get_EDID_OF(struct fb_info *info, struct pci_dev *pd)
 {
-	struct riva_par *par = (struct riva_par *) info->par;
+	struct riva_par *par = info->par;
 	struct device_node *dp;
 	unsigned char *pedid = NULL;
 
@@ -2063,7 +2064,7 @@ static int riva_dfp_parse_EDID(struct riva_par *par)
 static void riva_update_default_var(struct fb_info *info)
 {
 	struct fb_var_screeninfo *var = &xboxfb_default_var;
-	struct riva_par *par = (struct riva_par *) info->par;
+	struct riva_par *par = info->par;
 
         var->xres = par->panel_xres;
         var->yres = par->panel_yres;
@@ -2110,7 +2111,7 @@ static void riva_get_EDID(struct fb_info *info, struct pci_dev *pdev)
 
 static void riva_get_dfpinfo(struct fb_info *info)
 {
-	struct riva_par *par = (struct riva_par *) info->par;
+	struct riva_par *par = info->par;
 
 	if (riva_dfp_parse_EDID(par))
 		riva_update_default_var(info);
@@ -2350,10 +2351,10 @@ err_out:
 	return -ENODEV;
 }
 
-static void __exit xboxfb_remove(struct pci_dev *pd)
+static void __devexit xboxfb_remove(struct pci_dev *pd)
 {
 	struct fb_info *info = pci_get_drvdata(pd);
-	struct riva_par *par = (struct riva_par *) info->par;
+	struct riva_par *par =info->par;
 	
 	if (!info)
 		return;
@@ -2437,7 +2438,7 @@ static struct pci_driver xboxfb_driver = {
 	.name		= "xboxfb",
 	.id_table	= xboxfb_pci_tbl,
 	.probe		= xboxfb_probe,
-	.remove		= __exit_p(xboxfb_remove),
+	.remove		= __devexit_p(xboxfb_remove),
 };
 
 

@@ -951,6 +951,8 @@ config FB_XBOX
 	select FB_CFB_FILLRECT
 	select FB_CFB_COPYAREA
 	select FB_CFB_IMAGEBLIT
+	select BITREVERSE
+	select VGASTATE
 	help
 	  This driver supports the graphics chip of the Microsoft Xbox. 
 	  Say Y if you have an Xbox, N otherwise
