@@ -159,7 +159,7 @@ int xbox_setup(void)
 
 	/* Look for a supported chip */
 	for(currdev = supported; currdev->vendor; ) {
-		XBOX_dev = pci_find_device(currdev->vendor,
+		XBOX_dev = pci_get_device(currdev->vendor,
 						currdev->device, XBOX_dev);
 		if (XBOX_dev != NULL)	{
 	                pci_read_config_byte(XBOX_dev, SMBGCFG, &temp);
