@@ -963,7 +963,7 @@ config FB_RIVA_BACKLIGHT
 
 config FB_XBOX
 	tristate "nVidia Xbox support"
-	depends on FB && PCI && I2C_XBOX && EXPERIMENTAL
+	depends on FB && PCI && (I2C_XBOX || I2C_AMD756) && EXPERIMENTAL
 	select FB_MODE_HELPERS
 	select FB_CFB_FILLRECT
 	select FB_CFB_COPYAREA

@@ -192,11 +192,7 @@ static struct fb_var_screeninfo xboxfb_default_var = {
 	.vmode		= FB_VMODE_NONINTERLACED
 };
 
-#if 0
-/*
- *  2009-May-24
- * LALEE: These aren't used (yet), so I'm commenting them out to eliminate a compiler nag
- */
+#ifndef MODULE
 static struct fb_var_screeninfo xboxfb_mode_480p = {
 	.xres           = 720,
 	.yres           = 480,
