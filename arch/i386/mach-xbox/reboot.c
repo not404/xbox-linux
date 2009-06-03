@@ -53,8 +53,6 @@ void machine_restart(char *cmd)
 
 void machine_shutdown(void)
 {
-	/* Lalee Forced Halts to Shut Off */
-	xbox_pic_cmd(SMC_SUBCMD_POWER_OFF); 
 }
 
 void machine_power_off(void)
@@ -64,4 +62,6 @@ void machine_power_off(void)
 
 void machine_halt(void)
 {
+	/* Lalee Forced Halts to Shut Off */
+	xbox_pic_cmd(SMC_SUBCMD_POWER_OFF); 
 }
