@@ -243,7 +243,7 @@ EXPORT_SYMBOL(fatx_dir_empty);
 int fatx_subdirs(struct inode *dir)
 {
 	struct buffer_head *bh;
-	struct fatx_dir_entry *de;
+	struct fatx_dir_entry *de = NULL;
 	loff_t cpos;
 	int count = 0;
 
@@ -285,7 +285,7 @@ static int __fatx_remove_entries(struct inode *dir, loff_t pos)
 {
 	struct super_block *sb = dir->i_sb;
 	struct buffer_head *bh;
-	struct fatx_dir_entry *de, *endp;
+	struct fatx_dir_entry *de = NULL, *endp;
 	int err = 0, nr_slots = 0;
 
 	bh = NULL;

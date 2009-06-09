@@ -40,7 +40,7 @@ static inline int fatx_max_cache(struct inode *inode)
 
 static struct kmem_cache *fatx_cache_cachep;
 
-static void init_once(struct kmem_cache *cachep, void *foo)
+static void init_once(void *foo)
 {
 	struct fatx_cache *cache = (struct fatx_cache *)foo;
 	INIT_LIST_HEAD(&cache->cache_list);
@@ -64,7 +64,7 @@ void fatx_cache_destroy(void)
 
 static inline struct fatx_cache *fatx_cache_alloc(struct inode *inode)
 {
-	return kmem_cache_alloc(fatx_cache_cachep, GFP_KERNEL);
+	return kmem_cache_alloc(fatx_cache_cachep, GFP_NOFS);
 }
 
 static inline void fatx_cache_free(struct fatx_cache *cache)

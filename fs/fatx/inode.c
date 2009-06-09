@@ -389,7 +389,7 @@ static void fatx_destroy_inode(struct inode *inode)
 	kmem_cache_free(fatx_inode_cachep, FATX_I(inode));
 }
 
-static void init_once(struct kmem_cache *cachep, void *foo)
+static void init_once(void *foo)
 {
 	struct fatx_inode_info *ei = (struct fatx_inode_info *)foo;
 
