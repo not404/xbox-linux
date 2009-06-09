@@ -125,11 +125,9 @@ static void xbox_abort(void);
 static int xbox_transaction(void);
 static u32 xbox_func(struct i2c_adapter *adapter);
 
-static struct i2c_algorithm smbus_algorithm = {
-	/* master_xfer */ NULL,
-	/* smbus_xfer  */ xbox_access,
-	/* algo_control */ NULL,
-	/* functionality */ xbox_func,
+static const struct i2c_algorithm smbus_algorithm = {
+	.smbus_xfer	= xbox_access,
+	.functionality	= xbox_func,
 };
 
 static struct i2c_adapter xbox_adapter = {

@@ -521,11 +521,10 @@ static const struct super_operations fatx_sops = {
 	.write_inode	= fatx_write_inode,
 	.delete_inode	= fatx_delete_inode,
 	.put_super	= fatx_put_super,
+//	.write_super	= fatx_write_super,
 	.statfs		= fatx_statfs,
 	.clear_inode	= fatx_clear_inode,
 	.remount_fs	= fatx_remount,
-
-	.read_inode	= make_bad_inode,
 
 	.show_options	= fatx_show_options,
 };
@@ -554,8 +553,8 @@ static struct dentry *fatx_fh_to_dentry(struct super_block *sb,
 	if (fh_len < 5 || fh_type != 3)
 		return NULL;
 
-	inode = iget(sb, fh[0]);
-	if (!inode || is_bad_inode(inode) || inode->i_generation != fh[1]) {
+	inode = ilookup(sb, fh[0]);
+	if (!inode || inode->i_generation != fh[1]) {
 		if (inode)
 			iput(inode);
 		inode = NULL;
@@ -656,7 +655,7 @@ static struct dentry *fatx_get_parent(struct dentry *child)
 	inode = fatx_build_inode(child->d_sb, de, i_pos);
 	brelse(bh);
 	if (IS_ERR(inode)) {
-		parent = ERR_PTR(PTR_ERR(inode));
+		parent = ERR_CAST(inode);
 		goto out;
 	}
 	parent = d_alloc_anon(inode);
