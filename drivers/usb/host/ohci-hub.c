@@ -103,11 +103,11 @@ __acquires(ohci->lock)
 	finish_unlinks (ohci, ohci_frame_no(ohci));
 
 	/* maybe resume can wake root hub */
-	if (device_may_wakeup(&ohci_to_hcd(ohci)->self.root_hub->dev) ||
-			autostop)
+	if (ohci_to_hcd(ohci)->self.root_hub->do_remote_wakeup || autostop) {
 		ohci->hc_control |= OHCI_CTRL_RWE;
-	else {
-		ohci_writel (ohci, OHCI_INTR_RHSC, &ohci->regs->intrdisable);
+	} else {
+		ohci_writel(ohci, OHCI_INTR_RHSC | OHCI_INTR_RD,
+				&ohci->regs->intrdisable);
 		ohci->hc_control &= ~OHCI_CTRL_RWE;
 	}
 
@@ -324,6 +324,49 @@ static int ohci_bus_resume (struct usb_hcd *hcd)
 	if (rc == 0)
 		usb_hcd_poll_rh_status(hcd);
 	return rc;
+}
+
+/* Carry out the final steps of resuming the controller device */
+static void ohci_finish_controller_resume(struct usb_hcd *hcd)
+{
+	struct ohci_hcd		*ohci = hcd_to_ohci(hcd);
+	int			port;
+	bool			need_reinit = false;
+
+	/* See if the controller is already running or has been reset */
+	ohci->hc_control = ohci_readl(ohci, &ohci->regs->control);
+	if (ohci->hc_control & (OHCI_CTRL_IR | OHCI_SCHED_ENABLES)) {
+		need_reinit = true;
+	} else {
+		switch (ohci->hc_control & OHCI_CTRL_HCFS) {
+		case OHCI_USB_OPER:
+		case OHCI_USB_RESET:
+			need_reinit = true;
+		}
+	}
+
+	/* If needed, reinitialize and suspend the root hub */
+	if (need_reinit) {
+		spin_lock_irq(&ohci->lock);
+		hcd->state = HC_STATE_RESUMING;
+		ohci_rh_resume(ohci);
+		hcd->state = HC_STATE_QUIESCING;
+		ohci_rh_suspend(ohci, 0);
+		hcd->state = HC_STATE_SUSPENDED;
+		spin_unlock_irq(&ohci->lock);
+	}
+
+	/* Normally just turn on port power and enable interrupts */
+	else {
+		ohci_dbg(ohci, "powerup ports\n");
+		for (port = 0; port < ohci->num_ports; port++)
+			ohci_writel(ohci, RH_PS_PPS,
+					&ohci->regs->roothub.portstatus[port]);
+
+		ohci_writel(ohci, OHCI_INTR_MIE, &ohci->regs->intrenable);
+		ohci_readl(ohci, &ohci->regs->intrenable);
+		msleep(20);
+	}
 }
 
 /* Carry out polling-, autostop-, and autoresume-related state changes */
@@ -561,17 +604,21 @@ static void start_hnp(struct ohci_hcd *ohci);
 static inline int root_port_reset (struct ohci_hcd *ohci, unsigned port)
 {
 	__hc32 __iomem *portstat = &ohci->regs->roothub.portstatus [port];
-	u32	temp;
+	u32	temp = 0;
 	u16	now = ohci_readl(ohci, &ohci->regs->fmnumber);
 	u16	reset_done = now + PORT_RESET_MSEC;
+	int	limit_1 = DIV_ROUND_UP(PORT_RESET_MSEC, PORT_RESET_HW_MSEC);
 
 	/* build a "continuous enough" reset signal, with up to
 	 * 3msec gap between pulses.  scheduler HZ==100 must work;
 	 * this might need to be deadline-scheduled.
 	 */
 	do {
+		int limit_2;
+
 		/* spin until any current reset finishes */
-		for (;;) {
+		limit_2 = PORT_RESET_HW_MSEC * 2;
+		while (--limit_2 >= 0) {
 			temp = ohci_readl (ohci, portstat);
 			/* handle e.g. CardBus eject */
 			if (temp == ~(u32)0)
@@ -579,6 +626,17 @@ static inline int root_port_reset (struct ohci_hcd *ohci, unsigned port)
 			if (!(temp & RH_PS_PRS))
 				break;
 			udelay (500);
+		}
+
+		/* timeout (a hardware error) has been observed when
+		 * EHCI sets CF while this driver is resetting a port;
+		 * presumably other disconnect paths might do it too.
+		 */
+		if (limit_2 < 0) {
+			ohci_dbg(ohci,
+				"port[%d] reset timeout, stat %08x\n",
+				port, temp);
+			break;
 		}
 
 		if (!(temp & RH_PS_CCS))
@@ -590,8 +648,11 @@ static inline int root_port_reset (struct ohci_hcd *ohci, unsigned port)
 		ohci_writel (ohci, RH_PS_PRS, portstat);
 		msleep(PORT_RESET_HW_MSEC);
 		now = ohci_readl(ohci, &ohci->regs->fmnumber);
-	} while (tick_before(now, reset_done));
-	/* caller synchronizes using PRSC */
+	} while (tick_before(now, reset_done) && --limit_1 >= 0);
+
+	/* caller synchronizes using PRSC ... and handles PRS
+	 * still being set when this returns.
+	 */
 
 	return 0;
 }
@@ -666,14 +727,14 @@ static int ohci_hub_control (
 		break;
 	case GetHubStatus:
 		temp = roothub_status (ohci) & ~(RH_HS_CRWE | RH_HS_DRWE);
-		put_unaligned(cpu_to_le32 (temp), (__le32 *) buf);
+		put_unaligned_le32(temp, buf);
 		break;
 	case GetPortStatus:
 		if (!wIndex || wIndex > ports)
 			goto error;
 		wIndex--;
 		temp = roothub_portstatus (ohci, wIndex);
-		put_unaligned(cpu_to_le32 (temp), (__le32 *) buf);
+		put_unaligned_le32(temp, buf);
 
 #ifndef	OHCI_VERBOSE_DEBUG
 	if (*(u16*)(buf+2))	/* only if wPortChange is interesting */

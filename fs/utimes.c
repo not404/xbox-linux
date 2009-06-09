@@ -2,6 +2,7 @@
 #include <linux/file.h>
 #include <linux/fs.h>
 #include <linux/linkage.h>
+#include <linux/mount.h>
 #include <linux/namei.h>
 #include <linux/sched.h>
 #include <linux/stat.h>
@@ -59,6 +60,7 @@ long do_utimes(int dfd, char __user *filename, struct timespec *times, int flags
 	struct inode *inode;
 	struct iattr newattrs;
 	struct file *f = NULL;
+	struct vfsmount *mnt;
 
 	error = -EINVAL;
 	if (times && (!nsec_valid(times[0].tv_nsec) ||
@@ -79,26 +81,32 @@ long do_utimes(int dfd, char __user *filename, struct timespec *times, int flags
 		if (!f)
 			goto out;
 		dentry = f->f_path.dentry;
+		mnt = f->f_path.mnt;
 	} else {
 		error = __user_walk_fd(dfd, filename, (flags & AT_SYMLINK_NOFOLLOW) ? 0 : LOOKUP_FOLLOW, &nd);
 		if (error)
 			goto out;
 
 		dentry = nd.path.dentry;
+		mnt = nd.path.mnt;
 	}
 
 	inode = dentry->d_inode;
 
-	error = -EROFS;
-	if (IS_RDONLY(inode))
+	error = mnt_want_write(mnt);
+	if (error)
 		goto dput_and_out;
 
-	/* Don't worry, the checks are done in inode_change_ok() */
+	if (times && times[0].tv_nsec == UTIME_NOW &&
+		     times[1].tv_nsec == UTIME_NOW)
+		times = NULL;
+
+	/* In most cases, the checks are done in inode_change_ok() */
 	newattrs.ia_valid = ATTR_CTIME | ATTR_MTIME | ATTR_ATIME;
 	if (times) {
 		error = -EPERM;
                 if (IS_APPEND(inode) || IS_IMMUTABLE(inode))
-                        goto dput_and_out;
+			goto mnt_drop_write_and_out;
 
 		if (times[0].tv_nsec == UTIME_OMIT)
 			newattrs.ia_valid &= ~ATTR_ATIME;
@@ -115,25 +123,41 @@ long do_utimes(int dfd, char __user *filename, struct timespec *times, int flags
 			newattrs.ia_mtime.tv_nsec = times[1].tv_nsec;
 			newattrs.ia_valid |= ATTR_MTIME_SET;
 		}
+
+		/*
+		 * For the UTIME_OMIT/UTIME_NOW and UTIME_NOW/UTIME_OMIT
+		 * cases, we need to make an extra check that is not done by
+		 * inode_change_ok().
+		 */
+		if (((times[0].tv_nsec == UTIME_NOW &&
+			    times[1].tv_nsec == UTIME_OMIT)
+		     ||
+		     (times[0].tv_nsec == UTIME_OMIT &&
+			    times[1].tv_nsec == UTIME_NOW))
+		    && !is_owner_or_cap(inode))
+			goto mnt_drop_write_and_out;
 	} else {
+
+		/*
+		 * If times is NULL (or both times are UTIME_NOW),
+		 * then we need to check permissions, because
+		 * inode_change_ok() won't do it.
+		 */
 		error = -EACCES;
                 if (IS_IMMUTABLE(inode))
-                        goto dput_and_out;
+			goto mnt_drop_write_and_out;
 
 		if (!is_owner_or_cap(inode)) {
-			if (f) {
-				if (!(f->f_mode & FMODE_WRITE))
-					goto dput_and_out;
-			} else {
-				error = vfs_permission(&nd, MAY_WRITE);
-				if (error)
-					goto dput_and_out;
-			}
+			error = permission(inode, MAY_WRITE, NULL);
+			if (error)
+				goto mnt_drop_write_and_out;
 		}
 	}
 	mutex_lock(&inode->i_mutex);
 	error = notify_change(dentry, &newattrs);
 	mutex_unlock(&inode->i_mutex);
+mnt_drop_write_and_out:
+	mnt_drop_write(mnt);
 dput_and_out:
 	if (f)
 		fput(f);
@@ -150,14 +174,6 @@ asmlinkage long sys_utimensat(int dfd, char __user *filename, struct timespec __
 	if (utimes) {
 		if (copy_from_user(&tstimes, utimes, sizeof(tstimes)))
 			return -EFAULT;
-		if ((tstimes[0].tv_nsec == UTIME_OMIT ||
-		     tstimes[0].tv_nsec == UTIME_NOW) &&
-		    tstimes[0].tv_sec != 0)
-			return -EINVAL;
-		if ((tstimes[1].tv_nsec == UTIME_OMIT ||
-		     tstimes[1].tv_nsec == UTIME_NOW) &&
-		    tstimes[1].tv_sec != 0)
-			return -EINVAL;
 
 		/* Nothing to do, we must not even check the path.  */
 		if (tstimes[0].tv_nsec == UTIME_OMIT &&

@@ -14,7 +14,8 @@
 #define __PAGE_OFFSET		_AC(CONFIG_PAGE_OFFSET, UL)
 
 #ifdef CONFIG_X86_PAE
-#define __PHYSICAL_MASK_SHIFT	36
+/* 44=32+12, the limit we can fit into an unsigned long pfn */
+#define __PHYSICAL_MASK_SHIFT	44
 #define __VIRTUAL_MASK_SHIFT	32
 #define PAGETABLE_LEVELS	3
 
@@ -47,7 +48,10 @@ typedef unsigned long	pgdval_t;
 typedef unsigned long	pgprotval_t;
 typedef unsigned long	phys_addr_t;
 
-typedef union { pteval_t pte, pte_low; } pte_t;
+typedef union {
+	pteval_t pte;
+	pteval_t pte_low;
+} pte_t;
 
 #endif	/* __ASSEMBLY__ */
 #endif	/* CONFIG_X86_PAE */
@@ -61,7 +65,7 @@ typedef struct page *pgtable_t;
 #endif
 
 #ifndef __ASSEMBLY__
-#define __phys_addr(x)		((x)-PAGE_OFFSET)
+#define __phys_addr(x)		((x) - PAGE_OFFSET)
 #define __phys_reloc_hide(x)	RELOC_HIDE((x), 0)
 
 #ifdef CONFIG_FLATMEM
@@ -78,7 +82,7 @@ extern unsigned int __VMALLOC_RESERVE;
 extern int sysctl_legacy_va_layout;
 
 #define VMALLOC_RESERVE		((unsigned long)__VMALLOC_RESERVE)
-#define MAXMEM			(-__PAGE_OFFSET-__VMALLOC_RESERVE)
+#define MAXMEM			(-__PAGE_OFFSET - __VMALLOC_RESERVE)
 
 #ifdef CONFIG_X86_USE_3DNOW
 #include <asm/mmx.h>

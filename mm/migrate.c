@@ -9,7 +9,7 @@
  * IWAMOTO Toshihiro <iwamoto@valinux.co.jp>
  * Hirokazu Takahashi <taka@valinux.co.jp>
  * Dave Hansen <haveblue@us.ibm.com>
- * Christoph Lameter <clameter@sgi.com>
+ * Christoph Lameter
  */
 
 #include <linux/migrate.h>
@@ -383,7 +383,14 @@ static void migrate_page_copy(struct page *newpage, struct page *page)
 
 	if (PageDirty(page)) {
 		clear_page_dirty_for_io(page);
-		set_page_dirty(newpage);
+		/*
+		 * Want to mark the page and the radix tree as dirty, and
+		 * redo the accounting that clear_page_dirty_for_io undid,
+		 * but we can't use set_page_dirty because that function
+		 * is actually a signal that all of the page has become dirty.
+		 * Wheras only part of our page may be dirty.
+		 */
+		__set_page_dirty_nobuffers(newpage);
  	}
 
 #ifdef CONFIG_SWAP
@@ -858,6 +865,11 @@ static int do_move_pages(struct mm_struct *mm, struct page_to_node *pm,
 			goto set_status;
 
 		page = follow_page(vma, pp->addr, FOLL_GET);
+
+		err = PTR_ERR(page);
+		if (IS_ERR(page))
+			goto set_status;
+
 		err = -ENOENT;
 		if (!page)
 			goto set_status;
@@ -921,6 +933,11 @@ static int do_pages_stat(struct mm_struct *mm, struct page_to_node *pm)
 			goto set_status;
 
 		page = follow_page(vma, pm->addr, 0);
+
+		err = PTR_ERR(page);
+		if (IS_ERR(page))
+			goto set_status;
+
 		err = -ENOENT;
 		/* Use PageReserved to check for zero page */
 		if (!page || PageReserved(page))
