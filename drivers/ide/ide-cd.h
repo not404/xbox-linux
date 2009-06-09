@@ -91,11 +91,12 @@ struct ide_cd_config_flags {
 	__u8 close_tray		: 1; /* can close the tray */
 	__u8 writing		: 1; /* pseudo write in progress */
 	__u8 mo_drive		: 1; /* drive is an MO device */
+	__u8 no_speed_select	: 1; /* SET_CD_SPEED command is unsupported. */
 #ifdef CONFIG_X86_XBOX
 	__u8 xbox_drive         : 1; /* drive is an Xbox drive */
-	__u8 xbox_eject         : 1; /* use Xbox SMC eject mechanism */	
-#endif
-	__u8 reserved		: 2;
+	__u8 xbox_eject         : 1; /* use Xbox SMC eject mechanism */
+#endif	
+	__u8 reserved		: 1;
 	byte max_speed;		     /* Max speed of the drive */
 };
 #define CDROM_CONFIG_FLAGS(drive) (&(((struct cdrom_info *)(drive->driver_data))->config_flags))
