@@ -125,7 +125,7 @@ int cdrom_eject(ide_drive_t *drive, int ejectflag,
 	   can do the eject.  Note that some Xbox drives support the eject
 	   command, namely the Samsung, so for that drive we do a regular eject
 	   sequence. */
-	if ( (machine_is_xbox) && (cd->cd_flags & IDE_AFLAG_XBOX_EJECT) ){
+	if ( (machine_is_xbox) && (drive->atapi_flags & IDE_AFLAG_XBOX_EJECT) ){
 		if (ejectflag) {
 			Xbox_tray_load();
 		} else {
@@ -162,11 +162,11 @@ int ide_cd_lockdoor(ide_drive_t *drive, int lockflag,
 #ifdef CONFIG_X86_XBOX
 	/* If we're on an Xbox and this is an Xbox drive, simulate the lock
 	   request in software.  (See arch/i386/kernel/xboxejectfix.c) */
-	if ( (machine_is_xbox) && (cd->cd_flags & IDE_AFLAG_XBOX_DRIVE) ) {
+	if ( (machine_is_xbox) && (drive->atapi_flags & IDE_AFLAG_XBOX_DRIVE) ) {
 		if (lockflag)
-			cd->cd_flags |= IDE_AFLAG_DOOR_LOCKED;
+			drive->atapi_flags |= IDE_AFLAG_DOOR_LOCKED;
 		else
-			cd->cd_flags &= ~IDE_AFLAG_DOOR_LOCKED;
+			drive->atapi_flags &= ~IDE_AFLAG_DOOR_LOCKED;
 		Xbox_simulate_drive_locked = lockflag;
 		return 0;
 	}

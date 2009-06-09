@@ -1880,7 +1880,7 @@ static const struct cd_list_entry ide_cd_quirks_list[] = {
  	/* THOMSON DVD drives in the Xbox report incorrect capabilities
 	   and do not understand the ATAPI eject command, but the SMC
 	   can do the eject. */
-    { "THOMSON-DVD", NULL, 
+	{ "THOMSON-DVD", NULL, 
 		IDE_AFLAG_XBOX_DRIVE | IDE_AFLAG_XBOX_EJECT | 
 		IDE_AFLAG_PLAY_AUDIO_OK },
 
@@ -1959,20 +1959,20 @@ static int ide_cdrom_setup(ide_drive_t *drive)
 // which wouldn't have CONFIG_X86_XBOX to activate these quirks.
 
 	/* Is an Xbox drive detected? */
-	if (cd->cd_flags & IDE_AFLAG_XBOX_DRIVE) {
+	if (drive->atapi_flags & IDE_AFLAG_XBOX_DRIVE) {
 		/* If an Xbox drive is present in a regular PC, we can't eject.
 		   Act like the drive cannot eject, unless the ATAPI eject command
 		   is supported by the drive.  If the drive doesn't support ATAPI
 		   ejecting, act like door locking is impossible as well. */
 		if (!machine_is_xbox) {
-			if (cd->cd_flags & IDE_AFLAG_XBOX_EJECT) {
-				cd->cd_flags |= (IDE_AFLAG_NO_DOORLOCK | IDE_AFLAG_NO_EJECT);
+			if (drive->atapi_flags & IDE_AFLAG_XBOX_EJECT) {
+				drive->atapi_flags |= (IDE_AFLAG_NO_DOORLOCK | IDE_AFLAG_NO_EJECT);
 			}
 		} else {
 			/* An Xbox drive in an Xbox.  We can support ejecting through
 			   the SMC and support drive locking in software by ignoring
 			   the eject interrupt (see arch/i386/kernel/xboxejectfix.c). */
-			cd->cd_flags &= ~(IDE_AFLAG_NO_DOORLOCK | IDE_AFLAG_NO_EJECT);
+			drive->atapi_flags &= ~(IDE_AFLAG_NO_DOORLOCK | IDE_AFLAG_NO_EJECT);
 			Xbox_simulate_drive_locked = 0;
 		}
 	}
