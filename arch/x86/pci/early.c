@@ -54,6 +54,10 @@ void write_pci_config_byte(u8 bus, u8 slot, u8 func, u8 offset, u8 val)
 
 int early_pci_allowed(void)
 {
+#ifdef CONFIG_X86_XBOX
+	return false;
+#else
 	return (pci_probe & (PCI_PROBE_CONF1|PCI_PROBE_NOEARLY)) ==
 			PCI_PROBE_CONF1;
+#endif
 }
