@@ -9,7 +9,14 @@
 #include <asm/e820.h>
 #include <asm/setup.h>
 
+#include <asm/io.h>
 int machine_is_xbox = 0;
+void __init detect_xbox(void){
+	outl(0x80000000, 0xcf8);
+	if (inl(0xcfc)==0x02a510de) { /* Xbox PCI 0:0:0 ID 0x10de/0x02a5 */
+		machine_is_xbox = 1;
+	}
+}
 
 /**
  * pre_intr_init_hook - initialisation prior to setting up interrupt vectors
@@ -56,6 +63,7 @@ void __init intr_init_hook(void)
  **/
 void __init pre_setup_arch_hook(void)
 {
+	detect_xbox();	
 }
 
 /**
@@ -112,4 +120,3 @@ void __init time_init_hook(void)
 	irq0.mask = cpumask_of_cpu(0);
 	setup_irq(0, &irq0);
 }
-
