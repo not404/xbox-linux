@@ -357,7 +357,7 @@ static void ide_cd_put(struct cdrom_info *cd)
 /* Global flag indicating whether to simulate Xbox drive locking in
  * software.  There should only be one Xbox drive in a system!  This
  * variable is externally referenced by arch/i386/kernel/xboxejectfix.c. */
-volatile int Xbox_simulate_drive_locked = 0;
+extern volatile int Xbox_simulate_drive_locked;
 #endif /* CONFIG_X86_XBOX */
  
 /****************************************************************************

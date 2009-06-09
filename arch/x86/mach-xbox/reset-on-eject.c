@@ -30,9 +30,9 @@
 /* just some crap */
 static char dev[]=DRIVER_NAME;
 
-/* External variable from ide-cd.c that specifies whether we simulate drive
+/* Internal variable for ide-cd.c that specifies whether we simulate drive
    locking in software */
-extern volatile int Xbox_simulate_drive_locked;
+volatile int Xbox_simulate_drive_locked = 0;
 
 #define BASE 0x8000
 
