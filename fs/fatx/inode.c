@@ -249,7 +249,7 @@ static int fatx_calc_dir_size(struct inode *inode)
 	if (FATX_I(inode)->i_start == 0)
 		return 0;
 
-	ret = fatx_get_cluster(inode, FAT_ENT_EOF, &fclus, &dclus);
+	ret = fatx_get_cluster(inode, FATX_ENT_EOF, &fclus, &dclus);
 	if (ret < 0)
 		return ret;
 	inode->i_size = (fclus + 1) << sbi->cluster_bits;
@@ -342,10 +342,9 @@ EXPORT_SYMBOL(fatx_build_inode);
 
 static void fatx_delete_inode(struct inode *inode)
 {
-	if (!is_bad_inode(inode)) {
-		inode->i_size = 0;
-		fatx_truncate(inode);
-	}
+	truncate_inode_pages(&inode->i_data, 0);
+	inode->i_size = 0;
+	fatx_truncate(inode);
 	clear_inode(inode);
 }
 
@@ -353,8 +352,6 @@ static void fatx_clear_inode(struct inode *inode)
 {
 	struct fatx_sb_info *sbi = FATX_SB(inode->i_sb);
 
-	if (is_bad_inode(inode))
-		return;
 	lock_kernel();
 	spin_lock(&sbi->inode_hash_lock);
 	fatx_cache_inval_inode(inode);
@@ -432,7 +429,7 @@ static int fatx_statfs(struct dentry *dentry, struct kstatfs *buf)
 	struct fatx_sb_info *sbi = FATX_SB(dentry->d_sb);
 
 	/* If the count of free cluster is still unknown, counts it here. */
-	if (sbi->free_clusters == -1) {
+	if (sbi->free_clusters == -1 || !sbi->free_clus_valid) {
 		__s64 err = fatx_count_free_clusters(dentry->d_sb);
 		if (err)
 			return err;

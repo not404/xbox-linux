@@ -8,11 +8,14 @@
  *  regular file handling primitives for fatx-based filesystems
  */
 
+#include <linux/capability.h>
 #include <linux/module.h>
+#include <linux/mount.h>
 #include <linux/time.h>
 #include <linux/fatx_fs.h>
 #include <linux/smp_lock.h>
 #include <linux/buffer_head.h>
+#include <linux/writeback.h>
 #include <linux/backing-dev.h>
 #include <linux/blkdev.h>
 
@@ -32,6 +35,105 @@ static ssize_t fatx_file_aio_write(struct kiocb *iocb, const struct iovec *buf, 
 	return retval;
 }
 
+int fatx_generic_ioctl(struct inode *inode, struct file *filp,
+		      unsigned int cmd, unsigned long arg)
+{
+	struct fatx_sb_info *sbi = FATX_SB(inode->i_sb);
+	u32 __user *user_attr = (u32 __user *)arg;
+
+	switch (cmd) {
+	case FATX_IOCTL_GET_ATTRIBUTES:
+	{
+		u32 attr;
+
+		if (inode->i_ino == FATX_ROOT_INO)
+			attr = ATTR_DIR;
+		else
+			attr = fatx_attr(inode);
+
+		return put_user(attr, user_attr);
+	}
+	case FATX_IOCTL_SET_ATTRIBUTES:
+	{
+		u32 attr, oldattr;
+		int err, is_dir = S_ISDIR(inode->i_mode);
+		struct iattr ia;
+
+		err = get_user(attr, user_attr);
+		if (err)
+			return err;
+
+		mutex_lock(&inode->i_mutex);
+
+		err = mnt_want_write(filp->f_path.mnt);
+		if (err)
+			goto up_no_drop_write;
+
+		/*
+		 * ATTR_VOLUME and ATTR_DIR cannot be changed; this also
+		 * prevents the user from turning us into a VFAT
+		 * longname entry.  Also, we obviously can't set
+		 * any of the NTFS attributes in the high 24 bits.
+		 */
+		attr &= 0xff & ~(ATTR_VOLUME | ATTR_DIR);
+		/* Merge in ATTR_VOLUME and ATTR_DIR */
+		attr |= (FATX_I(inode)->i_attrs & ATTR_VOLUME) |
+			(is_dir ? ATTR_DIR : 0);
+		oldattr = fatx_attr(inode);
+
+		/* Equivalent to a chmod() */
+		ia.ia_valid = ATTR_MODE | ATTR_CTIME;
+		if (is_dir) {
+			ia.ia_mode = FATX_MKMODE(attr,
+				S_IRWXUGO & ~sbi->options.fs_dmask)
+				| S_IFDIR;
+		} else {
+			ia.ia_mode = FATX_MKMODE(attr,
+				(S_IRUGO | S_IWUGO | (inode->i_mode & S_IXUGO))
+				& ~sbi->options.fs_fmask)
+				| S_IFREG;
+		}
+
+		/* The root directory has no attributes */
+		if (inode->i_ino == FATX_ROOT_INO && attr != ATTR_DIR) {
+			err = -EINVAL;
+			goto up;
+		}
+
+		if (sbi->options.sys_immutable) {
+			if ((attr | oldattr) & ATTR_SYS) {
+				if (!capable(CAP_LINUX_IMMUTABLE)) {
+					err = -EPERM;
+					goto up;
+				}
+			}
+		}
+
+		/* This MUST be done before doing anything irreversible... */
+		err = notify_change(filp->f_path.dentry, &ia);
+		if (err)
+			goto up;
+
+		if (sbi->options.sys_immutable) {
+			if (attr & ATTR_SYS)
+				inode->i_flags |= S_IMMUTABLE;
+			else
+				inode->i_flags &= S_IMMUTABLE;
+		}
+
+		FATX_I(inode)->i_attrs = attr & ATTR_UNUSED;
+		mark_inode_dirty(inode);
+up:
+		mnt_drop_write(filp->f_path.mnt);
+up_no_drop_write:
+		mutex_unlock(&inode->i_mutex);
+		return err;
+	}
+	default:
+		return -ENOTTY;	/* Inappropriate ioctl for device */
+	}
+}
+
 static int fatx_file_release(struct inode *inode, struct file *filp)
 {
 	if ((filp->f_mode & FMODE_WRITE) &&
@@ -47,106 +149,31 @@ const struct file_operations fatx_file_operations = {
 	.read		= do_sync_read,
 	.write		= do_sync_write,
 	.aio_read	= generic_file_aio_read,
-	.aio_write	= fatx_file_aio_write,
+	.aio_write	= fatx_file_aio_write, // generic_file_aio_write,
 	.mmap		= generic_file_mmap,
-	.release        = fatx_file_release,
-	.ioctl		= NULL,
+	.release	= fatx_file_release,
+	.ioctl		= NULL, // fatx_generic_ioctl,
 	.fsync		= file_fsync,
-	.splice_read    = generic_file_splice_read,
+	.splice_read	= generic_file_splice_read,
 };
 
-static int check_mode(const struct fatx_sb_info *sbi, mode_t mode)
+static int fatx_cont_expand(struct inode *inode, loff_t size)
 {
-	mode_t req = mode & ~S_IFMT;
+	struct address_space *mapping = inode->i_mapping;
+	loff_t start = inode->i_size, count = size - inode->i_size;
+	int err;
 
-	/*
-	 * Of the r and x bits, all (subject to umask) must be present. Of the
-	 * w bits, either all (subject to umask) or none must be present.
-	 */
-
-	if (S_ISREG(mode)) {
-		req &= ~sbi->options.fs_fmask;
-
-		if ((req & (S_IRUGO | S_IXUGO)) !=
-		    ((S_IRUGO | S_IXUGO) & ~sbi->options.fs_fmask))
-			return -EPERM;
-
-		if ((req & S_IWUGO) != 0 &&
-		    (req & S_IWUGO) != (S_IWUGO & ~sbi->options.fs_fmask))
-			return -EPERM;
-	} else if (S_ISDIR(mode)) {
-		req &= ~sbi->options.fs_dmask;
-
-		if ((req & (S_IRUGO | S_IXUGO)) !=
-		    ((S_IRUGO | S_IXUGO) & ~sbi->options.fs_dmask))
-			return -EPERM;
-
-		if ((req & S_IWUGO) != 0 &&
-		    (req & S_IWUGO) != (S_IWUGO & ~sbi->options.fs_dmask))
-			return -EPERM;
-	} else {
-		return -EPERM;
-	}
-
-	return 0;
-}
-
-int fatx_notify_change(struct dentry *dentry, struct iattr *attr)
-{
-	struct fatx_sb_info *sbi = FATX_SB(dentry->d_sb);
-	struct inode *inode = dentry->d_inode;
-	int mask, error = 0;
-
-	lock_kernel();
-
-	/* FAT cannot truncate to a longer file */
-	if (attr->ia_valid & ATTR_SIZE) {
-		if (attr->ia_size > inode->i_size) {
-			error = -EPERM;
-			goto out;
-		}
-	}
-
-	error = inode_change_ok(inode, attr);
-	if (error) {
-		if (sbi->options.quiet)
-			error = 0;
-		goto out;
-	}
-
-	if (((attr->ia_valid & ATTR_UID) &&
-	     (attr->ia_uid != sbi->options.fs_uid)) ||
-	    ((attr->ia_valid & ATTR_GID) &&
-	     (attr->ia_gid != sbi->options.fs_gid)))
-		error = -EPERM;
-
-	if (error) {
-		if (sbi->options.quiet)
-			error = 0;
-		goto out;
-	}
-
-	if (attr->ia_valid & ATTR_MODE) {
-		error = check_mode(sbi, attr->ia_mode);
-		if (error != 0 && !sbi->options.quiet)
-			goto out;
-	}
-
-	error = inode_setattr(inode, attr);
-	if (error)
+	err = generic_cont_expand_simple(inode, size);
+	if (err)
 		goto out;
 
-	if (S_ISDIR(inode->i_mode))
-		mask = sbi->options.fs_dmask;
-	else
-		mask = sbi->options.fs_fmask;
-	inode->i_mode &= S_IFMT | (S_IRWXUGO & ~mask);
+	inode->i_ctime = inode->i_mtime = CURRENT_TIME_SEC;
+	mark_inode_dirty(inode);
+	if (IS_SYNC(inode))
+		err = sync_page_range_nolock(inode, mapping, start, count);
 out:
-	unlock_kernel();
-	return error;
+	return err;
 }
-
-EXPORT_SYMBOL(fatx_notify_change);
 
 /* Free all clusters after the skip'th cluster. */
 static int fatx_free(struct inode *inode, int skip)
@@ -157,33 +184,52 @@ static int fatx_free(struct inode *inode, int skip)
 	if (FATX_I(inode)->i_start == 0)
 		return 0;
 
-	/*
-	 * Write a new EOF, and get the remaining cluster chain for freeing.
-	 */
+	fatx_cache_inval_inode(inode);
+
 	wait = IS_DIRSYNC(inode);
+	i_start = free_start = FATX_I(inode)->i_start;
+	i_logstart = FATX_I(inode)->i_logstart;
+
+	/* First, we write the new file size. */
+	if (!skip) {
+		FATX_I(inode)->i_start = 0;
+		FATX_I(inode)->i_logstart = 0;
+	}
+	FATX_I(inode)->i_attrs |= ATTR_ARCH;
+	inode->i_ctime = inode->i_mtime = CURRENT_TIME_SEC;
+	if (wait) {
+		err = fatx_sync_inode(inode);
+		if (err) {
+			FATX_I(inode)->i_start = i_start;
+			FATX_I(inode)->i_logstart = i_logstart;
+			return err;
+		}
+	} else
+		mark_inode_dirty(inode);
+
+	/* Write a new EOF, and get the remaining cluster chain for freeing. */
 	if (skip) {
 		struct fatx_entry fatxent;
-		__s64 ret;
-		int fclus, dclus;
+		int ret, fclus, dclus;
 
 		ret = fatx_get_cluster(inode, skip - 1, &fclus, &dclus);
 		if (ret < 0)
 			return ret;
-		else if (ret == FAT_ENT_EOF)
+		else if (ret == FATX_ENT_EOF)
 			return 0;
 
 		fatxent_init(&fatxent);
 		ret = fatx_ent_read(inode, &fatxent, dclus);
-		if (ret == FAT_ENT_EOF) {
+		if (ret == FATX_ENT_EOF) {
 			fatxent_brelse(&fatxent);
 			return 0;
-		} else if (ret == FAT_ENT_FREE) {
+		} else if (ret == FATX_ENT_FREE) {
 			fatx_fs_panic(sb,
 				     "%s: invalid cluster chain (i_pos %lld)",
-				     __FUNCTION__, FATX_I(inode)->i_pos);
+				     __func__, FATX_I(inode)->i_pos);
 			ret = -EIO;
 		} else if (ret > 0) {
-			err = fatx_ent_write(inode, &fatxent, FAT_ENT_EOF, wait);
+			err = fatx_ent_write(inode, &fatxent, FATX_ENT_EOF, wait);
 			if (err)
 				ret = err;
 		}
@@ -192,35 +238,11 @@ static int fatx_free(struct inode *inode, int skip)
 			return ret;
 
 		free_start = ret;
-		i_start = i_logstart = 0;
-		fatx_cache_inval_inode(inode);
-	} else {
-		fatx_cache_inval_inode(inode);
-
-		i_start = free_start = FATX_I(inode)->i_start;
-		i_logstart = FATX_I(inode)->i_logstart;
-		FATX_I(inode)->i_start = 0;
-		FATX_I(inode)->i_logstart = 0;
 	}
-	FATX_I(inode)->i_attrs |= ATTR_ARCH;
-	inode->i_ctime = inode->i_mtime = CURRENT_TIME;
-	if (wait) {
-		err = fatx_sync_inode(inode);
-		if (err)
-			goto error;
-	} else
-		mark_inode_dirty(inode);
 	inode->i_blocks = skip << (FATX_SB(sb)->cluster_bits - 9);
 
 	/* Freeing the remained cluster chain */
 	return fatx_free_clusters(inode, free_start);
-
-error:
-	if (i_start) {
-		FATX_I(inode)->i_start = i_start;
-		FATX_I(inode)->i_logstart = i_logstart;
-	}
-	return err;
 }
 
 void fatx_truncate(struct inode *inode)
@@ -251,10 +273,126 @@ int fatx_getattr(struct vfsmount *mnt, struct dentry *dentry, struct kstat *stat
 	stat->blksize = FATX_SB(inode->i_sb)->cluster_size;
 	return 0;
 }
-
 EXPORT_SYMBOL_GPL(fatx_getattr);
+
+static int fatx_sanitize_mode(const struct fatx_sb_info *sbi,
+			     struct inode *inode, umode_t *mode_ptr)
+{
+	mode_t mask, perm;
+
+	/*
+	 * Note, the basic check is already done by a caller of
+	 * (attr->ia_mode & ~FATX_VALID_MODE)
+	 */
+
+	if (S_ISREG(inode->i_mode))
+		mask = sbi->options.fs_fmask;
+	else
+		mask = sbi->options.fs_dmask;
+
+	perm = *mode_ptr & ~(S_IFMT | mask);
+
+	/*
+	 * Of the r and x bits, all (subject to umask) must be present. Of the
+	 * w bits, either all (subject to umask) or none must be present.
+	 */
+
+	if ((perm & (S_IRUGO | S_IXUGO)) != (inode->i_mode & (S_IRUGO|S_IXUGO)))
+		return -EPERM;
+	if ((perm & S_IWUGO) && ((perm & S_IWUGO) != (S_IWUGO & ~mask)))
+		return -EPERM;
+
+	*mode_ptr &= S_IFMT | perm;
+
+	return 0;
+}
+
+static int fatx_allow_set_time(struct fatx_sb_info *sbi, struct inode *inode)
+{
+	mode_t allow_utime = sbi->options.allow_utime;
+
+	if (current->fsuid != inode->i_uid) {
+		if (in_group_p(inode->i_gid))
+			allow_utime >>= 3;
+		if (allow_utime & MAY_WRITE)
+			return 1;
+	}
+
+	/* use a default check */
+	return 0;
+}
+
+int fatx_setattr(struct dentry *dentry, struct iattr *attr)
+{
+	struct fatx_sb_info *sbi = FATX_SB(dentry->d_sb);
+	struct inode *inode = dentry->d_inode;
+	int error = 0;
+	unsigned int ia_valid;
+
+	lock_kernel();
+
+	/*
+	 * Expand the file. Since inode_setattr() updates ->i_size
+	 * before calling the ->truncate(), but FAT needs to fill the
+	 * hole before it.
+	 */
+	if (attr->ia_valid & ATTR_SIZE) {
+		if (attr->ia_size > inode->i_size) {
+			error = fatx_cont_expand(inode, attr->ia_size);
+			if (error || attr->ia_valid == ATTR_SIZE)
+				goto out;
+			attr->ia_valid &= ~ATTR_SIZE;
+		}
+	}
+
+	/* Check for setting the inode time. */
+	ia_valid = attr->ia_valid;
+	if (ia_valid & (ATTR_MTIME_SET | ATTR_ATIME_SET)) {
+		if (fatx_allow_set_time(sbi, inode))
+			attr->ia_valid &= ~(ATTR_MTIME_SET | ATTR_ATIME_SET);
+	}
+
+	error = inode_change_ok(inode, attr);
+	attr->ia_valid = ia_valid;
+	if (error) {
+		if (sbi->options.quiet)
+			error = 0;
+		goto out;
+	}
+
+	if (((attr->ia_valid & ATTR_UID) &&
+	     (attr->ia_uid != sbi->options.fs_uid)) ||
+	    ((attr->ia_valid & ATTR_GID) &&
+	     (attr->ia_gid != sbi->options.fs_gid)) ||
+	    ((attr->ia_valid & ATTR_MODE) &&
+	     (attr->ia_mode & ~FATX_VALID_MODE)))
+		error = -EPERM;
+
+	if (error) {
+		if (sbi->options.quiet)
+			error = 0;
+		goto out;
+	}
+
+	/*
+	 * We don't return -EPERM here. Yes, strange, but this is too
+	 * old behavior.
+	 */
+	if (attr->ia_valid & ATTR_MODE) {
+		if (fatx_sanitize_mode(sbi, inode, &attr->ia_mode) < 0)
+			attr->ia_valid &= ~ATTR_MODE;
+	}
+
+	error = inode_setattr(inode, attr);
+out:
+	unlock_kernel();
+	return error;
+}
+
+EXPORT_SYMBOL(fatx_setattr);
+
 const struct inode_operations fatx_file_inode_operations = {
 	.truncate	= fatx_truncate,
-	.setattr	= fatx_notify_change,
-	.getattr        = fatx_getattr,
+	.setattr	= fatx_setattr,
+	.getattr	= fatx_getattr,
 };

@@ -61,7 +61,7 @@ __s64 fatx_chain_add(struct inode *inode, int new_dclus, int nr_cluster)
 
 		PRINTK("FATX: %s new_fclus %d  inode->i_blocks %ld sbi->cluster_bits %d\n",
 			__FUNCTION__, new_fclus,  inode->i_blocks, sbi->cluster_bits);
-		ret = fatx_get_cluster(inode, FAT_ENT_EOF, &fclus, &dclus);
+		ret = fatx_get_cluster(inode, FATX_ENT_EOF, &fclus, &dclus);
 		if (ret < 0)
 			return ret;
 		new_fclus = fclus + 1;

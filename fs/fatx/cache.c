@@ -242,12 +242,12 @@ __s64 fatx_get_cluster(struct inode *inode, __s64 cluster, int *fclus, int *dclu
 	}
 
 	fatxent_init(&fatxent);
-	PRINTK("FATX: %s fclus 0x%08x cluster 0x%08llx\n", __FUNCTION__, *fclus, cluster);
+	PRINTK("FATX: %s fclus 0x%08x cluster 0x%08llx\n", __func__, *fclus, cluster);
 	while (*fclus < cluster) {
 		/* prevent the infinite loop of cluster chain */
 		if (*fclus > limit) {
 			fatx_fs_panic(sb, "%s: detected the cluster chain loop"
-				     " (i_pos %lld)", __FUNCTION__,
+				     " (i_pos %lld)", __func__,
 				     FATX_I(inode)->i_pos);
 			nr = -EIO;
 			goto out;
@@ -256,13 +256,13 @@ __s64 fatx_get_cluster(struct inode *inode, __s64 cluster, int *fclus, int *dclu
 		nr = fatx_ent_read(inode, &fatxent, *dclus);
 		if (nr < 0)
 			goto out;
-		else if (nr == FAT_ENT_FREE) {
+		else if (nr == FATX_ENT_FREE) {
 			fatx_fs_panic(sb, "%s: invalid cluster chain"
-				     " (i_pos %lld)", __FUNCTION__,
+				     " (i_pos %lld)", __func__,
 				     FATX_I(inode)->i_pos);
 			nr = -EIO;
 			goto out;
-		} else if (nr == FAT_ENT_EOF) {
+		} else if (nr == FATX_ENT_EOF) {
 			fatx_cache_add(inode, &cid);
 			goto out;
 		}
@@ -290,9 +290,9 @@ static __s64 fatx_bmap_cluster(struct inode *inode, __s64 cluster)
 	ret = fatx_get_cluster(inode, cluster, &fclus, &dclus);
 	if (ret < 0)
 		return ret;
-	else if (ret == FAT_ENT_EOF) {
+	else if (ret == FATX_ENT_EOF) {
 		fatx_fs_panic(sb, "%s: request beyond EOF (i_pos %lld ret 0x%08llx fclus 0x%08x dclus 0x%08x)",
-			     __FUNCTION__, FATX_I(inode)->i_pos, ret, fclus, dclus);
+			     __func__, FATX_I(inode)->i_pos, ret, fclus, dclus);
 		return -EIO;
 	}
 	return dclus;

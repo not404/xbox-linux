@@ -35,6 +35,7 @@
 #define ATTR_RO		1	/* read-only */
 #define ATTR_HIDDEN	2	/* hidden */
 #define ATTR_SYS	4	/* system */
+#define ATTR_VOLUME	8	/* volume label */
 #define ATTR_DIR	16	/* directory */
 #define ATTR_ARCH	32	/* archived */
 
@@ -74,9 +75,15 @@
 #define EOF_FAT16	0xFFFF
 #define EOF_FAT32	0xFFFFFFFF
 
-#define FAT_ENT_FREE	(0)
-#define FAT_ENT_BAD	(BAD_FAT32)
-#define FAT_ENT_EOF	(EOF_FAT32)
+#define FATX_ENT_FREE	(0)
+#define FATX_ENT_BAD	(BAD_FAT32)
+#define FATX_ENT_EOF	(EOF_FAT32)
+
+/*
+ * ioctl commands
+ */
+#define FATX_IOCTL_GET_ATTRIBUTES	_IOR('r', 0x10, __u32)
+#define FATX_IOCTL_SET_ATTRIBUTES	_IOW('r', 0x11, __u32)
 
 struct fatx_boot_sector {
         __u32	magic;		/* "FATX" */
@@ -118,7 +125,9 @@ struct fatx_mount_options {
 	unsigned short fs_dmask;
 	unsigned short codepage;  /* Codepage for shortname conversions */
 	char *iocharset;          /* Charset used for filename input/display */
+	unsigned short allow_utime;/* permission for setting the [am]time */
 	unsigned quiet:1;         /* set = fake successful chmods and chowns */
+	unsigned sys_immutable:1; /* set = system files are immutable */
 	unsigned flush:1;	  /* write things quickly */
 };
 
@@ -145,6 +154,7 @@ struct fatx_sb_info {
 	struct mutex fatx_lock;
 	unsigned int prev_free;      /* previously allocated cluster number */
 	unsigned int free_clusters;  /* -1 if undefined */
+	unsigned int free_clus_valid; /* is free_clusters valid? */
 	struct fatx_mount_options options;
 	struct nls_table *nls_disk;  /* Codepage used on disk */
 	struct nls_table *nls_io;    /* Charset used for input and display */
@@ -275,7 +285,7 @@ extern int fatx_generic_ioctl(struct inode *inode, struct file *filp,
 			     unsigned int cmd, unsigned long arg);
 extern const struct file_operations fatx_file_operations;
 extern const struct inode_operations fatx_file_inode_operations;
-extern int fatx_notify_change(struct dentry * dentry, struct iattr * attr);
+extern int fatx_setattr(struct dentry * dentry, struct iattr * attr);
 extern void fatx_truncate(struct inode *inode);
 extern int fatx_getattr(struct vfsmount *mnt, struct dentry *dentry,
 			struct kstat *stat);

@@ -67,7 +67,7 @@ static unsigned long fatx16_ent_get(struct fatx_entry *fatxent)
 	unsigned long next = le16_to_cpu(*fatxent->u.ent16_p);
 	WARN_ON((unsigned long)fatxent->u.ent16_p & (2 - 1));
 	if (next >= BAD_FAT16)
-		next = FAT_ENT_EOF;
+		next = FATX_ENT_EOF;
 	return next;
 }
 
@@ -76,29 +76,29 @@ static unsigned long fatx32_ent_get(struct fatx_entry *fatxent)
 	unsigned long next = le32_to_cpu(*fatxent->u.ent32_p);
 	WARN_ON((unsigned long)fatxent->u.ent32_p & (4 - 1));
 	if (next >= BAD_FAT32)
-		next = FAT_ENT_EOF;
+		next = FATX_ENT_EOF;
 	return next;
 }
 
 static void fatx16_ent_put(struct fatx_entry *fatxent, unsigned long new)
 {
-	if (new == FAT_ENT_EOF)
+	if (new == FATX_ENT_EOF)
 		new = EOF_FAT16;
 
 	//if (new == EOF_FAT16) new = 0xffff;
-	PRINTK("FATX: %s new 0x%08lx\n", __FUNCTION__, new);
+	PRINTK("FATX: %s new 0x%08lx\n", __func__, new);
 	*fatxent->u.ent16_p = cpu_to_le16(new);
 	mark_buffer_dirty(fatxent->bhs[0]);
 }
 
 static void fatx32_ent_put(struct fatx_entry *fatxent, unsigned long new)
 {
-	if (new == FAT_ENT_EOF)
+	if (new == FATX_ENT_EOF)
 		new = EOF_FAT32;
 
 	//if (new == EOF_FAT32) new = 0xffffffff;
 	//new = le32_to_cpu(*fatxent->u.ent32_p);
-	PRINTK("FATX: %s new 0x%08lx\n", __FUNCTION__, new);
+	PRINTK("FATX: %s new 0x%08lx\n", __func__, new);
 	*fatxent->u.ent32_p = cpu_to_le32(new);
 	mark_buffer_dirty(fatxent->bhs[0]);
 }
@@ -213,7 +213,7 @@ __s64 fatx_ent_read(struct inode *inode, struct fatx_entry *fatxent, __s64 entry
 			return err;
 	}
 	err = ops->ent_get(fatxent);
-	PRINTK("FATX: %s ent_get err 0x%08llx entry 0x%08llx\n", __FUNCTION__, err, entry);
+	PRINTK("FATX: %s ent_get err 0x%08llx entry 0x%08llx\n", __func__, err, entry);
 	return err;
 }
 
@@ -318,7 +318,8 @@ __s64 fatx_alloc_clusters(struct inode *inode, __s64 *cluster, int nr_cluster)
 	BUG_ON(nr_cluster > (MAX_BUF_PER_PAGE / 2));	/* fixed limit */
 
 	lock_fatx(sbi);
-	if (sbi->free_clusters != -1 && sbi->free_clusters < nr_cluster) {
+	if (sbi->free_clusters != -1 && sbi->free_clus_valid &&
+	    sbi->free_clusters < nr_cluster) {
 		unlock_fatx(sbi);
 		return -ENOSPC;
 	}
@@ -338,11 +339,11 @@ __s64 fatx_alloc_clusters(struct inode *inode, __s64 *cluster, int nr_cluster)
 
 		/* Find the free entries in a block */
 		do {
-			if (ops->ent_get(&fatxent) == FAT_ENT_FREE) {
+			if (ops->ent_get(&fatxent) == FATX_ENT_FREE) {
 				int entry = fatxent.entry;
 
 				/* make the cluster chain */
-				ops->ent_put(&fatxent, FAT_ENT_EOF);
+				ops->ent_put(&fatxent, FATX_ENT_EOF);
 				if (prev_ent.nr_bhs)
 					ops->ent_put(&prev_ent, entry);
 
@@ -371,14 +372,15 @@ __s64 fatx_alloc_clusters(struct inode *inode, __s64 *cluster, int nr_cluster)
 
 	/* Couldn't allocate the free entries */
 	sbi->free_clusters = 0;
+	sbi->free_clus_valid = 1;
+	sb->s_dirt = 1;
 	err = -ENOSPC;
-
 out:
 
 	unlock_fatx(sbi);
 	fatxent_brelse(&fatxent);
 	if (!err) {
-		PRINTK("FATX: %s cluster %lld err %lld\n", __FUNCTION__, cluster[0], err);
+		PRINTK("FATX: %s cluster %lld err %lld\n", __func__, cluster[0], err);
 		if (inode_needs_sync(inode))
 			err = fatx_sync_bhs(bhs, nr_bhs);
 		if (!err)
@@ -407,19 +409,19 @@ __s64 fatx_free_clusters(struct inode *inode, __s64 cluster)
 	fatxent_init(&fatxent);
 	lock_fatx(sbi);
 	do {
-		PRINTK("FATX: %s cluster %lld\n", __FUNCTION__, cluster);
+		PRINTK("FATX: %s cluster %lld\n", __func__, cluster);
 		cluster = fatx_ent_read(inode, &fatxent, cluster);
 		if (cluster < 0) {
 			err = cluster;
 			goto error;
-		} else if (cluster == FAT_ENT_FREE) {
+		} else if (cluster == FATX_ENT_FREE) {
 			fatx_fs_panic(sb, "%s: deleting FAT entry beyond EOF",
-				     __FUNCTION__);
+				     __func__);
 			err = -EIO;
 			goto error;
 		}
 
-		ops->ent_put(&fatxent, FAT_ENT_FREE);
+		ops->ent_put(&fatxent, FATX_ENT_FREE);
 		if (sbi->free_clusters != -1)
 			sbi->free_clusters++;
 
@@ -437,7 +439,7 @@ __s64 fatx_free_clusters(struct inode *inode, __s64 cluster)
 			nr_bhs = 0;
 		}
 		fatx_collect_bhs(bhs, &nr_bhs, &fatxent);
-	} while (cluster != FAT_ENT_EOF);
+	} while (cluster != FATX_ENT_EOF);
 
 	if (sb->s_flags & MS_SYNCHRONOUS) {
 		err = fatx_sync_bhs(bhs, nr_bhs);
@@ -483,7 +485,7 @@ __s64 fatx_count_free_clusters(struct super_block *sb)
 	int free;
 
 	lock_fatx(sbi);
-	if (sbi->free_clusters != -1)
+	if (sbi->free_clusters != -1 && sbi->free_clus_valid)
 		goto out;
 
 	reada_blocks = FATX_READA_SIZE >> sb->s_blocksize_bits;
@@ -506,11 +508,13 @@ __s64 fatx_count_free_clusters(struct super_block *sb)
 			goto out;
 
 		do {
-			if (ops->ent_get(&fatxent) == FAT_ENT_FREE)
+			if (ops->ent_get(&fatxent) == FATX_ENT_FREE)
 				free++;
 		} while (fatx_ent_next(sbi, &fatxent));
 	}
 	sbi->free_clusters = free;
+	sbi->free_clus_valid = 1;
+	sb->s_dirt = 1;
 	fatxent_brelse(&fatxent);
 out:
 	unlock_fatx(sbi);
