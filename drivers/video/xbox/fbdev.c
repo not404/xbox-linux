@@ -62,10 +62,6 @@
 #include "focus.h"
 #include "xcalibur.h"
 
-#ifndef CONFIG_PCI		/* sanity check */
-#error This driver requires PCI support.
-#endif
-
 /* version number of this driver */
 #define XBOXFB_VERSION "0.9.5b-xbox"
 
@@ -74,20 +70,20 @@
  * various helpful macros and constants
  *
  * ------------------------------------------------------------------------- */
-#ifdef CONFIG_FB_RIVA_DEBUG
+#ifdef CONFIG_FB_XBOX_DEBUG
 #define NVTRACE          printk
 #else
 #define NVTRACE          if(0) printk
 #endif
 
-#define NVTRACE_ENTER(...)  NVTRACE("%s START\n", __FUNCTION__)
-#define NVTRACE_LEAVE(...)  NVTRACE("%s END\n", __FUNCTION__)
+#define NVTRACE_ENTER(...)  NVTRACE("%s START\n", __func__)
+#define NVTRACE_LEAVE(...)  NVTRACE("%s END\n", __func__)
 
-#ifdef CONFIG_FB_RIVA_DEBUG
+#ifdef CONFIG_FB_XBOX_DEBUG
 #define assert(expr) \
 	if(!(expr)) { \
 	printk( "Assertion failed! %s,%s,%s,line=%d\n",\
-	#expr,__FILE__,__FUNCTION__,__LINE__); \
+	#expr,__FILE__,__func__,__LINE__); \
 	BUG(); \
 	}
 #else
@@ -152,7 +148,9 @@ static int noaccel   __devinitdata = 0;
 static int nomtrr __devinitdata = 0;
 #endif
 
+#ifndef MODULE
 static char *mode_option __devinitdata = NULL;
+#endif
 static int  strictmode __devinitdata = 0;
 
 static xbox_tv_encoding tv_encoding  __devinitdata = TV_ENC_INVALID;
@@ -2384,6 +2382,7 @@ static void __devexit xboxfb_remove(struct pci_dev *pd)
  *
  * ------------------------------------------------------------------------- */
 
+#ifndef MODULE
 static int __devinit xboxfb_setup(char *options)
 {
 	char *this_opt;
@@ -2429,6 +2428,8 @@ static int __devinit xboxfb_setup(char *options)
 	}
 	return 0;
 }
+#endif /* !MODULE */
+
 
 static struct pci_driver xboxfb_driver = {
 	.name		= "xboxfb",
@@ -2437,30 +2438,27 @@ static struct pci_driver xboxfb_driver = {
 	.remove		= __devexit_p(xboxfb_remove),
 };
 
-
-
 /* ------------------------------------------------------------------------- *
  *
  * modularization
  *
  * ------------------------------------------------------------------------- */
 
-int __devinit xboxfb_init(void)
+static int __devinit xboxfb_init(void)
 {
-        char *option = NULL;
+#ifndef MODULE
+	char *option = NULL;
 
-	//Ignore error here, vesafb does!
-	fb_get_options("xboxfb", &option);
-//        if (fb_get_options("xboxfb", &option))
-//		return -ENODEV;
+	if (fb_get_options("xboxfb", &option))
+		return -ENODEV;
 	xboxfb_setup(option);
-	
+#endif
 	return pci_register_driver(&xboxfb_driver);
 }
 
+
 module_init(xboxfb_init);
 
-#ifdef MODULE
 static void __exit xboxfb_exit(void)
 {
 	pci_unregister_driver(&xboxfb_driver);
@@ -2488,8 +2486,6 @@ module_param(hoc, int, 0);
 MODULE_PARM_DESC(hoc, "Horizontal overscan compensation ratio, in % (0-20)");
 module_param(voc, int, 0);
 MODULE_PARM_DESC(voc, "Vertical overscan compensation ratio, in % (0-20)");
-
-#endif /* MODULE */
 
 MODULE_AUTHOR("Oliver Schwartz");
 MODULE_DESCRIPTION("Framebuffer driver for Xbox");
