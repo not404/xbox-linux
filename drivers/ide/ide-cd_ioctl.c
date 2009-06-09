@@ -94,8 +94,8 @@ int ide_cdrom_check_media_change_real(struct cdrom_device_info *cdi,
 
 	if (slot_nr == CDSL_CURRENT) {
 		(void) cdrom_check_status(drive, NULL);
-		retval = (drive->atapi_flags & IDE_AFLAG_MEDIA_CHANGED) ? 1 : 0;
-		drive->atapi_flags &= ~IDE_AFLAG_MEDIA_CHANGED;
+		retval = (drive->dev_flags & IDE_DFLAG_MEDIA_CHANGED) ? 1 : 0;
+		drive->dev_flags &= ~IDE_DFLAG_MEDIA_CHANGED;
 		return retval;
 	} else {
 		return -EINVAL;
@@ -173,7 +173,7 @@ int ide_cd_lockdoor(ide_drive_t *drive, int lockflag,
 #endif /* CONFIG_X86_XBOX */
 
 	/* If the drive cannot lock the door, just pretend. */
-	if (drive->atapi_flags & IDE_AFLAG_NO_DOORLOCK) {
+	if ((drive->dev_flags & IDE_DFLAG_DOORLOCKING) == 0) {
 		stat = 0;
 	} else {
 		unsigned char cmd[BLK_MAX_CDB];
@@ -194,7 +194,7 @@ int ide_cd_lockdoor(ide_drive_t *drive, int lockflag,
 	    (sense->asc == 0x24 || sense->asc == 0x20)) {
 		printk(KERN_ERR "%s: door locking not supported\n",
 			drive->name);
-		drive->atapi_flags |= IDE_AFLAG_NO_DOORLOCK;
+		drive->dev_flags &= ~IDE_DFLAG_DOORLOCKING;
 		stat = 0;
 	}
 
