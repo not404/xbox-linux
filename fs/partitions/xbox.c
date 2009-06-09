@@ -102,7 +102,7 @@ int xbox_partition(struct parsed_partitions *state, struct block_device *bdev)
 	 * size. For disks larger than 8GB, anything above that limit is made
 	 * available as a seperate partition.
 	 */
-	last = bdev->bd_disk->capacity;
+	last = bdev->bd_disk->part0.nr_sects; // LALEE: May need to call get_capacity() on bdev->bd_disk first?
 	if (last == XBOX_EXTEND_START)
 		goto out;
 

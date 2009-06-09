@@ -595,11 +595,9 @@ static struct dentry *fatx_fh_to_dentry(struct super_block *sb,
 	/* now to find a dentry.
 	 * If possible, get a well-connected one
 	 */
-	result = d_alloc_anon(inode);
-	if (result == NULL) {
-		iput(inode);
-		return ERR_PTR(-ENOMEM);
-	}
+	result = d_obtain_alias(inode);
+	if (!IS_ERR(result))
+		result->d_op = sb->s_root->d_op;
 	result->d_op = sb->s_root->d_op;
 	return result;
 }
@@ -655,11 +653,7 @@ static struct dentry *fatx_get_parent(struct dentry *child)
 		parent = ERR_CAST(inode);
 		goto out;
 	}
-	parent = d_alloc_anon(inode);
-	if (!parent) {
-		iput(inode);
-		parent = ERR_PTR(-ENOMEM);
-	}
+	parent = d_obtain_alias(inode);
 out:
 	unlock_kernel();
 
