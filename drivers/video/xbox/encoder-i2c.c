@@ -40,7 +40,6 @@ static struct i2c_driver tv_driver = {
 	.driver = {
 		.name	= "i2c xbox tv_driver",
 	},
-	.id		= I2C_DRIVERID_I2CDEV,
 	.attach_adapter	= tv_attach_adapter,
 };
 
