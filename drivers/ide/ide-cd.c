@@ -2069,13 +2069,16 @@ static int ide_cdrom_setup(ide_drive_t *drive)
 		   ejecting, act like door locking is impossible as well. */
 		if (!machine_is_xbox) {
 			if (drive->atapi_flags & IDE_AFLAG_XBOX_EJECT) {
-				drive->atapi_flags |= (IDE_AFLAG_NO_DOORLOCK | IDE_AFLAG_NO_EJECT);
+				drive->dev_flags &= ~IDE_DFLAG_DOORLOCKING;	// Xbox Drive in PC:  Disable Door Locking
+				drive->atapi_flags |= IDE_AFLAG_NO_EJECT;	// Xbox Drive in PC:  Disable Eject
 			}
 		} else {
 			/* An Xbox drive in an Xbox.  We can support ejecting through
 			   the SMC and support drive locking in software by ignoring
 			   the eject interrupt (see arch/i386/kernel/xboxejectfix.c). */
-			drive->atapi_flags &= ~(IDE_AFLAG_NO_DOORLOCK | IDE_AFLAG_NO_EJECT);
+
+			drive->dev_flags |= IDE_DFLAG_DOORLOCKING;	// Xbox Drive in Xbox:  Allow Door Locking
+			drive->atapi_flags &= ~ IDE_AFLAG_NO_EJECT;	// Xbox Drive in Xbox:  Allow Eject
 			Xbox_simulate_drive_locked = 0;
 		}
 	}
