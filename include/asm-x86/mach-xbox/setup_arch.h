@@ -11,7 +11,7 @@
 #include <asm/io.h>
 
 //int CLOCK_TICK_RATE;
-int machine_is_xbox = 0;
+extern int machine_is_xbox;
 
 static  inline void arch_setup_xbox(void) {
 	outl(0x80000000, 0xcf8);
