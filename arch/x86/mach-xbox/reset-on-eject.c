@@ -20,9 +20,10 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/init.h>
+#include <linux/interrupt.h>
+#include <linux/kthread.h>
 #include <asm/io.h>
 #include <linux/xbox.h>
-#include <linux/interrupt.h>
 
 #define IRQ 12
 #define DRIVER_NAME "xboxejectfix"
@@ -52,10 +53,8 @@ volatile int Xbox_simulate_drive_locked = 0;
 /* Global SMI Enable Register */
 #define PM2A (BASE+0x2A)
 
-
-static DECLARE_MUTEX(extsmi_sem);
-static DECLARE_COMPLETION(extsmi_exited);
-static int extsmi_pid=0;
+static DEFINE_MUTEX(extsmi_sem);
+struct task_struct *extsmi_thread_task;
 
 /* 2009-May-25
  * LALEE: Apparently, extsmi_interrupt() uses neither of the parameters passed in.
@@ -69,7 +68,7 @@ static irqreturn_t extsmi_interrupt(int unused_irq, void *unused_dev_id) {
 	outw(reason,0x8020); /* ack  IS THIS NEEDED? */
 	if(reason&0x2){
 		/* wake up thread */
-		up(&extsmi_sem);
+		mutex_unlock(&extsmi_sem);
 	}
 	return 0;
 }
@@ -95,29 +94,21 @@ static int extsmi_thread(void *data){
 	strcpy(current->comm, "xbox_extsmi");
 
 	do {
-		extsmi_process();
-		down_interruptible(&extsmi_sem);
-	} while (!signal_pending(current));
-	
-         complete_and_exit(&extsmi_exited, 0);
+                extsmi_process();
+		mutex_lock_interruptible(&extsmi_sem);
+	} while (!kthread_should_stop());
+	return 0;
 }
 
 static int extsmi_init(void){
-	int pid;
-	
 	if (!machine_is_xbox) {
 		printk("This machine is no Xbox.\n");
 		return -1;
 	}
 	printk("Enabling Xbox eject problem workaround.\n");
 
-        pid = kernel_thread(extsmi_thread, NULL,
-			    CLONE_FS | CLONE_FILES | CLONE_SIGHAND);
-	if (pid < 0) {
-		return pid;
-	}
-
-	extsmi_pid = pid;
+	extsmi_thread_task = kthread_run(extsmi_thread, NULL, "xbox_extsmi");
+	if (IS_ERR(extsmi_thread_task)) { return -1; } // LALEE: this ain't quite right.. 
 
 	/* this shuts a lot of interrupts off! */
 	outw(inw(0x80e2)&0xf8c7,0x80e2);
@@ -134,13 +125,11 @@ static int extsmi_init(void){
 }
 
 static void extsmi_exit(void){
-	int res;
 	if (!machine_is_xbox) return; /* can this happen??? */
 	free_irq(IRQ,dev);
 
 	/* Kill the thread */
-	res = kill_proc(extsmi_pid, SIGTERM, 1);
-	wait_for_completion(&extsmi_exited);
+	kthread_stop(extsmi_thread_task);
 	return;
 }
 
