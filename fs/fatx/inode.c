@@ -109,12 +109,31 @@ static int fatx_readpage(struct file *file, struct page *page)
 	return block_read_full_page(page, fatx_get_block);
 }
 
-static int fatx_prepare_write(struct file *file, struct page *page,
-			     unsigned from, unsigned to)
+static int fatx_write_begin(struct file *file, struct address_space *mapping,
+			loff_t pos, unsigned len, unsigned flags,
+			struct page **pagep, void **fsdata)
 {
-	return cont_prepare_write(page, from, to, fatx_get_block,
-				  &FATX_I(page->mapping->host)->mmu_private);
+	*pagep = NULL;
+	return cont_write_begin(file, mapping, pos, len, flags, pagep, fsdata,
+				fatx_get_block,
+				&FATX_I(mapping->host)->mmu_private);
 }
+
+static int fatx_write_end(struct file *file, struct address_space *mapping,
+			loff_t pos, unsigned len, unsigned copied,
+			struct page *pagep, void *fsdata)
+{
+	struct inode *inode = mapping->host;
+	int err;
+	err = generic_write_end(file, mapping, pos, len, copied, pagep, fsdata);
+	if (!(err < 0) && !(FATX_I(inode)->i_attrs & ATTR_ARCH)) {
+		inode->i_mtime = inode->i_ctime = CURRENT_TIME_SEC;
+		FATX_I(inode)->i_attrs |= ATTR_ARCH;
+		mark_inode_dirty(inode);
+	}
+	return err;
+}
+
 
 static sector_t _fatx_bmap(struct address_space *mapping, sector_t block)
 {
@@ -123,10 +142,13 @@ static sector_t _fatx_bmap(struct address_space *mapping, sector_t block)
 
 static const struct address_space_operations fatx_aops = {
 	.readpage	= fatx_readpage,
+//	.readpages	= fatx_readpages,
 	.writepage	= fatx_writepage,
+//	.writepages	= fatx_writepages,
 	.sync_page	= block_sync_page,
-	.prepare_write	= fatx_prepare_write,
-	.commit_write	= generic_commit_write,
+	.write_begin	= fatx_write_begin,
+	.write_end	= fatx_write_end,
+//	.direct_IO	= fatx_direct_IO,
 	.bmap		= _fatx_bmap
 };
 
@@ -370,7 +392,7 @@ static void fatx_destroy_inode(struct inode *inode)
 	kmem_cache_free(fatx_inode_cachep, FATX_I(inode));
 }
 
-static void init_once(void * foo, struct kmem_cache * cachep, unsigned long flags)
+static void init_once(struct kmem_cache *cachep, void *foo)
 {
 	struct fatx_inode_info *ei = (struct fatx_inode_info *)foo;
 
@@ -522,24 +544,15 @@ static const struct super_operations fatx_sops = {
  * of i_logstart is used to store the directory entry offset.
  */
 
-static struct dentry *
-fatx_decode_fh(struct super_block *sb, __u32 *fh, int len, int fhtype,
-	      int (*acceptable)(void *context, struct dentry *de),
-	      void *context)
-{
-	if (fhtype != 3)
-		return ERR_PTR(-ESTALE);
-	if (len < 5)
-		return ERR_PTR(-ESTALE);
-
-	return sb->s_export_op->find_exported_dentry(sb, fh, NULL, acceptable, context);
-}
-
-static struct dentry *fatx_get_dentry(struct super_block *sb, void *inump)
+static struct dentry *fatx_fh_to_dentry(struct super_block *sb,
+		struct fid *fid, int fh_len, int fh_type)
 {
 	struct inode *inode = NULL;
 	struct dentry *result;
-	__u32 *fh = inump;
+	u32 *fh = fid->raw;
+
+	if (fh_len < 5 || fh_type != 3)
+		return NULL;
 
 	inode = iget(sb, fh[0]);
 	if (!inode || is_bad_inode(inode) || inode->i_generation != fh[1]) {
@@ -657,12 +670,12 @@ out:
 	return parent;
 }
 
-static struct export_operations fatx_export_ops = {
-	.decode_fh	= fatx_decode_fh,
+static const struct export_operations fatx_export_ops = {
 	.encode_fh	= fatx_encode_fh,
-	.get_dentry	= fatx_get_dentry,
+	.fh_to_dentry	= fatx_fh_to_dentry,
 	.get_parent	= fatx_get_parent,
 };
+
 
 static int fatx_show_options(struct seq_file *m, struct vfsmount *mnt)
 {

@@ -101,7 +101,7 @@ static int fatx_readdir(struct file *filp, void *dirent,
 	struct inode *inode = filp->f_path.dentry->d_inode;
 	struct super_block *sb = inode->i_sb;
 	struct buffer_head *bh;
-	struct fatx_dir_entry *de;
+	struct fatx_dir_entry *de = NULL;
 	/*
 	unsigned long dummy;
 	*/
@@ -218,7 +218,7 @@ EXPORT_SYMBOL(fatx_get_dotdot_entry);
 int fatx_dir_empty(struct inode *dir)
 {
 	struct buffer_head *bh;
-	struct fatx_dir_entry *de;
+	struct fatx_dir_entry *de = NULL;
 	loff_t cpos;
 	int result = 0;
 
@@ -536,7 +536,7 @@ int fatx_add_entries(struct inode *dir, void *slots,
 	struct super_block *sb = dir->i_sb;
 	struct fatx_sb_info *sbi = FATX_SB(sb);
 	struct buffer_head *bh, *prev;
-	struct fatx_dir_entry *de;
+	struct fatx_dir_entry *de = NULL;
 	__s64 err;
 	loff_t pos, i_pos;
 	int size, free_slots, nr_slots, cluster, nr_cluster, copy;

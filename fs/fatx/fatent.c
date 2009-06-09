@@ -456,11 +456,29 @@ error:
 
 EXPORT_SYMBOL(fatx_free_clusters);
 
+/* 128kb is the whole sectors for FAT12 and FAT16 */
+#define FATX_READA_SIZE		(128 * 1024)
+
+static void fatx_ent_reada(struct super_block *sb, struct fatx_entry *fatxent,
+			  unsigned long reada_blocks)
+{
+	struct fatxent_operations *ops = FATX_SB(sb)->fatxent_ops;
+	sector_t blocknr;
+	int i, offset;
+
+	ops->ent_blocknr(sb, fatxent->entry, &offset, &blocknr);
+
+	for (i = 0; i < reada_blocks; i++)
+		sb_breadahead(sb, blocknr + i);
+}
+
+
 __s64 fatx_count_free_clusters(struct super_block *sb)
 {
 	struct fatx_sb_info *sbi = FATX_SB(sb);
 	struct fatxent_operations *ops = sbi->fatxent_ops;
 	struct fatx_entry fatxent;
+	unsigned long reada_blocks, reada_mask, cur_block;
 	__s64 err = 0;
 	int free;
 
@@ -468,10 +486,21 @@ __s64 fatx_count_free_clusters(struct super_block *sb)
 	if (sbi->free_clusters != -1)
 		goto out;
 
+	reada_blocks = FATX_READA_SIZE >> sb->s_blocksize_bits;
+	reada_mask = reada_blocks - 1;
+	cur_block = 0;
+
 	free = 0;
 	fatxent_init(&fatxent);
 	fatxent_set_entry(&fatxent, FAT_START_ENT);
 	while (fatxent.entry < sbi->max_cluster) {
+		/* readahead of fatx blocks */
+		if ((cur_block & reada_mask) == 0) {
+			unsigned long rest = sbi->fatx_length - cur_block;
+			fatx_ent_reada(sb, &fatxent, min(reada_blocks, rest));
+		}
+		cur_block++;
+
 		err = fatx_ent_read_block(sb, &fatxent);
 		if (err)
 			goto out;

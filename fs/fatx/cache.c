@@ -40,7 +40,7 @@ static inline int fatx_max_cache(struct inode *inode)
 
 static struct kmem_cache *fatx_cache_cachep;
 
-static void init_once(void *foo, struct kmem_cache *cachep, unsigned long flags)
+static void init_once(struct kmem_cache *cachep, void *foo)
 {
 	struct fatx_cache *cache = (struct fatx_cache *)foo;
 	INIT_LIST_HEAD(&cache->cache_list);
