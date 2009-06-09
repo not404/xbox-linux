@@ -210,7 +210,7 @@ static int show_map(struct seq_file *m, void *v)
 	dev_t dev = 0;
 	int len;
 
-	if (maps_protect && !ptrace_may_attach(task))
+	if (maps_protect && !ptrace_may_access(task, PTRACE_MODE_READ))
 		return -EACCES;
 
 	if (file) {
@@ -219,14 +219,14 @@ static int show_map(struct seq_file *m, void *v)
 		ino = inode->i_ino;
 	}
 
-	seq_printf(m, "%08lx-%08lx %c%c%c%c %08lx %02x:%02x %lu %n",
+	seq_printf(m, "%08lx-%08lx %c%c%c%c %08llx %02x:%02x %lu %n",
 			vma->vm_start,
 			vma->vm_end,
 			flags & VM_READ ? 'r' : '-',
 			flags & VM_WRITE ? 'w' : '-',
 			flags & VM_EXEC ? 'x' : '-',
 			flags & VM_MAYSHARE ? 's' : 'p',
-			vma->vm_pgoff << PAGE_SHIFT,
+			((loff_t)vma->vm_pgoff) << PAGE_SHIFT,
 			MAJOR(dev), MINOR(dev), ino, &len);
 
 	/*
@@ -636,7 +636,7 @@ static ssize_t pagemap_read(struct file *file, char __user *buf,
 	struct pagemapread pm;
 	int pagecount;
 	int ret = -ESRCH;
-	struct mm_walk pagemap_walk;
+	struct mm_walk pagemap_walk = {};
 	unsigned long src;
 	unsigned long svpfn;
 	unsigned long start_vaddr;
@@ -646,7 +646,7 @@ static ssize_t pagemap_read(struct file *file, char __user *buf,
 		goto out;
 
 	ret = -EACCES;
-	if (!ptrace_may_attach(task))
+	if (!ptrace_may_access(task, PTRACE_MODE_READ))
 		goto out_task;
 
 	ret = -EINVAL;
@@ -747,7 +747,7 @@ static int show_numa_map_checked(struct seq_file *m, void *v)
 	struct proc_maps_private *priv = m->private;
 	struct task_struct *task = priv->task;
 
-	if (maps_protect && !ptrace_may_attach(task))
+	if (maps_protect && !ptrace_may_access(task, PTRACE_MODE_READ))
 		return -EACCES;
 
 	return show_numa_map(m, v);
