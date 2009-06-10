@@ -151,13 +151,14 @@ static int nomtrr __devinitdata = 0;
 #ifndef MODULE
 static char *mode_option __devinitdata = NULL;
 #endif
-static int  strictmode __devinitdata = 0;
 
 static xbox_tv_encoding tv_encoding  __devinitdata = TV_ENC_INVALID;
 static xbox_av_type av_type __devinitdata = AV_INVALID;
 static int hoc __devinitdata = -1;
 static char *tv __devinitdata = "NTSC";
 static int voc __devinitdata = -1;
+
+static int  strictmode = 0;
 
 static struct fb_fix_screeninfo xboxfb_fix = {
 	.id		= "Xbox",
