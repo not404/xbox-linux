@@ -1448,7 +1448,11 @@ static int phy_init(struct net_device *dev)
 
 	/* restart auto negotiation, power down phy */
 	mii_control = mii_rw(dev, np->phyaddr, MII_BMCR, MII_READ);
+#ifdef CONFIG_X86_XBOX
+	mii_control |= (BMCR_ANRESTART | BMCR_ANENABLE);
+#else
 	mii_control |= (BMCR_ANRESTART | BMCR_ANENABLE | BMCR_PDOWN);
+#endif
 	if (mii_rw(dev, np->phyaddr, MII_BMCR, mii_control)) {
 		return PHY_ERROR;
 	}
@@ -5210,9 +5214,13 @@ static int nv_open(struct net_device *dev)
 
 	dprintk(KERN_DEBUG "nv_open: begin\n");
 
+#ifndef CONFIG_X86_XBOX
+
 	/* power up phy */
 	mii_rw(dev, np->phyaddr, MII_BMCR,
 	       mii_rw(dev, np->phyaddr, MII_BMCR, MII_READ) & ~BMCR_PDOWN);
+
+#endif
 
 	/* erase previous misconfiguration */
 	if (np->driver_data & DEV_HAS_POWER_CNTRL)
@@ -5407,10 +5415,16 @@ static int nv_close(struct net_device *dev)
 	if (np->wolenabled) {
 		writel(NVREG_PFF_ALWAYS|NVREG_PFF_MYADDR, base + NvRegPacketFilterFlags);
 		nv_start_rx(dev);
+
+#ifndef CONFIG_X86_XBOX
+
 	} else {
 		/* power down phy */
 		mii_rw(dev, np->phyaddr, MII_BMCR,
 		       mii_rw(dev, np->phyaddr, MII_BMCR, MII_READ)|BMCR_PDOWN);
+
+#endif
+
 	}
 
 	/* FIXME: power down nic */
