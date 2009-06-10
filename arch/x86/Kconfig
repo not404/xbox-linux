@@ -314,6 +314,16 @@ config X86_VOYAGER
 	  If you do not specifically know you have a Voyager based machine,
 	  say N here, otherwise the kernel you build will not be bootable.
 
+config X86_XBOX
+	bool "Xbox (Microsoft)"
+	depends on X86_32
+	help
+	  Xbox is a standard PC from Microsoft minus some legacy hardware.
+	  More info may be gleaned from <http://xbox-linux.sourceforge.net/>.
+
+	  Only choose this option if you are building a kernel for such a
+	  machine, otherwise choose "PC-compatible".
+
 config X86_GENERICARCH
        bool "Generic architecture"
 	depends on X86_32
@@ -381,16 +391,6 @@ config X86_VISWS
 
 	  A kernel compiled for the Visual Workstation will run on general
 	  PCs as well. See <file:Documentation/sgi-visws.txt> for details.
-
-config X86_XBOX
-	bool "Xbox (Microsoft)"
-	depends on X86_32
-	help
-	  Xbox is a standard PC from Microsoft minus some legacy hardware.
-	  More info may be gleaned from <http://xbox-linux.sourceforge.net/>.
-
-	  Only choose this option if you are building a kernel for such a
-	  machine, otherwise choose "PC-compatible".
 
 config X86_RDC321X
 	bool "RDC R-321x SoC"
