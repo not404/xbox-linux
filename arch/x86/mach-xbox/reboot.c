@@ -29,6 +29,12 @@
 #define SMC_SUBCMD_POWER_OFF		0x80
 
 
+/*
+ * Because we're not "BIOS Reboot" Friendly, we don't get this variable from
+ * kernel/reboot.c.  Declaring it here (with initial value FALSE) to err on caution.
+ */
+bool port_cf9_safe = false;
+
 void (*pm_power_off)(void);
 EXPORT_SYMBOL(pm_power_off);
 

@@ -12,12 +12,6 @@
 #include <asm/io.h>
 int machine_is_xbox = 0;
 
-/*
- * Because we're not "BIOS Reboot" Friendly, we don't get this variable from
- * kernel/reboot.c.  Declaring it here (with initial value FALSE) to err on caution.
- */
-bool port_cf9_safe = false;
-
 void __init detect_xbox(void){
 	outl(0x80000000, 0xcf8);
 	if (inl(0xcfc)==0x02a510de) { /* Xbox PCI 0:0:0 ID 0x10de/0x02a5 */
@@ -43,6 +37,15 @@ void __init pre_intr_init_hook(void)
 	init_ISA_irqs();
 }
 
+/*
+ * IRQ2 is cascade interrupt to second interrupt controller
+ */
+static struct irqaction irq2 = {
+	.handler = no_action,
+	.mask = CPU_MASK_NONE,
+	.name = "cascade",
+};
+
 /**
  * intr_init_hook - post gate setup interrupt initialisation
  *
@@ -58,6 +61,8 @@ void __init intr_init_hook(void)
 		if (x86_quirks->arch_intr_init())
 			return;
 	}
+	if (!acpi_ioapic)
+		setup_irq(2, &irq2);
 }
 
 /**
@@ -90,7 +95,7 @@ void __init trap_init_hook(void)
 
 static struct irqaction irq0  = {
 	.handler = timer_interrupt,
-	.flags = IRQF_DISABLED | IRQF_NOBALANCING | IRQF_IRQPOLL,
+	.flags = IRQF_DISABLED | IRQF_NOBALANCING | IRQF_IRQPOLL | IRQF_TIMER,
 	.mask = CPU_MASK_NONE,
 	.name = "timer"
 };
