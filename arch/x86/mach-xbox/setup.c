@@ -11,6 +11,13 @@
 
 #include <asm/io.h>
 int machine_is_xbox = 0;
+
+/*
+ * Because we're not "BIOS Reboot" Friendly, we don't get this variable from
+ * kernel/reboot.c.  Declaring it here (with initial value FALSE) to err on caution.
+ */
+bool port_cf9_safe = false;
+
 void __init detect_xbox(void){
 	outl(0x80000000, 0xcf8);
 	if (inl(0xcfc)==0x02a510de) { /* Xbox PCI 0:0:0 ID 0x10de/0x02a5 */

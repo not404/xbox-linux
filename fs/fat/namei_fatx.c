@@ -12,9 +12,11 @@
 #include <linux/module.h>
 #include <linux/time.h>
 #include <linux/buffer_head.h>
-#include <linux/fatx_fs.h>
 #include <linux/smp_lock.h>
+#include "fat.h"
 
+
+unsigned int fatx_debug = 0; //TODO:  Setup a module-parameter to activate this..
 #define PRINTK(format, args...) do { if (fatx_debug) printk( format, ##args ); } while(0)
 
 /* Characters that are undesirable in an MS-DOS file name */
@@ -53,7 +55,7 @@ int fatx_format_name(const unsigned char *name, int len,
 
 /***** Locates a directory entry.  Uses unformatted name. */
 static int fatx_find(struct inode *dir, const unsigned char *name, int len,
-		      struct fatx_slot_info *sinfo)
+		      struct fat_slot_info *sinfo)
 {
 	unsigned char fatx_name[FATX_NAME];
 	int err;
@@ -62,7 +64,7 @@ static int fatx_find(struct inode *dir, const unsigned char *name, int len,
 	if (err)
 		return -ENOENT;
 
-	err = fatx_scan(dir, fatx_name, sinfo);
+	err = fat_scan(dir, fatx_name, sinfo);
 	if (err)
 		brelse(sinfo->bh);
 	return err;
@@ -125,7 +127,7 @@ static struct dentry *fatx_lookup(struct inode *dir, struct dentry *dentry,
 				   struct nameidata *nd)
 {
 	struct super_block *sb = dir->i_sb;
-	struct fatx_slot_info sinfo;
+	struct fat_slot_info sinfo;
 	struct inode *inode = NULL;
 	int res;
 
@@ -137,7 +139,7 @@ static struct dentry *fatx_lookup(struct inode *dir, struct dentry *dentry,
 		goto add;
 	if (res < 0)
 		goto out;
-	inode = fatx_build_inode(sb, sinfo.de, sinfo.i_pos);
+	inode = fat_build_inode(sb, sinfo.de, sinfo.i_pos);
 	brelse(sinfo.bh);
 	if (IS_ERR(inode)) {
 		res = PTR_ERR(inode);
@@ -156,33 +158,40 @@ out:
 }
 
 /***** Creates a directory entry (name is already formatted). */
-static int fatx_add_entry(struct inode *dir, const unsigned char *name, int len,
-			   int is_dir, int cluster,
-			   struct timespec *ts, struct fatx_slot_info *sinfo)
+static int fatx_add_entry(struct inode *dir, const unsigned char *name,
+			   int is_dir, int is_hid, int cluster,
+			   struct timespec *ts, struct fat_slot_info *sinfo)
 {
-	struct fatx_dir_entry de;
+	struct msdos_sb_info *sbi = MSDOS_SB(dir->i_sb);
+	struct msdos_dir_entry de;
 	__le16 time, date;
 	int err;
 
-	memset(de.name,0xFF,FATX_NAME);
-	memcpy(de.name, name, FATX_NAME);
+	memset(de.name,0xFF,FATX_NAME);	  // FATX Specific?
+	memcpy(de.name, name, FATX_NAME); // FATX Specific?
 	de.attr = is_dir ? ATTR_DIR : ATTR_ARCH;
-	de.name_length = len;
-	fatx_date_unix2dos(ts->tv_sec, &time, &date);
+
+	// We're not certain if FATX allows Hidden Files; Err on side of caution.
+	//if (is_hid)
+	//	de.attr |= ATTR_HIDDEN;
+	de.lcase = 0;
+	fat_time_unix2fat(sbi, ts, &time, &date, NULL);
 	de.cdate = de.adate = 0;
 	de.ctime = 0;
+	// de.ctime_cs = 0;
 	de.time = time;
 	de.date = date;
-	de.start = cpu_to_le32(cluster);
+	de.start = cpu_to_le16(cluster);
+	// de.starthi = cpu_to_le16(cluster >> 16);
 	de.size = 0;
 
-	err = fatx_add_entries(dir, &de, sinfo);
+	err = fat_add_entries(dir, &de, 1, sinfo);
 	if (err)
 		return err;
 
 	dir->i_ctime = dir->i_mtime = *ts;
 	if (IS_DIRSYNC(dir))
-		(void)fatx_sync_inode(dir);
+		(void)fat_sync_inode(dir);
 	else
 		mark_inode_dirty(dir);
 
@@ -195,7 +204,7 @@ static int fatx_create(struct inode *dir, struct dentry *dentry, int mode,
 {
 	struct super_block *sb = dir->i_sb;
 	struct inode *inode;
-	struct fatx_slot_info sinfo;
+	struct fat_slot_info sinfo;
 	struct timespec ts;
 	unsigned char fatx_name[FATX_NAME];
 	int err;
@@ -207,7 +216,7 @@ static int fatx_create(struct inode *dir, struct dentry *dentry, int mode,
 	if (err)
 		goto out;
 	/* Have to do it due to foo vs. .foo conflicts */
-	if (!fatx_scan(dir, fatx_name, &sinfo)) {
+	if (!fat_scan(dir, fatx_name, &sinfo)) {
 		brelse(sinfo.bh);
 		err = -EINVAL;
 		goto out;
@@ -217,7 +226,7 @@ static int fatx_create(struct inode *dir, struct dentry *dentry, int mode,
 	err = fatx_add_entry(dir, fatx_name, dentry->d_name.len, 0, 0, &ts, &sinfo);
 	if (err)
 		goto out;
-	inode = fatx_build_inode(sb, sinfo.de, sinfo.i_pos);
+	inode = fat_build_inode(sb, sinfo.de, sinfo.i_pos);
 	brelse(sinfo.bh);
 	if (IS_ERR(inode)) {
 		err = PTR_ERR(inode);
@@ -238,7 +247,7 @@ out:
 static int fatx_rmdir(struct inode *dir, struct dentry *dentry)
 {
 	struct inode *inode = dentry->d_inode;
-	struct fatx_slot_info sinfo;
+	struct fat_slot_info sinfo;
 	int err;
 
 	PRINTK("FATX: %s\n", __FUNCTION__);
@@ -247,9 +256,9 @@ static int fatx_rmdir(struct inode *dir, struct dentry *dentry)
 	 * Check whether the directory is not in use, then check
 	 * whether it is empty.
 	 */
-	err = fatx_dir_empty(inode);
+	err = fat_dir_empty(inode);
 	if (err) {
-		PRINTK("FATX: %s fatx_remove_entries error\n", __FUNCTION__);
+		PRINTK("FATX: %s fat_remove_entries error\n", __FUNCTION__);
 		goto out;
 	}
 	err = fatx_find(dir, dentry->d_name.name, dentry->d_name.len, &sinfo);
@@ -257,7 +266,7 @@ static int fatx_rmdir(struct inode *dir, struct dentry *dentry)
 		PRINTK("FATX: %s fatx_find error\n", __FUNCTION__);
 		goto out;
 	}
-	err = fatx_remove_entries(dir, &sinfo);	/* and releases bh */
+	err = fat_remove_entries(dir, &sinfo);	/* and releases bh */
 	if (err) {
 		PRINTK("FATX: %s fatx_find error\n", __FUNCTION__);
 		goto out;
@@ -266,7 +275,7 @@ static int fatx_rmdir(struct inode *dir, struct dentry *dentry)
 
 	inode->i_nlink = 0;
 	inode->i_ctime = CURRENT_TIME;
-	fatx_detach(inode);
+	fat_detach(inode);
 out:
 	unlock_kernel();
 
@@ -277,7 +286,7 @@ out:
 static int fatx_mkdir(struct inode *dir, struct dentry *dentry, int mode)
 {
 	struct super_block *sb = dir->i_sb;
-	struct fatx_slot_info sinfo;
+	struct fat_slot_info sinfo;
 	struct inode *inode;
 	unsigned char fatx_name[FATX_NAME];
 	struct timespec ts;
@@ -290,17 +299,17 @@ static int fatx_mkdir(struct inode *dir, struct dentry *dentry, int mode)
 	if (err)
 		goto out;
 	/* foo vs .foo situation */
-	if (!fatx_scan(dir, fatx_name, &sinfo)) {
+	if (!fat_scan(dir, fatx_name, &sinfo)) {
 		brelse(sinfo.bh);
-		PRINTK("FATX: %s fatx_scan failed\n", __FUNCTION__ );
+		PRINTK("FATX: %s fat_scan failed\n", __FUNCTION__ );
 		err = -EINVAL;
 		goto out;
 	}
 
 	ts = CURRENT_TIME;
-	cluster = fatx_alloc_new_dir(dir, &ts);
+	cluster = fat_alloc_new_dir(dir, &ts);
 	if (cluster < 0) {
-		PRINTK("FATX: %s fatx_alloc_new_dir failed\n", __FUNCTION__ );
+		PRINTK("FATX: %s fat_alloc_new_dir failed\n", __FUNCTION__ );
 		err = cluster;
 		goto out;
 	}
@@ -312,12 +321,12 @@ static int fatx_mkdir(struct inode *dir, struct dentry *dentry, int mode)
 
 	dir->i_nlink++;
 
-	inode = fatx_build_inode(sb, sinfo.de, sinfo.i_pos);
+	inode = fat_build_inode(sb, sinfo.de, sinfo.i_pos);
 	brelse(sinfo.bh);
 	if (IS_ERR(inode)) {
 		err = PTR_ERR(inode);
 		/* the directory was completed, just return a error */
-		PRINTK("FATX: %s fatx_build_inode failed\n", __FUNCTION__ );
+		PRINTK("FATX: %s fat_build_inode failed\n", __FUNCTION__ );
 		goto out;
 	}
 	inode->i_nlink = 2;
@@ -332,7 +341,7 @@ static int fatx_mkdir(struct inode *dir, struct dentry *dentry, int mode)
 	return 0;
 
 out_free:
-	fatx_free_clusters(dir, cluster);
+	fat_free_clusters(dir, cluster);
 out:
 	unlock_kernel();
 	return err;
@@ -342,7 +351,7 @@ out:
 static int fatx_unlink(struct inode *dir, struct dentry *dentry)
 {
 	struct inode *inode = dentry->d_inode;
-	struct fatx_slot_info sinfo;
+	struct fat_slot_info sinfo;
 	int err;
 
 	PRINTK("FATX: %s\n", __FUNCTION__);
@@ -351,12 +360,12 @@ static int fatx_unlink(struct inode *dir, struct dentry *dentry)
 	if (err)
 		goto out;
 
-	err = fatx_remove_entries(dir, &sinfo);	/* and releases bh */
+	err = fat_remove_entries(dir, &sinfo);	/* and releases bh */
 	if (err)
 		goto out;
 	inode->i_nlink = 0;
 	inode->i_ctime = CURRENT_TIME;
-	fatx_detach(inode);
+	fat_detach(inode);
 out:
 	unlock_kernel();
 
@@ -374,7 +383,7 @@ static int do_fatx_rename(struct inode *old_dir, unsigned char *old_name,
 	loff_t dotdot_i_pos;
 	*/
 	struct inode *old_inode, *new_inode;
-	struct fatx_slot_info old_sinfo, sinfo;
+	struct fat_slot_info old_sinfo, sinfo;
 	struct timespec ts;
 	//int update_dotdot;
 	int err, old_attrs, is_dir, corrupt = 0;
@@ -387,7 +396,7 @@ static int do_fatx_rename(struct inode *old_dir, unsigned char *old_name,
 	old_inode = old_dentry->d_inode;
 	new_inode = new_dentry->d_inode;
 
-	err = fatx_scan(old_dir, old_name, &old_sinfo);
+	err = fat_scan(old_dir, old_name, &old_sinfo);
 	if (err) {
 		err = -EIO;
 		goto out;
@@ -404,8 +413,8 @@ static int do_fatx_rename(struct inode *old_dir, unsigned char *old_name,
 		}
 	}
 	*/
-	old_attrs = FATX_I(old_inode)->i_attrs;
-	err = fatx_scan(new_dir, new_name, &sinfo);
+	old_attrs = MSDOS_I(old_inode)->i_attrs;
+	err = fat_scan(new_dir, new_name, &sinfo);
 	if (!err) {
 		if (!new_inode) {
 			/* "foo" -> ".foo" case. just change the ATTR_HIDDEN */
@@ -413,11 +422,11 @@ static int do_fatx_rename(struct inode *old_dir, unsigned char *old_name,
 				err = -EINVAL;
 				goto out;
 			}
-			FATX_I(old_inode)->i_attrs &= ~ATTR_HIDDEN;
+			MSDOS_I(old_inode)->i_attrs &= ~ATTR_HIDDEN;
 			if (IS_DIRSYNC(old_dir)) {
-				err = fatx_sync_inode(old_inode);
+				err = fat_sync_inode(old_inode);
 				if (err) {
-					FATX_I(old_inode)->i_attrs = old_attrs;
+					MSDOS_I(old_inode)->i_attrs = old_attrs;
 					goto out;
 				}
 			} else
@@ -426,7 +435,7 @@ static int do_fatx_rename(struct inode *old_dir, unsigned char *old_name,
 			old_dir->i_version++;
 			old_dir->i_ctime = old_dir->i_mtime = CURRENT_TIME;
 			if (IS_DIRSYNC(old_dir))
-				(void)fatx_sync_inode(old_dir);
+				(void)fat_sync_inode(old_dir);
 			else
 				mark_inode_dirty(old_dir);
 			goto out;
@@ -437,18 +446,18 @@ static int do_fatx_rename(struct inode *old_dir, unsigned char *old_name,
 	if (new_inode) {
 		if (err)
 			goto out;
-		if (FATX_I(new_inode)->i_pos != sinfo.i_pos) {
+		if (MSDOS_I(new_inode)->i_pos != sinfo.i_pos) {
 			/* WTF??? Cry and fail. */
 			printk(KERN_WARNING "fatx_rename: fs corrupted\n");
 			goto out;
 		}
 
 		if (is_dir) {
-			err = fatx_dir_empty(new_inode);
+			err = fat_dir_empty(new_inode);
 			if (err)
 				goto out;
 		}
-		fatx_detach(new_inode);
+		fat_detach(new_inode);
 	} else {
 		err = fatx_add_entry(new_dir, new_name, new_name_len, is_dir, 0,
 				      &ts, &sinfo);
@@ -457,11 +466,11 @@ static int do_fatx_rename(struct inode *old_dir, unsigned char *old_name,
 	}
 	new_dir->i_version++;
 
-	fatx_detach(old_inode);
-	fatx_attach(old_inode, sinfo.i_pos);
-	FATX_I(old_inode)->i_attrs &= ~ATTR_HIDDEN;
+	fat_detach(old_inode);
+	fat_attach(old_inode, sinfo.i_pos);
+	MSDOS_I(old_inode)->i_attrs &= ~ATTR_HIDDEN;
 	if (IS_DIRSYNC(new_dir)) {
-		err = fatx_sync_inode(old_inode);
+		err = fat_sync_inode(old_inode);
 		if (err)
 			goto error_inode;
 	} else
@@ -469,7 +478,7 @@ static int do_fatx_rename(struct inode *old_dir, unsigned char *old_name,
 
 	/*
 	if (update_dotdot) {
-		int start = FATX_I(new_dir)->i_logstart;
+		int start = MSDOS_I(new_dir)->i_logstart;
 		dotdot_de->start = cpu_to_le32(start);
 		mark_buffer_dirty(dotdot_bh);
 		if (IS_DIRSYNC(new_dir)) {
@@ -483,14 +492,14 @@ static int do_fatx_rename(struct inode *old_dir, unsigned char *old_name,
 	}
 	*/
 	
-	err = fatx_remove_entries(old_dir, &old_sinfo);	/* and releases bh */
+	err = fat_remove_entries(old_dir, &old_sinfo);	/* and releases bh */
 	old_sinfo.bh = NULL;
 	if (err)
 		goto error_dotdot;
 	old_dir->i_version++;
 	old_dir->i_ctime = old_dir->i_mtime = ts;
 	if (IS_DIRSYNC(old_dir))
-		(void)fatx_sync_inode(old_dir);
+		(void)fat_sync_inode(old_dir);
 	else
 		mark_inode_dirty(old_dir);
 
@@ -511,32 +520,32 @@ error_dotdot:
 	
 	/*
 	if (update_dotdot) {
-		int start = FATX_I(old_dir)->i_logstart;
+		int start = MSDOS_I(old_dir)->i_logstart;
 		dotdot_de->start = cpu_to_le32(start);
 		mark_buffer_dirty(dotdot_bh);
 		corrupt |= sync_dirty_buffer(dotdot_bh);
 	}
 	*/
 error_inode:
-	fatx_detach(old_inode);
-	fatx_attach(old_inode, old_sinfo.i_pos);
-	FATX_I(old_inode)->i_attrs = old_attrs;
+	fat_detach(old_inode);
+	fat_attach(old_inode, old_sinfo.i_pos);
+	MSDOS_I(old_inode)->i_attrs = old_attrs;
 	if (new_inode) {
-		fatx_attach(new_inode, sinfo.i_pos);
+		fat_attach(new_inode, sinfo.i_pos);
 		if (corrupt)
-			corrupt |= fatx_sync_inode(new_inode);
+			corrupt |= fat_sync_inode(new_inode);
 	} else {
 		/*
 		 * If new entry was not sharing the data cluster, it
 		 * shouldn't be serious corruption.
 		 */
-		int err2 = fatx_remove_entries(new_dir, &sinfo);
+		int err2 = fat_remove_entries(new_dir, &sinfo);
 		if (corrupt)
 			corrupt |= err2;
 		sinfo.bh = NULL;
 	}
 	if (corrupt < 0) {
-		fatx_fs_panic(new_dir->i_sb,
+		fat_fs_panic(new_dir->i_sb,
 			     "%s: Filesystem corrupted (i_pos %lld)",
 			     __func__, sinfo.i_pos);
 	}
@@ -575,8 +584,8 @@ static const struct inode_operations fatx_dir_inode_operations = {
 	.mkdir		= fatx_mkdir,
 	.rmdir		= fatx_rmdir,
 	.rename		= fatx_rename,
-	.setattr	= fatx_setattr, // was fatx_notify_change
-//	.getattr	= fatx_getattr,
+	.setattr	= fat_setattr,
+	.getattr	= fat_getattr,
 };
 
 
@@ -585,7 +594,7 @@ static int fatx_fill_super(struct super_block *sb, void *data, int silent)
 {
 	int res;
 
-	res = fatx_fill_super_inode(sb, data, silent, &fatx_dir_inode_operations);
+	res = fat_fill_super(sb, data, silent, &fatx_dir_inode_operations,0);
 	if (res)
 		return res;
 

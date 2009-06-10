@@ -1111,7 +1111,11 @@ int fat_alloc_new_dir(struct inode *dir, struct timespec *ts)
 	memcpy(de[0].name, MSDOS_DOT, MSDOS_NAME);
 	memcpy(de[1].name, MSDOS_DOTDOT, MSDOS_NAME);
 	de->attr = de[1].attr = ATTR_DIR;
-	de[0].lcase = de[1].lcase = 0;
+	if (sbi->options.isfatx) {
+		de[0].lcase = de[1].lcase = 0xFF; // FATX end of directory marker
+	} else {
+		de[0].lcase = de[1].lcase = 0;
+	}
 	de[0].time = de[1].time = time;
 	de[0].date = de[1].date = date;
 	if (sbi->options.isvfat) {
@@ -1129,7 +1133,11 @@ int fat_alloc_new_dir(struct inode *dir, struct timespec *ts)
 	de[1].start = cpu_to_le16(MSDOS_I(dir)->i_logstart);
 	de[1].starthi = cpu_to_le16(MSDOS_I(dir)->i_logstart >> 16);
 	de[0].size = de[1].size = 0;
-	memset(de + 2, 0, sb->s_blocksize - 2 * sizeof(*de));
+	if (sbi->options.isfatx) {
+		memset(de + 2, 0xFF, sb->s_blocksize - 2 * sizeof(*de));
+	} else {
+		memset(de + 2, 0, sb->s_blocksize - 2 * sizeof(*de));
+	}
 	set_buffer_uptodate(bhs[0]);
 	mark_buffer_dirty(bhs[0]);
 
@@ -1201,7 +1209,11 @@ static int fat_add_new_entries(struct inode *dir, void *slots, int nr_slots,
 		}
 	} while (++i < *nr_cluster);
 
-	memset(bhs[n]->b_data + copy, 0, sb->s_blocksize - copy);
+	if (sbi->options.isfatx) {
+		memset(bhs[n]->b_data + copy, 0xFF, sb->s_blocksize - copy);
+	} else {
+		memset(bhs[n]->b_data + copy, 0, sb->s_blocksize - copy);
+	}
 	offset = copy - sizeof(struct msdos_dir_entry);
 	get_bh(bhs[n]);
 	*bh = bhs[n];
@@ -1246,9 +1258,14 @@ int fat_add_entries(struct inode *dir, void *slots, int nr_slots,
 	err = -ENOSPC;
 	while (fat_get_entry(dir, &pos, &bh, &de) > -1) {
 		/* check the maximum size of directory */
-		if (pos >= FAT_MAX_DIR_SIZE)
-			goto error;
-
+		if (sbi->options.isfatx) {
+			// Root dir can only have 256 entries
+			if(pos >= FATX_MAX_DIR_SIZE && dir->i_ino == FATX_ROOT_INO)
+				goto error;
+		} else {
+			if (pos >= FAT_MAX_DIR_SIZE)
+				goto error;
+		}
 		if (IS_FREE(de->name)) {
 			if (prev != bh) {
 				get_bh(bh);

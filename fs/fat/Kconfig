@@ -95,3 +95,30 @@ config FAT_DEFAULT_IOCHARSET
 	  Note that "utf8" is not recommended for FAT filesystems.
 	  If unsure, you shouldn't set "utf8" here.
 	  See <file:Documentation/filesystems/vfat.txt> for more information.
+
+config FATX_FS
+	tristate "FATX fs support (DANGEROUS)"
+	select FAT_FS
+	depends on EXPERIMENTAL
+	help
+	  This adds support for the FATX filesystem as found in Microsoft's Xbox.
+
+	  The FATX filesystem is a derivative of the FAT filesystem minus some
+	  legacy fields and redundant information. For lengthier discussions on
+	  the filesystem, see:
+
+	  <http://xbox-linux.sourceforge.net/docs/fatxfat.html>
+	  <http://xbox-linux.sourceforge.net/docs/hdpartfs.html>
+	  <http://xbox-linux.sourceforge.net/docs/hackingfatx.html>
+
+	  # Uncomment this once things actually stabilize:
+	  #
+	  # If you are running Linux on the Xbox, choose Y unless you know
+	  # what you're doing. Otherwise, choose N.
+
+	  NOTE: Support for this filesystem is currently in a fragile state.
+	  Expect filesystem corruption and other such nastiness. Only choose
+	  this option if you know what to expect (or not, thereof).
+
+	  To compile this filesystem support as a module, choose M here: the
+	  module will be called fatx.

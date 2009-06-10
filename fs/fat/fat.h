@@ -7,6 +7,7 @@
 #include <linux/fs.h>
 #include <linux/mutex.h>
 #include <linux/msdos_fs.h>
+#include <linux/fatx_fs.h>
 
 /*
  * vfat shortname flags
@@ -32,6 +33,7 @@ struct fat_mount_options {
 		 sys_immutable:1, /* set = system files are immutable */
 		 dotsOK:1,        /* set = hidden and system files are named '.filename' */
 		 isvfat:1,        /* 0=no vfat long filename support, 1=vfat support */
+		 isfatx:1,        /* 0=no fatx Xbox FATX support, 1=fatx support */
 		 utf8:1,	  /* Use of UTF-8 character set (Default) */
 		 unicode_xlate:1, /* create escape sequences for unhandled Unicode */
 		 numtail:1,       /* Does first alias have a numeric '~1' type tail? */
